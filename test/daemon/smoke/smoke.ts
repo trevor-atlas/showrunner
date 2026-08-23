@@ -67,7 +67,7 @@ if (version.status !== 0) {
 console.log(`smoke: pi version  = ${version.stdout.trim()}`);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(HERE, "..", "..", "..", "..");
+const REPO_ROOT = join(HERE, "..", "..", "..");
 const CLI = join(REPO_ROOT, "src", "cli", "index.ts");
 const CAPSTONE_BP = join(HERE, "capstone-blueprint.ts");
 const HAPPY_BP = join(HERE, "..", "fixtures", "happy-blueprint.ts");
