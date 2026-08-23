@@ -12,7 +12,7 @@ coverage/
 .env.*
 
 # local run data
-runs/
+/runs/
 *.db
 *.db-wal
 *.db-shm

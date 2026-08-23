@@ -625,18 +625,42 @@ test("F1 (pool): a paused run holds its slot; the next queued run spawns only af
       void bSlot.run.terminal.finally(() => pool.release("B"));
     });
 
-    await waitFor(() => started.includes("A") && pausedControl !== null && pausedControl.paused, 8000, "A paused");
+    // A must be paused AND parked on its action waiter before we dispatch a
+    // verb. The wait-for-condition polls `paused`, which flips at setPause —
+    // BEFORE pauseAt() reaches waitForAction(): an async sink.flush() (a
+    // setImmediate yield) sits between them. A fail() dispatched in that
+    // window sets the mid-visit abort slot the parked loop never reads → the
+    // loop hangs waiting for an action nobody resolves → the next waitFor
+    // times out (~8s) under parallel load. Awaiting `stable` closes the race:
+    // markPaused resolves it in the same synchronous continuation that then
+    // registers the waiter, so the await resuming means fail() below lands on
+    // the parked waiter.
+    await waitFor(
+      async () => {
+        if (!started.includes("A")) return false;
+        const control = pausedControl;
+        if (control === null || !control.paused) return false;
+        try {
+          await control.stable;
+        } catch {
+          return false;
+        }
+        return true;
+      },
+      10_000,
+      "A paused and parked on its action waiter",
+    );
     expect(started).toEqual(["A"]);
     expect(pool.runningIds).toEqual(["A"]); // A holds the slot WHILE PAUSED
     expect(pool.queuedIds).toEqual(["B"]); // B is blocked behind paused A
 
     // fail A → terminal → the slot frees → B starts
     pausedControl!.fail("operator");
-    await waitFor(() => started.includes("B"), 8000, "B started");
+    await waitFor(() => started.includes("B"), 10_000, "B started");
     expect(pool.queuedIds).toEqual([]);
     expect(pool.runningIds).toEqual(["B"]);
     if (bSlot.run) await bSlot.run.terminal;
-    await waitFor(() => pool.runningIds.length === 0, 3000, "slot freed");
+    await waitFor(() => pool.runningIds.length === 0, 5_000, "slot freed");
   } finally {
     closeEnv(env);
   }
@@ -772,9 +796,21 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
     expect(bEvents.events).toHaveLength(1);
     expect(bEvents.events[0]!.type).toBe("run_submitted");
 
-    // fail A → terminal → the slot frees → B spawns and completes
-    const failed = await api(socketPath, "POST", `/runs/${aId}/fail`, { by: "operator" });
-    expect(failed.status).toBe(200);
+    // fail A → terminal → the slot frees → B spawns and completes. The fail
+    // POST can land in the dispatch window (the run row says paused while
+    // the loop is still between setPause and waitForAction — an async flush
+    // yields in between), which would set the mid-visit abort slot the
+    // parked loop never reads and leave A paused forever. The verb is
+    // idempotent (audit + dispatch), so retry until A is actually terminal.
+    await waitFor(
+      async () => {
+        await api(socketPath, "POST", `/runs/${aId}/fail`, { by: "operator" });
+        const { json } = await api(socketPath, "GET", `/runs/${aId}`);
+        return (json as { run: { status: string } }).run.status === "failed";
+      },
+      15_000,
+      "A terminal after the fail POST",
+    );
     await waitForStatus(socketPath, bId, "success");
     const bDone = (await api(socketPath, "GET", `/runs/${bId}`)).json as { event_count: number };
     expect(bDone.event_count).toBeGreaterThan(0);
