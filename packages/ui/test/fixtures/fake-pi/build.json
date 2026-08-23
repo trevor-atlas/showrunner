@@ -1,0 +1,28 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_end", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_start", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Building now." }] } },
+        { "type": "message_update", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Building now." }] }, "usage": { "input": 500, "output": 120, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 620, "cost": { "total": 0.0011 } } },
+        { "type": "tool_execution_start", "toolCallId": "build_1", "toolName": "bash", "args": "test -d context_handoff/build/inputs && cat context_handoff/build/inputs/envelope.json" },
+        { "type": "tool_execution_update", "toolCallId": "build_1", "toolName": "bash", "partialResult": { "content": [{ "type": "text", "text": "{\"summary\":\"Plan complete and reviewed.\"}\n" }] } },
+        { "type": "tool_execution_end", "toolCallId": "build_1", "toolName": "bash", "result": { "content": [{ "type": "text", "text": "{\"summary\":\"Plan complete and reviewed.\"}\n" }] }, "isError": false },
+        { "type": "message_end", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Building now." }] } },
+        { "type": "turn_end", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Building now." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "Built the deliverable from the plan.",
+        "artifacts": [],
+        "notes_for_next_agent": "Done.",
+        "quality": 9
+      }
+    }
+  ]
+}
