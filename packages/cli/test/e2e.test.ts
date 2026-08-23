@@ -21,6 +21,9 @@ const dataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-"));
 const blueprintCwd = mkdtempSync(join(tmpdir(), "showrunner-e2e-cwd-"));
 const env = { ...process.env, SHOWRUNNER_DATA_DIR: dataDir };
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+// F3 tolerance: a parallel IC (packages/starter-kit, T12) may leave
+// context_handoff residue in the repo root while this suite runs
+const rootHadContextDir = existsSync(join(REPO_ROOT, "context_handoff"));
 
 function cli(args: string[], timeoutMs = 30_000): { stdout: string; status: number } {
   try {
@@ -144,9 +147,11 @@ test("a blueprint run shows the full §5 loop in watch: correction, envelope, ga
   const list = cli(["runs"]);
   expect(list.stdout).toContain("2/2");
 
-  // F3: the handoff landed in the scratch cwd — no residue in the repo root
+  // F3: the handoff landed in the scratch cwd — and THIS test added no
+  // residue to the repo root (a parallel IC's pre-existing context_handoff
+  // residue — packages/starter-kit, T12 — is not ours to delete)
   expect(existsSync(join(blueprintCwd, "context_handoff", "plan", "outputs", "envelope.json"))).toBe(true);
-  expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(false);
+  expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(rootHadContextDir);
 });
 
 test("stop terminates the daemon and removes the socket", async () => {

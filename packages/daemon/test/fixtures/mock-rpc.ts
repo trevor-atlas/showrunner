@@ -19,6 +19,10 @@
  *   MOCK_RPC_EXIT_CODE        exit code on stdin close (default 0)
  *   MOCK_RPC_IGNORE_SIGTERM   do not exit on SIGTERM (stop() SIGKILL test)
  *   MOCK_RPC_DIE_AFTER_TURN   exit right after the first prompt's events (crash tests)
+ *   MOCK_RPC_ONE_WRITE         write the prompt ack AND the whole event turn in a
+ *                              single stdout write (G1 latch test: the settle lands
+ *                              in the same chunk as the ack, before the caller's
+ *                              waitForSettled registration)
  *
  * Usage: bun mock-rpc.ts --session-id <id>
  */
@@ -40,6 +44,7 @@ const chunked = env.MOCK_RPC_CHUNKED === "1";
 const exitCode = Number(env.MOCK_RPC_EXIT_CODE ?? "0") || 0;
 const ignoreSigterm = env.MOCK_RPC_IGNORE_SIGTERM === "1";
 const dieAfterTurn = env.MOCK_RPC_DIE_AFTER_TURN === "1";
+const oneWrite = env.MOCK_RPC_ONE_WRITE === "1";
 const stderrLine = env.MOCK_RPC_STDERR;
 
 const DEFAULT_EVENTS = [
@@ -173,8 +178,21 @@ async function drain(): Promise<void> {
       }
       if (cmd.type === "prompt") {
         // pi acks prompt at preflight success, then the turn streams (§8.4)
-        respond(cmd);
-        streamEvents();
+        if (oneWrite) {
+          // G1: ack + the ENTIRE turn land in one write — the caller sees the
+          // settle before it can register a waiter (without the driver's latch
+          // the settle would be dropped and the run would hang)
+          const payload = [
+            JSON.stringify({ id: cmd.id, type: "response", command: "prompt", success: true }),
+            ...events.map((e) => JSON.stringify({ ...e, sessionId })),
+          ].join("\n");
+          process.stdout.write(payload + "\n", () => {
+            if (dieAfterTurn) requestExit(exitCode || 1);
+          });
+        } else {
+          respond(cmd);
+          streamEvents();
+        }
       } else {
         respond(cmd);
       }

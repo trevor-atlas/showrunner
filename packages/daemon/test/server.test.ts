@@ -136,6 +136,9 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
   // F3: the run's cwd is a scratch dir — context_handoff/ must never land in
   // the repo root when a test forgets to pass one
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
+  // a PARALLEL IC may have left context_handoff residue in the repo root
+  // (packages/starter-kit, T12) — F3 asserts THIS test adds none
+  const rootHadContextDir = existsSync(join(process.cwd(), "context_handoff"));
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
@@ -172,10 +175,11 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
     // the §13.3 snapshot is on disk
     expect(existsSync(join(dir, "runs", run_id, "blueprint.json"))).toBe(true);
 
-    // F3: the handoff landed in the SCRATCH cwd, and no residue reached the
-    // test runner's working directory
+    // F3: the handoff landed in the SCRATCH cwd, and THIS test added no
+    // residue to the repo root (a parallel IC's pre-existing residue is not
+    // ours to delete)
     expect(existsSync(join(runCwd, "context_handoff", "build", "outputs", "envelope.json"))).toBe(true);
-    expect(existsSync(join(process.cwd(), "context_handoff"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "context_handoff"))).toBe(rootHadContextDir);
   } finally {
     await daemon?.close();
     cleanupDir(dir);

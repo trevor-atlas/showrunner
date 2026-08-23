@@ -9,13 +9,13 @@
 export class RunPool {
   private readonly running = new Set<string>();
   private readonly queued: { id: string; start: () => void }[] = [];
-  private readonly slots: number;
+  private readonly slotCount: number;
 
   constructor(slots: number) {
     if (!Number.isInteger(slots) || slots < 1) {
       throw new Error(`pool size must be a positive integer, got ${slots}`);
     }
-    this.slots = slots;
+    this.slotCount = slots;
   }
 
   /** Enqueue a run; it starts as soon as a slot is free. */
@@ -38,8 +38,13 @@ export class RunPool {
     return this.queued.map((q) => q.id);
   }
 
+  /** total pool capacity (§13 status verb) */
+  get slots(): number {
+    return this.slotCount;
+  }
+
   private pump(): void {
-    while (this.running.size < this.slots && this.queued.length > 0) {
+    while (this.running.size < this.slotCount && this.queued.length > 0) {
       const next = this.queued.shift()!;
       this.running.add(next.id);
       queueMicrotask(() => {

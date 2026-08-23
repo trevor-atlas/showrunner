@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Agent orchestration tool: runs blueprints, records every event into SQLite, corrects and pauses agents via typed envelopes and gates.",
   "scripts": {
-    "postinstall": "bun install --cwd packages/core && bun install --cwd packages/daemon && bun install --cwd packages/cli",
-    "typecheck": "bunx tsc -p packages/core/tsconfig.json && bunx tsc -p packages/daemon/tsconfig.json && bunx tsc -p packages/cli/tsconfig.json",
-    "test": "bun test packages/core/test packages/daemon/test packages/cli/test",
+    "postinstall": "bun install --cwd packages/core && bun install --cwd packages/daemon && bun install --cwd packages/cli && bun install --cwd packages/starter-kit",
+    "typecheck": "bunx tsc -p packages/core/tsconfig.json && bunx tsc -p packages/daemon/tsconfig.json && bunx tsc -p packages/cli/tsconfig.json && bunx tsc -p packages/starter-kit/tsconfig.json",
+    "test": "bun test packages/core/test packages/daemon/test packages/cli/test packages/starter-kit/test",
     "build": "echo 'no build step - bun runs TypeScript source directly'"
   },
   "devDependencies": {

@@ -48,7 +48,9 @@ export interface SessionDriver {
    * still resolves with the response — the caller checks `.success`.
    */
   send(command: RpcCommand, timeoutMs?: number): Promise<RpcResponse>;
-  /** resolve when the NEXT agent_settled arrives (one-shot; rejects on stream death) */
+  /** resolve when the NEXT agent_settled arrives (latch: a settle arriving
+   * before the waiter registers is remembered, not dropped — G1); rejects on
+   * stream death */
   waitForSettled(): Promise<void>;
   /** stdin EOF → the process reaps itself (exit 0); resolves when gone (§8.3) */
   close(): Promise<void>;

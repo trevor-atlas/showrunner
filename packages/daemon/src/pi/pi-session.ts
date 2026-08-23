@@ -68,6 +68,18 @@ export class PiSession implements SessionDriver {
   private readonly stderrLimit: number;
   private exitCodeValue: number | null = null;
   private settleWaiter: { resolve: () => void; reject: (err: Error) => void } | null = null;
+  /**
+   * The settle latch (G1, T02 review): `agent_settled` is recorded even when
+   * no waiter is registered yet, so a settle that arrives between the prompt
+   * ack's resolution and the loop's `waitForSettled()` registration is NOT
+   * dropped — without the latch that window would hang the run forever.
+   * `settleSeq` counts every settle seen; `consumedSeq` counts settles already
+   * consumed by a `waitForSettled()` resolution. Each call consumes exactly
+   * the NEXT un-consumed settle (edge-triggered), so a fast stream can never
+   * make one settle satisfy two waits, and a slow one never loses a settle.
+   */
+  private settleSeq = 0;
+  private consumedSeq = 0;
   private nextRequestId = 0;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly stderrChunks: string[] = [];
@@ -172,8 +184,23 @@ export class PiSession implements SessionDriver {
         new Error(`session died before agent_settled (exit ${this.exitCodeValue})`),
       );
     }
+    // G1: a settle already latched (arrived before this registration) is
+    // consumed immediately — never dropped in the ack→register window.
+    if (this.settleSeq > this.consumedSeq) {
+      this.consumedSeq = this.settleSeq;
+      return Promise.resolve();
+    }
     return new Promise<void>((resolve, reject) => {
-      this.settleWaiter = { resolve, reject };
+      this.settleWaiter = {
+        // consume exactly ONE settle when it arrives (edge-triggered): a
+        // second settle arriving while this waiter is pending stays latched
+        // for the NEXT waitForSettled call.
+        resolve: () => {
+          this.consumedSeq += 1;
+          resolve();
+        },
+        reject,
+      };
     });
   }
 
@@ -228,7 +255,9 @@ export class PiSession implements SessionDriver {
       this.handleResponse(evt);
     } else if (evt.type === "agent_settled") {
       // §8.3: agent_settled is authoritative — fires only when no automatic
-      // retry/compaction/continuation remains
+      // retry/compaction/continuation remains. Latch FIRST (G1): a settle
+      // with no waiter registered is remembered, not dropped.
+      this.settleSeq += 1;
       const w = this.settleWaiter;
       this.settleWaiter = null;
       w?.resolve();

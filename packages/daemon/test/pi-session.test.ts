@@ -3,16 +3,20 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
+import { ToolCallData } from "@showrunner/core";
 import {
   DEFAULT_RPC_TIMEOUT_MS,
   FIRST_PROMPT_ACK_TIMEOUT_MS,
   FakeSessionDriver,
   PiSession,
   SESSION_ID_RE,
+  Tracer,
   sessionDriverKind,
   sessionIdFor,
 } from "../src/index.ts";
+import type { FoldedEvent } from "../src/index.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
@@ -221,7 +225,111 @@ test("stdout EOF without agent_settled rejects the settle waiter and pending sen
   }
 });
 
-// ── stop(): SIGTERM → SIGKILL after 1s (RpcClient.stop(), §8.3) ──────────────
+// ── G1 (T02 review): the settle latch — a settle arriving in the ack→register
+//    window must NOT be dropped (a dropped settle would hang the run) ─────────
+
+test("G1: a settle landing in the same stdout chunk as the prompt ack is latched, not dropped", async () => {
+  const cwd = tmpCwd("g1");
+  try {
+    // MOCK_RPC_ONE_WRITE: the ack AND the whole turn arrive in ONE write — the
+    // settle is processed before the caller's waitForSettled() can register
+    // (without the latch this window drops the settle and hangs forever)
+    const session = openSession({ cwd, env: { MOCK_RPC_ONE_WRITE: "1" } });
+    await session.send({ type: "prompt", message: "go" }, DEFAULT_RPC_TIMEOUT_MS);
+    const settled = await Promise.race([
+      session.waitForSettled().then(
+        () => "settled",
+        () => "rejected",
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve("timeout"), 4_000)),
+    ]);
+    expect(settled).toBe("settled"); // the latched settle resolves the waiter
+    await session.close();
+    expect(await session.exit).toBe(0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, { timeout: 15_000 });
+
+test("G1: each settle satisfies exactly one wait — a fast stream cannot double-resolve the next turn's waiter", async () => {
+  const cwd = tmpCwd("g1seq");
+  try {
+    const session = openSession({ cwd });
+    // two full turns back-to-back (each settles): two prompts, two settles
+    for (let i = 0; i < 2; i++) {
+      await session.send({ type: "prompt", message: `turn ${i}` }, DEFAULT_RPC_TIMEOUT_MS);
+      const settled = await Promise.race([
+        session.waitForSettled().then(
+          () => "settled",
+          () => "rejected",
+        ),
+        new Promise<string>((resolve) => setTimeout(() => resolve("timeout"), 4_000)),
+      ]);
+      expect(settled).toBe("settled");
+    }
+    await session.close();
+    expect(await session.exit).toBe(0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, { timeout: 15_000 });
+
+// ── §19 child-death flush, pinned against the raw stream through the REAL
+//    driver seam (mock RPC): the settle waiter resolves with a crash verdict
+//    (no hang) and the tracer flushes the open tool call as truncated ─────────
+
+test("mid-tool-call death via the real seam: crash verdict + open tool call flushed ok:false truncated:true (§19)", async () => {
+  const cwd = tmpCwd("flush");
+  const eventsDir = tmpDataDir("pi-flush");
+  try {
+    // a turn that dies mid tool call: tool_execution_start, no end, no settle
+    const eventsPath = join(eventsDir, "turn.jsonl");
+    writeFileSync(
+      eventsPath,
+      [
+        JSON.stringify({ type: "agent_start", messageCount: 0, model: "mock-pi" }),
+        JSON.stringify({ type: "turn_start" }),
+        JSON.stringify({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: "hang" }),
+        JSON.stringify({ type: "tool_execution_update", toolCallId: "c1", toolName: "bash", partialResult: { content: [{ type: "text", text: "half" }] } }),
+      ].join("\n") + "\n",
+    );
+    const folded: FoldedEvent[] = [];
+    const tracer = new Tracer({
+      phase: "build",
+      visit: 1,
+      agent: "builder",
+      piSessionId: "t_build_v1",
+      sink: (evt) => folded.push(evt),
+      now: () => 1_000,
+    });
+    const session = openSession({
+      cwd,
+      env: { MOCK_RPC_EVENTS: eventsPath, MOCK_RPC_DIE_AFTER_TURN: "1", MOCK_RPC_EXIT_CODE: "1" },
+      onLine: (line) => tracer.onLine(line),
+    });
+    void session.send({ type: "prompt", message: "go" }).catch(() => {});
+    // the run does not hang: the settle waiter resolves with a crash verdict
+    await expect(session.waitForSettled()).rejects.toThrow(/agent_settled/);
+    expect(await session.exit).toBe(1);
+    // §19: the open tool call is flushed as ok:false, truncated:true
+    tracer.onEnd({ exitCode: session.exitCode }, { settled: false });
+    const tool = folded.find((e) => e.type === "tool_call")!.data as z.infer<typeof ToolCallData>;
+    expect(tool).toMatchObject({
+      tool: "bash",
+      tool_call_id: "c1",
+      ok: false,
+      truncated: true,
+      args: "hang",
+      result_snippet: "half", // the accumulated partial result, captured
+    });
+    const agentEnd = folded.find((e) => e.type === "agent_end")!.data as { exit: number | null; ok: boolean };
+    expect(agentEnd).toMatchObject({ exit: 1, ok: false });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    cleanupDir(eventsDir);
+  }
+});
+
 
 test("stop() SIGTERMs the child; pi's handler exits 143", async () => {
   const cwd = tmpCwd("stop");

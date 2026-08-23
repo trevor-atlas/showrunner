@@ -1,15 +1,18 @@
 import { test, expect } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { EnvelopeBase, defineAgent, defineBlueprint, runDirFor } from "@showrunner/core";
 import type { Blueprint, Envelope, Gate } from "@showrunner/core";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import {
+  composeContinuePrompt,
   composePrompt,
   cursorEvents,
+  driveResumedRun,
   EventSink,
   getRun,
   isEnvelopeApproved,
@@ -21,10 +24,15 @@ import {
   listRuns,
   openDb,
   overrideGateResult,
+  prepareBlueprintRun,
+  prepareResume,
+  recordAcceptedEnvelope,
   recordEnvelopeAcceptance,
   runBlueprint,
   snapshotBlueprint,
   sumRunSpend,
+  updatePhase,
+  updateRun,
 } from "../src/index.ts";
 import type { ScriptMap, ScriptedTurn } from "../src/index.ts";
 
@@ -1000,7 +1008,147 @@ test("composePrompt renders the §8.2 prompt: phase, agent, context, handoff, en
   }
 });
 
+test("§12 resume: a failed relaunch leaves the run interrupted — never a zombie `running`", async () => {
+  const env = openEnv("runner-resume-fail");
+  try {
+    const runId = await interruptedDemoRun(env);
+    // destroy the §13.3 snapshot — the resume cannot rebuild the run
+    rmSync(join(runDirFor(env.dir, runId), "blueprint.json"));
+    await expect(prepareResume(env.db, env.dir, runId)).rejects.toThrow(/snapshot/);
+    // the run stays interrupted and un-driven; no resume attempt was audited
+    expect(getRun(env.db, runId)!.status).toBe("interrupted");
+    expect(getRun(env.db, runId)!.needs_review).toBe(0);
+    const actions = cursorEvents(env.db, runId, 0, 10_000).filter(
+      (e) => e.type === "human_action" && (e.data as { action: string }).action === "resume",
+    );
+    expect(actions).toHaveLength(0);
+  } finally {
+    closeEnv(env);
+  }
+});
+
 // ── the session-crash path ───────────────────────────────────────────────────
+
+// ── §12 resume (T07): continue an interrupted run from the last completed phase ─
+
+const demoBlueprintPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "test",
+  "fixtures",
+  "demo-blueprint.ts",
+);
+
+/** Build a run left interrupted mid-build-visit-1: plan success, build in_progress. */
+async function interruptedDemoRun(env: { dir: string; db: ReturnType<typeof openDb>; cwd: string }): Promise<string> {
+  const prepared = await prepareBlueprintRun(env.db, env.dir, { modulePath: demoBlueprintPath, cwd: env.cwd });
+  const runId = prepared.runId;
+  const phases = listPhases(env.db, runId);
+  const plan = phases.find((p) => p.name === "plan")!;
+  const build = phases.find((p) => p.name === "build")!;
+  const t = new Date().toISOString();
+  updatePhase(env.db, plan.id, { status: "success", visits: 1, started_at: t, ended_at: t });
+  updatePhase(env.db, build.id, { status: "in_progress", visits: 1, started_at: t });
+  updateRun(env.db, runId, { status: "interrupted" });
+  // the predecessor's accepted envelope lands in the run's raw record (§10) —
+  // what §12 resume reconstructs the build handoff from
+  recordAcceptedEnvelope(
+    runDirFor(env.dir, runId),
+    JSON.stringify({ summary: "Plan complete.", artifacts: [], notes_for_next_agent: "Proceed to build.", quality: 8 }),
+  );
+  return runId;
+}
+
+test("§12 resume continues from the interrupted phase: success phases not re-run, same session id, needs_review preserved", async () => {
+  const env = openEnv("runner-resume");
+  try {
+    const runId = await interruptedDemoRun(env);
+    const runRow = getRun(env.db, runId)!;
+    expect(runRow.status).toBe("interrupted");
+
+    const pr = await prepareResume(env.db, env.dir, runId, { by: "operator" });
+    expect(pr.resume.phase).toBe("build"); // plan already success — the interrupted one
+    expect(pr.resume.visit).toBe(1); // re-visited as-is (the crashed visit)
+    expect(pr.resume.continueInstruction).toContain("[Resume]");
+    expect(pr.resume.continueInstruction).toContain("build");
+    expect(pr.resume.continueInstruction).toContain("envelope.json");
+    expect(pr.resume.handoff).not.toBeNull();
+    expect(pr.resume.handoff!.fromPhase).toBe("plan");
+    // the §12.3 continue instruction is NOT the fresh composed prompt
+    expect(pr.resume.continueInstruction).not.toContain("[Context]");
+
+    const run = driveResumedRun(env.db, env.dir, pr, { delayMs: 0 });
+    const result = await run.terminal;
+    expect(result).toEqual({ status: "success", needs_review: true });
+
+    // T04 pin: the resumed run KEEPS needs_review through the clean finish
+    expect(getRun(env.db, runId)!.needs_review).toBe(1);
+    // phases already success are NOT re-run: plan stayed at visit 1, its row untouched
+    const phases = listPhases(env.db, runId);
+    const plan = phases.find((p) => p.name === "plan")!;
+    const build = phases.find((p) => p.name === "build")!;
+    expect(plan.status).toBe("success");
+    expect(plan.visits).toBe(1);
+    expect(build.status).toBe("success");
+    // the interrupted phase re-visits with the SAME session id (§12.3): the new
+    // build session is v1 — never a v2 spawn
+    const buildSessions = listAgentSessions(env.db, runId).filter((s) =>
+      s.pi_session_id.includes("_build_"),
+    );
+    expect(buildSessions).toHaveLength(1);
+    expect(buildSessions[0]!.pi_session_id).toBe(`${runId.slice(0, 8)}_build_v1`);
+    expect(buildSessions[0]!.visit).toBe(1);
+    // plan was never re-driven: no plan sessions at all (it completed pre-crash)
+    expect(listAgentSessions(env.db, runId).some((s) => s.pi_session_id.includes("_plan_"))).toBe(false);
+
+    // the resume attempt is audited (§6 #11) and the run_status shows interrupted→running
+    const events = cursorEvents(env.db, runId, 0, 10_000);
+    expect(
+      events.some((e) => e.type === "human_action" && (e.data as { action: string }).action === "resume"),
+    ).toBe(true);
+    expect(
+      events.some(
+        (e) =>
+          e.type === "run_status" &&
+          (e.data as { from: string; to: string }).from === "interrupted" &&
+          (e.data as { from: string; to: string }).to === "running",
+      ),
+    ).toBe(true);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("§12 resume: the build handoff is the predecessor's accepted envelope; the continue instruction renders the envelope contract; resume refuses non-interrupted runs", async () => {
+  const env = openEnv("runner-resume-handoff");
+  try {
+    const runId = await interruptedDemoRun(env);
+    const pr = await prepareResume(env.db, env.dir, runId);
+    // handoff reconstructed from runDir/envelope.json — the predecessor's
+    // envelope becomes build's §9.3 materialized input
+    const handoff = pr.resume.handoff!;
+    expect((handoff.envelope as { summary: string }).summary).toBe("Plan complete.");
+    // composeContinuePrompt is a standalone seam: phase + envelope contract
+    const bp = pr.prepared.blueprint;
+    const build = bp.phases.find((p) => p.name === "build")!;
+    const prompt = composeContinuePrompt(bp, build);
+    expect(prompt).toContain("[Phase] demo → build");
+    expect(prompt).toContain("[Resume]");
+    expect(prompt).toContain("quality: number"); // the envelope contract renders
+    // resume is the interrupted-run verb only
+    const prepared = await prepareBlueprintRun(env.db, env.dir, { modulePath: demoBlueprintPath, cwd: env.cwd });
+    const runningRun = runBlueprint(env.db, env.dir, {
+      blueprint: prepared.blueprint,
+      cwd: env.cwd,
+      scripts: prepared.scripts,
+    });
+    await runningRun.done;
+    await expect(prepareResume(env.db, env.dir, prepared.runId)).rejects.toThrow(/not interrupted/);
+  } finally {
+    closeEnv(env);
+  }
+});
+
 
 test("a session that dies before agent_settled fails the run with needs_review", async () => {
   const env = openEnv("runner-crash");

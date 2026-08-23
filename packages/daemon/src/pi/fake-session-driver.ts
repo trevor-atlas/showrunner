@@ -52,6 +52,15 @@ export class FakeSessionDriver implements SessionDriver {
   private readonly stderrLimit: number;
   private exitCodeValue: number | null = null;
   private settleWaiter: { resolve: () => void; reject: (err: Error) => void } | null = null;
+  /**
+   * The settle latch (G1, T02 review) — same edge-triggered latch as
+   * PiSession: `agent_settled` is recorded even when no waiter is registered,
+   * so a settle arriving in the ack→register window is not dropped (which
+   * would hang the loop). Each waitForSettled call consumes exactly the next
+   * un-consumed settle.
+   */
+  private settleSeq = 0;
+  private consumedSeq = 0;
   private readonly stderrChunks: string[] = [];
   private stderrBytes = 0;
   private exitResolve: (code: number | null) => void = () => {};
@@ -150,8 +159,20 @@ export class FakeSessionDriver implements SessionDriver {
         new Error(`session died before agent_settled (exit ${this.exitCodeValue})`),
       );
     }
+    // G1: a settle already latched is consumed immediately — never dropped
+    // in the ack→register window.
+    if (this.settleSeq > this.consumedSeq) {
+      this.consumedSeq = this.settleSeq;
+      return Promise.resolve();
+    }
     return new Promise<void>((resolve, reject) => {
-      this.settleWaiter = { resolve, reject };
+      this.settleWaiter = {
+        resolve: () => {
+          this.consumedSeq += 1;
+          resolve();
+        },
+        reject,
+      };
     });
   }
 
@@ -200,6 +221,8 @@ export class FakeSessionDriver implements SessionDriver {
     if (typeof parsed !== "object" || parsed === null) return;
     const evt = parsed as Record<string, unknown>;
     if (evt.type === "agent_settled") {
+      // latch FIRST (G1): a settle with no waiter registered is remembered
+      this.settleSeq += 1;
       const w = this.settleWaiter;
       this.settleWaiter = null;
       w?.resolve();

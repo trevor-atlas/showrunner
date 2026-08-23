@@ -640,7 +640,7 @@ test("F1 (pool): a paused run holds its slot; the next queued run spawns only af
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // the internal waits total >5s — the 5s default trips under parallel load
 
 // ── HTTP surface (the daemon's §13.2 control endpoints behind the CLI verbs) ─
 
@@ -785,7 +785,7 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
 });
 
 test(
-  "§12 over HTTP: a daemon restart interrupts a running run; resume flags needs_review",
+  "§12 over HTTP: a daemon restart interrupts a running run; resume relaunches it to success (T07)",
   async () => {
     const dir = tmpDataDir("pause-restart-http");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-restart-cwd-"));
@@ -843,19 +843,29 @@ test(
     }, 10_000, "daemon up again");
     await waitForStatus(socketPath, runId, "interrupted");
 
-    // resume: the §19 pin — any resume from interrupted flags needs_review
+    // resume: the §19 pin — any resume from interrupted flags needs_review;
+    // and the continuation is REAL (T07) — the interrupted phase's session is
+    // relaunched with the same --session-id and the run drives to success
     const resume = await api(socketPath, "POST", `/runs/${runId}/resume`, { by: "operator" });
     expect(resume.status).toBe(200);
     expect((resume.json as { needs_review: number }).needs_review).toBe(1);
+    await waitForStatus(socketPath, runId, "success");
     const detail = (await api(socketPath, "GET", `/runs/${runId}`)).json as {
       run: { status: string; needs_review: number };
+      sessions: { pi_session_id: string; visit: number }[];
     };
-    expect(detail.run.status).toBe("interrupted"); // resumable — continuation is T07
+    expect(detail.run.status).toBe("success");
+    // T04 pin: the resumed run KEEPS needs_review — success does not clear it
     expect(detail.run.needs_review).toBe(1);
+    // §12.3: the resumed visit reused the SAME session id — the crashed visit's
+    // row (never ended) plus the resumed incarnation, both `..._build_v1` (no v2)
+    const sessionIds = detail.sessions.map((s) => s.pi_session_id);
+    expect(sessionIds).toHaveLength(2);
+    expect(new Set(sessionIds)).toEqual(new Set([`${runId.slice(0, 8)}_build_v1`]));
 
     // resume is the interrupted-run verb only (409 for a paused/terminal run)
-    const bad = await api(socketPath, "POST", `/runs/${runId}/approve`, {});
-    expect([404, 409]).toContain(bad.status); // no control handle after the restart
+    const bad = await api(socketPath, "POST", `/runs/${runId}/resume`, {});
+    expect(bad.status).toBe(409);
   } finally {
     try {
       process.kill(daemonPid, "SIGKILL");
@@ -865,4 +875,4 @@ test(
     rmSync(dir, { recursive: true, force: true });
     rmSync(runCwd, { recursive: true, force: true });
   }
-}, { timeout: 30_000 });
+}, { timeout: 60_000 });

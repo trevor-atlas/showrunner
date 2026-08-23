@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { resolveDataDir, socketPathFor, dbPathFor } from "@showrunner/core";
 
 import { openDb } from "./db.ts";
-import { reconcileInterruptedRuns } from "./pause-control.ts";
+import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "./pause-control.ts";
+import { backfillMissedEvents } from "./backfill.ts";
 import { createDaemonServer } from "./server.ts";
 
 /**
@@ -43,10 +44,26 @@ export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {})
   }
 
   const db = openDb(dbPathFor(dataDir));
-  // §12 crash recovery: runs left `running` by a dead daemon surface as
-  // `interrupted` (orphaned children are killed); a human continue comes via
-  // POST /runs/:id/resume (T04's verb — the relaunch continuation is T07)
-  reconcileInterruptedRuns(db);
+  // §12 crash recovery, in reap-then-restore order:
+  //   §12.1 orphan cleanup — sweep the processes table: dead-pid rows are
+  //   removed, ALIVE pids are orphaned children of a SIGKILLed daemon and are
+  //   SIGTERM'd (SIGKILL after 1s, §8.3) and removed.
+  const orphans = cleanupProcesses(db);
+  //   §12.2 crash surfacing — runs left `running` become `interrupted` (the
+  //   children are already reaped above; a human continue comes via resume).
+  const interrupted = reconcileInterruptedRuns(db);
+  //   §12.4 backfill — restore the session tail the daemon missed while down
+  //   (JSONL re-read, deduped against the run's own raw file; idempotent).
+  const backfill = backfillMissedEvents(db, dataDir);
+  if (orphans.killed.length > 0 || orphans.removed_dead > 0) {
+    console.log(`showrunner daemon: reaped ${orphans.killed.length} orphaned child(ren) (${orphans.removed_dead} dead rows removed)`);
+  }
+  if (interrupted.length > 0) {
+    console.log(`showrunner daemon: ${interrupted.length} run(s) interrupted by the previous crash — resume to continue`);
+  }
+  if (backfill.lines_restored > 0) {
+    console.log(`showrunner daemon: backfilled ${backfill.lines_restored} missed line(s) → ${backfill.events_folded} event(s) for ${backfill.sessions.length} session(s)`);
+  }
   const socketPath = socketPathFor(dataDir);
   const server = createDaemonServer({ db, dataDir, poolSlots: opts.poolSlots });
 
@@ -62,6 +79,9 @@ export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {})
     dataDir,
     socketPath,
     close: async () => {
+      // graceful shutdown (§13, T07): stop recorded children (SIGTERM →
+      // SIGKILL after 1s) — events are already durable, nothing is persisted
+      stopRecordedChildren(db);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       try {
         unlinkSync(socketPath);

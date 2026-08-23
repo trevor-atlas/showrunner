@@ -2,9 +2,11 @@ import type { Database } from "bun:sqlite";
 import type { Envelope, EventType, RunStatus } from "@showrunner/core";
 
 import {
+  deleteProcess,
   getEnvelope,
   getRun,
   insertEvent,
+  listProcesses,
   listRunProcesses,
   listRuns,
   updateRun,
@@ -412,15 +414,64 @@ export function killRunProcesses(db: Database, runId: string): void {
   for (const p of listRunProcesses(db, runId)) killPid(p.pid);
 }
 
+/** Is a pid a live process (process.kill(pid, 0) probe)? */
+export function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * §12.1 orphan cleanup — the daemon-startup sweep over the WHOLE processes
+ * table. Rows whose pid is dead (or bogus) are removed; rows whose pid is
+ * ALIVE are orphaned children from a previous daemon instance killed with
+ * SIGKILL — they are SIGTERM'd (SIGKILL after 1s, §8.3) and removed. The
+ * daemon cannot take over a child whose stdout pipe it no longer owns, so
+ * reaping is the only honest cleanup. Returns what was cleaned for tests.
+ */
+export function cleanupProcesses(db: Database): { removed_dead: number; killed: number[] } {
+  const removedDead: number[] = [];
+  const killed: number[] = [];
+  for (const p of listProcesses(db)) {
+    if (isPidAlive(p.pid)) {
+      killPid(p.pid); // SIGTERM → SIGKILL after 1s (§8.3)
+      killed.push(p.pid);
+    } else {
+      removedDead.push(p.pid);
+    }
+    deleteProcess(db, p.id);
+  }
+  return { removed_dead: removedDead.length, killed };
+}
+
+/**
+ * Graceful shutdown (§13, T07): stop every recorded child (SIGTERM → SIGKILL
+ * after 1s, §8.3) and remove its processes row. Events are already durable —
+ * nothing is persisted here; the runs they belong to surface as interrupted
+ * on the next daemon start (§12.2).
+ */
+export function stopRecordedChildren(db: Database): void {
+  for (const p of listProcesses(db)) {
+    killPid(p.pid);
+    deleteProcess(db, p.id);
+  }
+}
+
 // ── stateless verbs (no loop in this process) ────────────────────────────────
 
 /**
  * POST /runs/:id/resume on an INTERRUPTED run (§12, §13.2) — the continue
- * verb. needs_review semantics PINNED (§19, T04): mid-tool-call death (an
- * unsettled stream at process death) flags needs_review when the crash lands;
- * ANY resume from interrupted flags it again — this verb enforces the second
- * half unconditionally. The relaunch + backfill continuation is T07; this
- * records the attempt (a §6 #11 human_action) and leaves the run resumable.
+ * verb's recording half. needs_review semantics PINNED (§19, T04):
+ * mid-tool-call death (an unsettled stream at process death) flags
+ * needs_review when the crash lands; ANY resume from interrupted flags it
+ * again — this verb enforces the second half unconditionally. The relaunch
+ * itself (same --session-id + continue instruction + backfill) is T07's
+ * prepareResume/driveResumedRun; this records the attempt (a §6 #11
+ * human_action) and pins the flag.
  */
 export function resumeInterruptedRun(db: Database, runId: string, by?: string): { status: string; needs_review: number } {
   const run = getRun(db, runId);
@@ -437,7 +488,7 @@ export function resumeInterruptedRun(db: Database, runId: string, by?: string): 
     data: {
       action: "resume",
       by,
-      detail: `resume requested for interrupted run ${runId} — needs_review flagged; continuation (relaunch + backfill) is T07`,
+      detail: `resume requested for interrupted run ${runId} — needs_review flagged; the interrupted phase is relaunched with the same session id + a continue instruction (prepareResume/driveResumedRun)`,
     },
   });
   updateRun(db, runId, { needs_review: 1 });

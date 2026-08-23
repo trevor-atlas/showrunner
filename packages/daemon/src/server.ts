@@ -20,13 +20,12 @@ import {
   effectiveMenu,
   getControl,
   getControlByLiveSession,
-  resumeInterruptedRun,
   statelessFailRun,
 } from "./pause-control.ts";
 import type { PauseInfo } from "./pause-control.ts";
 import { RunPool } from "./pool.ts";
 import { tailRawFile } from "./rawfile.ts";
-import { drivePreparedRun, prepareBlueprintRun } from "./runner.ts";
+import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "./runner.ts";
 
 /**
  * The daemon's local HTTP API (spec §13) - the slice the CLI needs: health,
@@ -95,9 +94,10 @@ function intParam(v: string | null, fallback: number, max: number): number {
 export function createDaemonServer(deps: DaemonDeps): Server {
   const { db, dataDir } = deps;
   const pool = new RunPool(deps.poolSlots ?? POOL_SLOTS);
+  const startedAt = Date.now();
 
   return createServer((req, res) => {
-    void handleRequest(db, dataDir, pool, req, res).catch((err: unknown) => {
+    void handleRequest(db, dataDir, pool, startedAt, req, res).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       json(res, 500, { error: message });
     });
@@ -108,6 +108,7 @@ async function handleRequest(
   db: Database,
   dataDir: string,
   pool: RunPool,
+  startedAt: number,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -117,6 +118,22 @@ async function handleRequest(
 
   if (method === "GET" && path === "/health") {
     json(res, 200, { ok: true });
+    return;
+  }
+
+  if (method === "GET" && path === "/status") {
+    // §13 status verb (T07): health + pool utilization + run status counts
+    const runs = listRuns(db);
+    const byStatus: Record<string, number> = { total: runs.length };
+    for (const r of runs) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+    json(res, 200, {
+      ok: true,
+      pid: process.pid,
+      data_dir: dataDir,
+      uptime_ms: Date.now() - startedAt,
+      pool: { slots: pool.slots, running: pool.runningIds, queued: pool.queuedIds },
+      runs: byStatus,
+    });
     return;
   }
 
@@ -395,9 +412,26 @@ async function handleRequest(
     const runId = resumeMatch[1]!;
     const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
     const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+    const delayMs =
+      typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
+        ? Math.max(0, Math.floor(body.delayMs))
+        : 0;
     try {
-      const out = resumeInterruptedRun(db, runId, by);
-      json(res, 200, { run_id: runId, ok: true, status: out.status, needs_review: out.needs_review });
+      // §12 continuation (T07): re-import the blueprint from the §13.3
+      // snapshot, record the resume attempt + needs_review (T04 pin), and
+      // relaunch the interrupted phase with the SAME --session-id + a
+      // continue instruction — behind the pool, like a fresh run
+      const preparedResume = await prepareResume(db, dataDir, runId, { by });
+      pool.enqueue(runId, () => {
+        try {
+          const run = driveResumedRun(db, dataDir, preparedResume, { delayMs });
+          // F1 (§5.4): the resumed run holds a slot until its TERMINAL state
+          void run.terminal.finally(() => pool.release(runId));
+        } catch {
+          pool.release(runId);
+        }
+      });
+      json(res, 200, { run_id: runId, ok: true, status: "running", needs_review: 1 });
     } catch (err) {
       json(res, 409, { error: err instanceof Error ? err.message : String(err) });
       return;

@@ -16,6 +16,11 @@ export type { Agent } from "./agent.ts";
 // Gate (§3.4)
 export type { Gate, GateContext, GateResult } from "./gate.ts";
 
+// Shell escape hatch (§3.7) — the fallback `ctx.shell` for gates/hooks
+// when the runtime does not provide one.
+export { createShell, runCommand } from "./shell.ts";
+export type { CreateShellOptions } from "./shell.ts";
+
 // Blueprint (§3.5)
 export {
   BlueprintValidationError,

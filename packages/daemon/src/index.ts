@@ -100,11 +100,14 @@ export type {
 // The §5 run loop
 export {
   DEFAULT_MAX_VISITS,
+  composeContinuePrompt,
   composePrompt,
   drivePreparedRun,
+  driveResumedRun,
   loadBlueprintModule,
   materializeInputs,
   prepareBlueprintRun,
+  prepareResume,
   renderSchema,
   resolveContextEntries,
   resolveScriptedSessions,
@@ -114,7 +117,9 @@ export {
 } from "./runner.ts";
 export type {
   BlueprintRun,
+  PreparedResume,
   PreparedRun,
+  ResumeSpec,
   RunBlueprintOptions,
   RunResult,
   ScriptMap,
@@ -128,14 +133,17 @@ export { RunPool } from "./pool.ts";
 // T04 pause & control surface (§5.3 pause menu, §12 resume, F1 slot hold)
 export {
   RunControl,
+  cleanupProcesses,
   effectiveMenu,
   getControl,
   getControlByLiveSession,
+  isPidAlive,
   killRunProcesses,
   reconcileInterruptedRuns,
   registerControl,
   resumeInterruptedRun,
   statelessFailRun,
+  stopRecordedChildren,
   unregisterControl,
 } from "./pause-control.ts";
 export type {
@@ -179,6 +187,10 @@ export type {
   SessionDriver,
   SessionDriverKind,
 } from "./pi/index.ts";
+
+// §12.4 backfill (T07: session-JSONL re-read, deduped against the run's raw file)
+export { backfillMissedEvents } from "./backfill.ts";
+export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
 
 // HTTP API (§13)
 export { createDaemonServer } from "./server.ts";

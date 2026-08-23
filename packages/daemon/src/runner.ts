@@ -35,16 +35,18 @@ import type { Handoff } from "./handoff.ts";
 import {
   deleteProcess,
   getEnvelope,
+  getRun,
   insertAgentSession,
   insertPhase,
   insertProcess,
   insertRun,
+  listPhases,
   updateAgentSession,
   updateEnvelope,
   updatePhase,
   updateRun,
 } from "./db.ts";
-import { registerControl, unregisterControl, RunControl } from "./pause-control.ts";
+import { registerControl, unregisterControl, resumeInterruptedRun, RunControl } from "./pause-control.ts";
 import type { ControlAction, PauseInfo } from "./pause-control.ts";
 import { MAX_CAPTURED_STDERR, sessionIdFor } from "./driver.ts";
 import { gateName, runEnvelopeStage } from "./envelope-runner.ts";
@@ -252,6 +254,10 @@ interface LoopState extends InitOptions {
   sink: EventSink;
   /** the pause & control surface (T04) — pauses suspend here, verbs dispatch here */
   control: RunControl;
+  /** true when this drive is a §12 resume (from interrupted) — the run's
+   * needs_review flag survives a clean finish (the T04 pin: ANY resume from
+   * interrupted flags it for a human glance, §19) */
+  resumed: boolean;
   emit: (type: EventType, data: unknown, ids?: EventIds) => void;
 }
 
@@ -302,12 +308,15 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
   mkdirSync(runDir, { recursive: true });
   const sink = new EventSink(db, { runId, phaseId: null, agentSessionId: null });
   const phaseIds = new Map<string, string>();
+  const phaseVisits = new Map<string, number>();
   for (const phase of opts.blueprint.phases) {
     // rows are created by createRunRows; ids are their own — look them up
     const row = findPhaseRow(db, runId, phase.name);
     phaseIds.set(phase.name, row?.id ?? randomUUID());
+    // §12 resume: the interrupted phase's recorded visits ARE the visit to
+    // resume (same --session-id); fresh rows have visits=0 → visit 1 as before
+    phaseVisits.set(phase.name, row?.visits ?? 0);
   }
-  const phaseVisits = new Map<string, number>();
   const phaseSpend = new Map<string, number>();
   // §11.1: the price roster is loaded once per run (a broken prices.json is a
   // config error and throws here — before any run rows are driven to a state)
@@ -333,6 +342,7 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
     rawFile,
     sink,
     control,
+    resumed: false,
     emit: () => {},
   };
   state.emit = (type: EventType, data: unknown, ids: EventIds = {}): void => {
@@ -353,8 +363,8 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
 
 function findPhaseRow(db: Database, runId: string, name: string) {
   return db
-    .query<{ id: string }, [string, string]>(
-      "SELECT id FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
+    .query<{ id: string; visits: number }, [string, string]>(
+      "SELECT id, visits FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
     )
     .get(runId, name) ?? null;
 }
@@ -402,11 +412,27 @@ type VisitOutcome =
   | { kind: "hook_failed"; reason: string; corrections: number }
   | { kind: "crash"; reason: string; corrections: number };
 
-async function driveLoop(state: LoopState): Promise<RunResult> {
+/** The §12 resume spec: drive the loop from the interrupted phase's recorded
+ * visit, reusing its --session-id and leading with a continue instruction.
+ * `handoff` is the predecessor's last accepted envelope (reconstructed from
+ * the run's raw record) — phases already success are never re-entered. */
+export interface ResumeSpec {
+  phase: string;
+  /** the recorded visit of the interrupted phase — re-visited as-is (same session id) */
+  visit: number;
+  /** the §12.3 continue instruction (sent as the resumed visit's first prompt) */
+  continueInstruction: string;
+  /** the predecessor's accepted envelope, reconstructed from runDir/envelope.json */
+  handoff: Handoff | null;
+}
+
+async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResult> {
   const bp = state.blueprint;
   const indexByName = new Map(bp.phases.map((p, i) => [p.name, i]));
-  let pending: string | null = bp.phases[0]?.name ?? null;
-  let handoff: Handoff | null = null;
+  // §12.3: a resumed run starts at the interrupted phase — everything before
+  // it (status success) is not re-run; phases after it stay pending.
+  let pending: string | null = resume?.phase ?? bp.phases[0]?.name ?? null;
+  let handoff: Handoff | null = resume?.handoff ?? null;
 
   while (pending !== null) {
     const phase = bp.phases.find((p) => p.name === pending);
@@ -417,6 +443,9 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
     // per-phase visit loop (T04): a human restart-fresh re-enters it with a new visit
     let phaseApproved = false; // §5.2 step 1 — one approval per phase entry
     let restarted = false; // a human restart bypasses the visit guard for this phase
+    // §12.3: the interrupted phase already earned its approval (it spawned) —
+    // a resume must not re-pause on require_approval
+    if (resume !== undefined && resume.phase === phase.name) phaseApproved = true;
 
     for (;;) {
       if (abortCheck(state) === "fail") {
@@ -443,9 +472,12 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
       // 2. materialize the predecessor handoff (§9.3: envelope + artifacts)
       materializeInputs(state, phase.name, handoff);
 
-      // 3. visit guard (§5.2 step 3, §19): visits >= max_visits → pause
+      // 3. visit guard (§5.2 step 3, §19): visits >= max_visits → pause. The
+      // RESUME visit is exempt — it re-visits the recorded visit, it does not
+      // add one.
       const currentVisits = state.phaseVisits.get(phase.name) ?? 0;
-      if (!restarted && currentVisits >= state.maxVisits) {
+      const isResumeVisit = resume !== undefined && resume.phase === phase.name;
+      if (!restarted && !isResumeVisit && currentVisits >= state.maxVisits) {
         const action = await pauseAt(state, {
           kind: "guard_exhausted",
           phase: phase.name,
@@ -458,9 +490,12 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
         restarted = true;
         continue;
       }
-      const visit = currentVisits + 1;
+      const visit = isResumeVisit ? currentVisits : currentVisits + 1;
 
-      const result = await driveVisit(state, phase, visit, handoff);
+      const result = await driveVisit(state, phase, visit, handoff, {
+        // §12.3: the resumed visit leads with the continue instruction
+        continueInstruction: isResumeVisit ? resume!.continueInstruction : null,
+      });
 
       if (result.kind === "success") {
         const ended = await endPhase(state, phase, "success", visit, result.corrections);
@@ -566,12 +601,19 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
   return finalizeRun(state, "success", false);
 }
 
-/** Drive one visit: phase_start → spawn session → prompt → corrections → settle. */
+/** Drive one visit: phase_start → spawn session → prompt → corrections → settle.
+ *
+ * `continueInstruction` (T07, §12.3): when set, the initial prompt is the
+ * CONTINUE instruction — the interrupted phase's pi session is relaunched with
+ * the SAME --session-id and told to carry on (pi rebuilds the context from the
+ * session JSONL); the full composed prompt is only used on a fresh visit.
+ */
 async function driveVisit(
   state: LoopState,
   phase: BlueprintPhase,
   visit: number,
   handoff: Handoff | null,
+  opts: { continueInstruction?: string | null } = {},
 ): Promise<VisitOutcome> {
   const db = state.db;
   const phaseId = state.phaseIds.get(phase.name)!;
@@ -709,7 +751,11 @@ async function driveVisit(
   let corrections = 0;
   let outcome: VisitOutcome;
   try {
-    await sendPrompt(composePrompt(state, phase, handoff));
+    await sendPrompt(
+      opts.continueInstruction !== undefined && opts.continueInstruction !== null
+        ? opts.continueInstruction
+        : composePrompt(state, phase, handoff),
+    );
     for (;;) {
       await waitForSettled();
       const stage = await runEnvelopeStage({
@@ -813,14 +859,18 @@ async function finalizeRun(
   from: RunStatus = "running",
 ): Promise<RunResult> {
   ctxEmit(state, "run_status", { from, to: status, reason }, { phase_id: null, agent_session_id: null });
+  // §19/T04 pin: a run driven from interrupted keeps its needs_review flag
+  // even on a clean finish — the human glance was requested and success
+  // does not silently clear it
+  const effectiveReview = needsReview || state.resumed;
   updateRun(state.db, state.runId, {
     status,
     ended_at: status === "success" || status === "failed" ? state.now() : undefined,
-    needs_review: needsReview ? 1 : 0,
+    needs_review: effectiveReview ? 1 : 0,
   });
   state.rawFile.close();
   await state.sink.flush();
-  return { status, needs_review: needsReview };
+  return { status, needs_review: effectiveReview };
 }
 
 // ── the pause layer (T04, spec §5.3) ─────────────────────────────────────────
@@ -1107,19 +1157,173 @@ export async function submitBlueprintRun(
   return drivePreparedRun(db, dataDir, prepared);
 }
 
+// ── §12 resume (T07): continue an interrupted run from the last completed phase ─
+
+/**
+ * The §12.3 continue instruction — what the resumed visit's pi session hears
+ * instead of the full composed prompt. The session was relaunched with the
+ * SAME --session-id, so pi has already rebuilt the context from the session
+ * JSONL; this nudge names the phase, the interrupted state, and the envelope
+ * contract the agent must still satisfy.
+ */
+export function composeContinuePrompt(blueprint: Blueprint, phase: BlueprintPhase): string {
+  return [
+    `[Phase] ${blueprint.name} → ${phase.name}`,
+    "[Resume] your previous session for this phase was interrupted by a daemon",
+    "restart. The session context has been restored — continue the work from",
+    "where you left off, complete the phase, and write your final result to",
+    `context_handoff/${slugFor(phase.name)}/outputs/envelope.json.`,
+    "",
+    "[Envelope contract]",
+    renderSchema(phase.envelope),
+  ].join("\n");
+}
+
+/** The prepared-resume bundle: the rebuilt PreparedRun plus the §12 resume spec. */
+export interface PreparedResume {
+  prepared: PreparedRun;
+  resume: ResumeSpec;
+}
+
+/**
+ * Prepare the §12 resume of an INTERRUPTED run: record the attempt + the
+ * needs_review pin (T04's resumeInterruptedRun), re-import the blueprint
+ * module from the §13.3 snapshot (the run record is self-contained — the
+ * snapshot carries the module path and max_visits), re-resolve the scripted
+ * sessions, and compute the resume point: the first phase whose recorded
+ * status is not `success` is the interrupted one, and its recorded visit is
+ * re-visited as-is (the SAME --session-id, §12.3). The predecessor's last
+ * accepted envelope (runDir/envelope.json) becomes the handoff — phases
+ * already success are never re-run. Throws on a non-interrupted run or when
+ * the snapshot/module cannot be rebuilt (the run stays interrupted — the
+ * human can retry).
+ */
+export async function prepareResume(
+  db: Database,
+  dataDir: string,
+  runId: string,
+  opts: { by?: string } = {},
+): Promise<PreparedResume> {
+  const run = getRun(db, runId);
+  if (run === null) throw new Error(`run ${runId} not found`);
+  if (run.status !== "interrupted") {
+    throw new Error(`run ${runId} is ${run.status}, not interrupted — resume is the interrupted-run continue verb`);
+  }
+
+  // ALL fallible prep first (snapshot read, module import, scripts): a failure
+  // here must leave the run interrupted, not a zombie `running` with nothing
+  // driving it.
+  const runDir = runDirFor(dataDir, runId);
+  let snap: { module: string | null; max_visits?: number };
+  try {
+    snap = JSON.parse(readFileSync(join(runDir, "blueprint.json"), "utf8")) as {
+      module: string | null;
+      max_visits?: number;
+    };
+  } catch {
+    throw new Error(`run ${runId} has no readable blueprint snapshot — cannot resume`);
+  }
+  if (typeof snap.module !== "string" || snap.module === "") {
+    throw new Error(`run ${runId}'s snapshot carries no module path — cannot resume`);
+  }
+  const blueprint = await loadBlueprintModule(snap.module);
+  const moduleDir = dirname(snap.module);
+  const scripts = resolveScriptedSessions(blueprint, join(moduleDir, FAKE_SESSION_DIR));
+
+  // T04 pin: the resume attempt is audited + needs_review is flagged (§19)
+  resumeInterruptedRun(db, runId, opts.by);
+  // the continuation is real — the run leaves interrupted before driving
+  updateRun(db, runId, { status: "running" });
+
+  // the resume point: the first phase that did not complete
+  const phaseRows = listPhases(db, runId);
+  const rowByName = new Map(phaseRows.map((p) => [p.name, p]));
+  const resumePhase =
+    blueprint.phases.find((p) => rowByName.get(p.name)?.status !== "success") ??
+    blueprint.phases[blueprint.phases.length - 1]!;
+  const phaseRow = rowByName.get(resumePhase.name);
+  const visit = Math.max(1, phaseRow?.visits ?? 1);
+
+  // the handoff: the predecessor's last accepted envelope (runDir/envelope.json
+  // is overwritten on every acceptance, so it holds the LAST accepted one — the
+  // predecessor's, since the interrupted phase never accepted)
+  const predIndex = blueprint.phases.findIndex((p) => p.name === resumePhase.name) - 1;
+  let handoff: Handoff | null = null;
+  if (predIndex >= 0) {
+    const pred = blueprint.phases[predIndex]!;
+    try {
+      const raw = readFileSync(join(runDir, "envelope.json"), "utf8");
+      handoff = { envelope: JSON.parse(raw) as Envelope, raw, fromPhase: pred.name };
+    } catch {
+      handoff = null; // no accepted predecessor on record — start the phase bare
+    }
+  }
+
+  return {
+    prepared: {
+      runId,
+      blueprint,
+      cwd: run.cwd,
+      scripts,
+      moduleDir,
+      maxVisits: snap.max_visits ?? DEFAULT_MAX_VISITS,
+    },
+    resume: {
+      phase: resumePhase.name,
+      visit,
+      continueInstruction: composeContinuePrompt(blueprint, resumePhase),
+      handoff,
+    },
+  };
+}
+
+/** Drive a prepared resume (server path — behind the pool, like a fresh run). */
+export function driveResumedRun(
+  db: Database,
+  dataDir: string,
+  preparedResume: PreparedResume,
+  opts: { delayMs?: number } = {},
+): BlueprintRun {
+  const { prepared, resume } = preparedResume;
+  return driveState(db, dataDir, {
+    blueprint: prepared.blueprint,
+    cwd: prepared.cwd,
+    moduleDir: prepared.moduleDir,
+    maxVisits: prepared.maxVisits ?? DEFAULT_MAX_VISITS,
+    delayMs: opts.delayMs ?? 0,
+    now: () => new Date().toISOString(),
+    runId: prepared.runId,
+    scripts: prepared.scripts,
+  }, resume);
+}
+
 function driveState(
   db: Database,
   dataDir: string,
   opts: InitOptions & { runId: string; scripts: ScriptMap },
+  resume?: ResumeSpec,
 ): BlueprintRun {
   const state = initState(db, dataDir, opts);
-  // §6 #1/#2: run-level events, tagged with NULL phase/session ids
-  state.emit("run_submitted", { blueprint: state.blueprint.name, cwd: state.cwd }, { phase_id: null, agent_session_id: null });
-  state.emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
+  if (resume !== undefined) {
+    // §12.3: a resumed run is NOT re-submitted — it leaves `interrupted` and
+    // re-enters `running` (the §6 #1 run_submitted event belongs to the
+    // original submission only)
+    state.resumed = true;
+    state.emit(
+      "run_status",
+      { from: "interrupted", to: "running", reason: "resumed by human (continue verb, §12)" },
+      { phase_id: null, agent_session_id: null },
+    );
+    updateRun(db, opts.runId, { status: "running" });
+  } else {
+    // §6 #1/#2: run-level events, tagged with NULL phase/session ids
+    state.emit("run_submitted", { blueprint: state.blueprint.name, cwd: state.cwd }, { phase_id: null, agent_session_id: null });
+    state.emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
+  }
   const control = state.control;
   void (async () => {
     try {
-      control.markTerminal(await driveLoop(state));
+      control.markTerminal(await driveLoop(state, resume));
     } catch (err) {
       // never leave a run stuck in "running" on an internal error
       try {

@@ -6,7 +6,7 @@ import { FIXTURE_NAMES, isFixtureName } from "@showrunner/core/test/fixtures";
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../../daemon/src/daemon.ts";
 import { getJson, isSocketDown, postJson } from "./client.ts";
-import { ensureDaemon, stopDaemon } from "./daemon-lifecycle.ts";
+import { ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
 import { formatEvent } from "./render.ts";
 import { watchRun } from "./watch.ts";
 
@@ -22,11 +22,12 @@ import { watchRun } from "./watch.ts";
  *   showrunner steer <run_id> <msg>    send a corrective instruction to the run's session (§8.4)
  *   showrunner pause <run_id>          pause-state viewer + pause menu (pauses are automatic)
  *   showrunner approve <run_id>        approve a require_approval pause
- *   showrunner resume <run_id>         continue an interrupted run (flags needs_review)
+ *   showrunner resume <run_id>         continue an interrupted run (relaunch + continue instruction)
  *   showrunner fail <run_id>           fail the run (kills children, §8.3)
  *   showrunner restart-fresh <run_id> [phase]
  *   showrunner override <run_id> --gate <name> --reason <why> [--phase <name>]
- *   showrunner stop                    SIGTERM the daemon (removes socket + pidfile)
+ *   showrunner status                  daemon status: pool utilization + run status counts
+ *   showrunner stop                    SIGTERM the daemon (stops children, removes socket + pidfile)
  *
  * Global flags: --data-dir <dir> (env SHOWRUNNER_DATA_DIR is honored everywhere).
  * The CLI talks only to the daemon's HTTP API over the unix socket (§13).
@@ -79,10 +80,11 @@ function usage(): void {
       "  showrunner steer <run_id> <msg>          steer the run's session (works paused or running)",
       "  showrunner pause <run_id>                pause-state viewer + pause menu",
       "  showrunner approve <run_id>              approve a require_approval pause",
-      "  showrunner resume <run_id>               continue an interrupted run (flags needs_review)",
+      "  showrunner resume <run_id>               continue an interrupted run (relaunch + continue instruction)",
       "  showrunner fail <run_id>                 fail the run (kills children)",
       "  showrunner restart-fresh <run_id> [phase] restart the paused phase with a new session",
       "  showrunner override <run_id> --gate <g> --reason <r>  override a failed gate on the pause",
+      "  showrunner status                      daemon status: pool utilization + run status counts",
       "  showrunner stop                          stop the daemon",
       "",
       "flags: --data-dir <dir>   data directory (default ~/.showrunner, env SHOWRUNNER_DATA_DIR)",
@@ -442,11 +444,45 @@ async function cmdResume(flags: Flags): Promise<number> {
       status: string;
       needs_review: number;
     };
-    console.log(`run ${runId} resume recorded — status: ${res.status}, needs_review: ${res.needs_review === 1 ? "yes" : "no"}`);
-    console.log("the resume attempt + needs_review flag are recorded; the relaunch+backfill continuation is T07");
+    console.log(`run ${runId} resumed — status: ${res.status}, needs_review: ${res.needs_review === 1 ? "yes" : "no"}`);
+    console.log("the interrupted phase was relaunched with the same session id + a continue instruction (§12)");
     return 0;
   } catch (err) {
     console.error(`showrunner resume: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+}
+
+/** `showrunner status` — the §13 daemon status verb: health + pool + run counts. */
+async function cmdStatus(flags: Flags): Promise<number> {
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  if (!(await isDaemonUp(socketPath))) {
+    console.log(`daemon: down (no daemon at ${socketPath}) — start one with \`showrunner daemon\``);
+    return 0;
+  }
+  try {
+    const s = (await getJson(socketPath, "/status")) as {
+      pid: number;
+      data_dir: string;
+      uptime_ms: number;
+      pool: { slots: number; running: string[]; queued: string[] };
+      runs: Record<string, number>;
+    };
+    console.log(`daemon: up (pid ${s.pid}, socket ${socketPath})`);
+    console.log(`data dir: ${s.data_dir}`);
+    console.log(`uptime: ${Math.round(s.uptime_ms / 1000)}s`);
+    console.log(`pool: ${s.pool.running.length}/${s.pool.slots} busy, ${s.pool.queued.length} queued`);
+    const counts = Object.entries(s.runs)
+      .filter(([k]) => k !== "total")
+      .map(([k, v]) => `${k}=${v}`)
+      .join("  ");
+    console.log(`runs: total ${s.runs.total}  ${counts}`);
+    if ((s.pool.running.length ?? 0) > 0) console.log(`  running: ${s.pool.running.join(", ")}`);
+    if ((s.pool.queued.length ?? 0) > 0) console.log(`  queued: ${s.pool.queued.join(", ")}`);
+    return 0;
+  } catch (err) {
+    console.error(`showrunner status: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
 }
@@ -569,6 +605,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdApprove(flags);
     case "resume":
       return cmdResume(flags);
+    case "status":
+      return cmdStatus(flags);
     case "fail":
       return cmdFail(flags);
     case "restart-fresh":

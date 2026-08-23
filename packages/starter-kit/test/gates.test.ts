@@ -1,0 +1,161 @@
+import { afterEach, expect, test } from "bun:test";
+import { join } from "node:path";
+import { z } from "zod";
+import { EnvelopeBase } from "@showrunner/core";
+import type { Envelope, GateContext } from "@showrunner/core";
+
+import { envelopeShape, filesExist, lintClean, matchesPlan, reviewApproved, testsPass, workspaceShell } from "../src/gates/index.ts";
+import { failingWorkspace, passingWorkspace, rmDir, tmpDir, writeWorkspace } from "./helpers.ts";
+
+/**
+ * Gate unit tests (spec §17) — the shared gates library proven against real
+ * commands in scratch workspaces and pure envelope inputs. STARTER tests:
+ * replaceable by design (the fixtures-vs-smokes doctrine).
+ */
+
+const cleanups: string[] = [];
+afterEach(() => {
+  for (const d of cleanups.splice(0)) rmDir(d);
+});
+
+function baseEnvelope(extra: Record<string, unknown> = {}): Envelope {
+  return { summary: "s", artifacts: [], notes_for_next_agent: "n", ...extra } as Envelope;
+}
+
+function violationsOf(r: { pass: boolean; violations?: string[] }): string[] {
+  return r.pass ? [] : (r.violations ?? []);
+}
+
+function ctx(cwd: string, phase = "build", overrides: Partial<GateContext> = {}): GateContext {
+  return { run_id: "r", cwd, phase, visit: 1, ...overrides };
+}
+
+// ── command gates (real subprocesses, scratch workspaces) ────────────────────
+
+test("testsPass passes when the suite is green and fails with the output tail when red", async () => {
+  const green = tmpDir("gates-tests-pass");
+  const red = tmpDir("gates-tests-fail");
+  cleanups.push(green, red);
+  passingWorkspace(green);
+  failingWorkspace(red);
+
+  const pass = await testsPass()(baseEnvelope(), ctx(green));
+  expect(pass).toEqual({ pass: true });
+
+  const fail = await testsPass()(baseEnvelope(), ctx(red));
+  expect(fail.pass).toBe(false);
+  expect(violationsOf(fail)[0]).toContain("tests failed");
+});
+
+test("lintClean passes when the typecheck is clean and fails with a type error", async () => {
+  const clean = tmpDir("gates-lint-clean");
+  const dirty = tmpDir("gates-lint-dirty");
+  cleanups.push(clean, dirty);
+  passingWorkspace(clean);
+  // a deliberate type error on top of a valid project — tsc must exit non-zero
+  passingWorkspace(dirty);
+  writeWorkspace(dirty, {
+    "src/boom.ts": "const n: number = \"not a number\";\nexport default n;\n",
+  });
+
+  const pass = await lintClean()(baseEnvelope(), ctx(clean));
+  expect(pass).toEqual({ pass: true });
+
+  const fail = await lintClean()(baseEnvelope(), ctx(dirty));
+  expect(fail.pass).toBe(false);
+  expect(violationsOf(fail)[0]).toContain("lint/typecheck failed");
+});
+
+test("workspaceShell honors ctx.shell when provided and falls back to a real subprocess otherwise", async () => {
+  const cwd = tmpDir("gates-shell");
+  cleanups.push(cwd);
+  // fallback path (the v1 daemon passes no ctx.shell): a real command runs
+  const viaFallback = await workspaceShell(ctx(cwd), "printf 'hello'");
+  expect(viaFallback).toMatchObject({ code: 0, stdout: "hello" });
+
+  // ctx.shell wins when the runtime provides it
+  let sawCtx = false;
+  const viaCtx = await workspaceShell(ctx(cwd, "build", { shell: async () => { sawCtx = true; return { code: 0, stdout: "", stderr: "" }; } }), "anything");
+  expect(viaCtx.code).toBe(0);
+  expect(sawCtx).toBe(true);
+});
+
+// ── envelope gates ───────────────────────────────────────────────────────────
+
+test("envelopeShape passes a conforming envelope and lists violations for a non-conforming one", async () => {
+  const schema = EnvelopeBase.extend({ quality: z.number().min(0).max(10) });
+  const gate = envelopeShape(schema);
+
+  const pass = await gate(baseEnvelope({ quality: 9 }), ctx("/tmp"));
+  expect(pass).toEqual({ pass: true });
+
+  const fail = await gate(baseEnvelope({ quality: 11 }), ctx("/tmp"));
+  expect(fail.pass).toBe(false);
+  expect(violationsOf(fail).join("; ")).toContain("quality");
+});
+
+test("matchesPlan fails loudly when no plan arrived, and passes only when the envelope references it", async () => {
+  const cwd = tmpDir("gates-matches-plan");
+  cleanups.push(cwd);
+
+  // no inputs materialized → hard fail with a hint
+  const noInputs = await matchesPlan()(baseEnvelope(), ctx(cwd));
+  expect(noInputs.pass).toBe(false);
+  expect(violationsOf(noInputs)[0]).toContain("no plan");
+
+  // inputs exist but no plan file → fail
+  const inputs = join(cwd, "context_handoff", "build", "inputs");
+  writeWorkspace(cwd, { "context_handoff/build/inputs/notes.txt": "not a plan\n" });
+  const noPlan = await matchesPlan()(baseEnvelope(), ctx(cwd));
+  expect(noPlan.pass).toBe(false);
+  expect(violationsOf(noPlan)[0]).toContain("no plan");
+
+  // plan file present but the envelope never names it → fail
+  writeWorkspace(cwd, { "context_handoff/build/inputs/plan.md": "# Plan\n" });
+  const notReferenced = await matchesPlan()(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  expect(notReferenced.pass).toBe(false);
+  expect(violationsOf(notReferenced)[0]).toContain("plan.md");
+
+  // envelope names the plan in artifacts → pass
+  const referenced = await matchesPlan()(baseEnvelope({ artifacts: ["plan.md"] }), ctx(cwd));
+  expect(referenced).toEqual({ pass: true });
+
+  // an explicit planFile option names a different file
+  const explicit = await matchesPlan({ planFile: "docs/roadmap.md" })(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  expect(explicit.pass).toBe(false);
+  expect(violationsOf(explicit)[0]).toContain("roadmap.md");
+});
+
+test("filesExist requires at least one artifact by default, and exact paths when asked", async () => {
+  const cwd = tmpDir("gates-files-exist");
+  cleanups.push(cwd);
+
+  const empty = await filesExist()(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  expect(empty.pass).toBe(false);
+  expect(violationsOf(empty)[0]).toContain("artifacts");
+
+  const any = await filesExist()(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd));
+  expect(any).toEqual({ pass: true });
+
+  const missing = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  expect(missing.pass).toBe(false);
+  expect(violationsOf(missing)[0]).toContain("docs/x.md");
+
+  // listed artifact exists in the workspace → pass
+  writeWorkspace(cwd, { "docs/x.md": "hi" });
+  const withFile = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd));
+  expect(withFile).toEqual({ pass: true });
+});
+
+test("reviewApproved passes an approved review and reports the verdict when rejected", async () => {
+  const approved = await reviewApproved()(baseEnvelope({ approved: true }), ctx("/tmp"));
+  expect(approved).toEqual({ pass: true });
+
+  const rejected = await reviewApproved()(baseEnvelope({ approved: false, verdict: "scope creep" }), ctx("/tmp"));
+  expect(rejected.pass).toBe(false);
+  expect(violationsOf(rejected)[0]).toContain("scope creep");
+
+  const missing = await reviewApproved()(baseEnvelope(), ctx("/tmp"));
+  expect(missing.pass).toBe(false);
+  expect(violationsOf(missing)[0]).toContain("approved");
+});
