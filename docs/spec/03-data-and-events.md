@@ -185,15 +185,20 @@ The tracer snapshots usage at each `message_end`/`turn_end` and diffs per (phase
 
 ## 10 · Raw record files
 
-Per run, under `{data_dir}/runs/<run_id>/`:
+Per run, under `{data_dir}/runs/<run_id>/` (default `~/.showrunner/runs/<run_id>/`) —
+**the complete record of a run**, self-contained and inspectable by hand:
 
-| file | contents |
+| file / dir | contents |
 |---|---|
 | `raw_output.jsonl` | every raw pi JSONL line, verbatim, appended by the tracer |
 | `envelope.json` | the last accepted envelope (validated + gates-passed), verbatim |
 | `agent_map.json` | `{ phase → { pi_session_id, pid, visit, model } }` — enough to rebuild DB state |
+| `blueprint.json` | the §13.3 config snapshot (module, args, max_visits, rendered phases) |
+| `stderr.log` | captured pi stderr (§8.3), for crash debugging |
+| `sessions/` | per-visit scripted FakePi session files |
+| `<phase>/inputs/` | the §9.1 workspace the harness materialized for each phase (predecessor envelope + artifacts) |
+| `<phase>/outputs/` | the §9.1 workspace each phase's agent wrote (its envelope.json + artifacts) |
 
 These files are the raw record; the DB is the queryable mirror. Rebuilding the DB from files is possible but not automatic (deferred).
-
 
 

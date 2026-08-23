@@ -1,25 +1,32 @@
 ---
 name: document
-description: Write up what just shipped with the Showrunner documenter — clear Markdown docs for humans and the next agent, based on the git diff. Use after a ship when the work landed but nobody wrote the "what changed and how to verify it" notes. The filesExist gate insists the docs actually got written.
+description: "Launch a Showrunner run that writes up what just changed — the documenter produces Markdown docs for humans and the next agent from the diff. You launch and monitor; you do not write the docs yourself. Use after a ship when the work landed but the 'what changed and how to verify' notes were never written."
 ---
 
 # Showrunner: document the last change
 
-Run the Showrunner `document` blueprint: one documentation phase by the documenter agent. Hand it the diff to write up (via the prompt or as the workspace state — e.g. run it right after a ship, or point it at a branch/PR), and it produces Markdown docs under the workspace root.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the documentation run, monitor it, and report the docs it produces. The documenter agent does the actual writing, based on the workspace's current diff.
 
-## Run
+## Launch
 
 ```bash
-showrunner run document --prompt "<what to document, e.g. 'document the change on branch feature/offline-sync from its diff'>"
+showrunner run document --prompt "<what to document, e.g. 'document the change on branch feature/offline-sync from its diff', verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `document` is the starter-kit name and resolves to `src/starter-kit/blueprints/document.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`document` is the starter-kit name for `src/starter-kit/blueprints/document.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
 showrunner run src/starter-kit/blueprints/document.ts --prompt "<what to document>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary. Do not start writing docs yourself before or while the run works.
 
-- The `filesExist` gate refuses an envelope that lists no artifacts — the documenter must actually write docs, not just describe them.
-- The documenter works from the workspace's current diff, so it is most useful immediately after a ship phase (or pointed at an unmerged branch).
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state; `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- No approval pauses — the run runs to completion.
+- When the run is terminal, report to the user: the final status and which docs were written.
+
+## When to use
+
+After a ship, when the work landed but nobody wrote the "what changed and how to verify it" notes. The documenter works from the workspace's current diff, so it is most useful right after a ship phase (or pointed at an unmerged branch).

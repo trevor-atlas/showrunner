@@ -423,7 +423,8 @@ test("FakeSessionDriver speaks the same seam: prompt → turn → settle → exi
   const cwd = tmpCwd("fakedrv");
   const eventsDir = tmpDataDir("pi-fake");
   try {
-    const outputsDir = join(cwd, "context_handoff", "build", "outputs");
+    // the fake writes the agent's envelope to the runDir/phase/outputs path (§9.1)
+    const outputsDir = join(eventsDir, "runs", "t_build", "build", "outputs");
     mkdirSync(outputsDir, { recursive: true });
     const sessionFile = join(eventsDir, "session.json");
     const script = {
@@ -456,7 +457,7 @@ test("FakeSessionDriver speaks the same seam: prompt → turn → settle → exi
     expect(await session.exit).toBe(0);
     expect(session.exitCode).toBe(0);
     expect(lines.some((l) => l.includes('"type":"agent_settled"'))).toBe(true);
-    // the agent's envelope landed in context_handoff/<phase>/outputs (the §9 path)
+    // the agent's envelope landed in <runDir>/<phase>/outputs (the §9 path)
     expect(readFileSync(join(outputsDir, "envelope.json"), "utf8")).toContain('"notes_for_next_agent"');
   } finally {
     rmSync(cwd, { recursive: true, force: true });

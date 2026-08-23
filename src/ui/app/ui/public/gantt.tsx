@@ -7,17 +7,21 @@ import type { GanttModel, PhaseBar } from "./gantt-model.ts";
 
 /**
  * The run-detail Gantt (spec §16.7): one row per phase in blueprint order —
- * PHASE · AGENT · STATUS (the bar) · DURATION · CORR · VIS · SPEND.
+ * PHASE · AGENT · STATE · TIMELINE · DURATION · CORRECTIONS · VISITS · SPEND.
  *
- * The bar fill = the phase's span on the run timeline: completed phases are
- * fully filled in their status color; the in-flight phase fills to now (or to
- * the pause moment while paused — amber edge); pending phases are empty and
- * dimmed. A vertical NOW cursor sits at the run-relative time while the run
- * is running/paused. `✖n` correction marks render on the bar. Clicking a
- * phase navigates to its drill-in route.
+ * STATE is the phase's outcome (success/failed/skipped/in progress/waiting);
+ * TIMELINE is the bar: the phase's span on the run timeline — completed
+ * phases fully filled in their state color, the in-flight phase filled to now
+ * (or to the pause moment while paused — amber edge), pending phases empty
+ * and dimmed. A vertical NOW cursor sits at the run-relative time while the
+ * run is running/paused. `✖n` correction marks render on the bar. Every
+ * column has a hover tooltip (title) explaining its meaning. Clicking a phase
+ * navigates to its drill-in route.
  *
- * Rendered server-side on load and re-rendered on every poll (the live
- * region recomputes `model` from the same events the feed shows — §16.5).
+ * LIVE (the whole point of the dashboard): the live region recomputes `model`
+ * from the same events the feed shows (§16.5) on every poll, so DURATION
+ * ticks for the in-flight phase and STATE/CORRECTIONS/VISITS/SPEND follow the
+ * event stream as the run progresses.
  */
 export interface GanttProps {
   /** the computed model — recompute via computeGantt on every render */
@@ -32,13 +36,14 @@ export function Gantt(handle: Handle<GanttProps>) {
       <table data-testid="gantt" mix={tableStyle}>
         <thead>
           <tr>
-            <th>PHASE</th>
-            <th>AGENT</th>
-            <th>STATUS</th>
-            <th>DURATION</th>
-            <th>CORR</th>
-            <th>VIS</th>
-            <th>SPEND</th>
+            <th title="the blueprint step this row describes">PHASE</th>
+            <th title="the agent that ran this phase">AGENT</th>
+            <th title="the phase's outcome: success, failed, skipped, in progress, or waiting">STATE</th>
+            <th title="the phase's span on the run timeline — filled to now while in progress">TIMELINE</th>
+            <th title="elapsed time — live for the in-progress phase">DURATION</th>
+            <th title="re-prompts issued against this phase (a rejected envelope triggers one)">CORRECTIONS</th>
+            <th title="times this phase has been executed (resumed phases are re-visited)">VISITS</th>
+            <th title="estimated cost of this phase's agent sessions">SPEND</th>
           </tr>
         </thead>
         <tbody>
@@ -62,6 +67,16 @@ function GanttRow(handle: Handle<{ bar: PhaseBar; runId: string; showCursor: boo
           </a>
         </td>
         <td mix={monoStyle}>{bar.agent}</td>
+        <td>
+          <span
+            data-phase-state={bar.status}
+            title={stateTooltip(bar.status)}
+            mix={[stateStyle, STATE_COLORS[bar.barStatus]]}
+          >
+            <span aria-hidden mix={stateDotStyle} />
+            {stateLabel(bar.status)}
+          </span>
+        </td>
         <td>
           <div mix={[trackStyle, bar.barStatus === "pending" ? pendingTrackStyle : null]}>
             {bar.filled ? (
@@ -169,6 +184,65 @@ const FILL_COLORS: Record<string, ReturnType<typeof css>> = {
   in_progress: css({ background: "#3573f6" }),
   pending: css({ background: "#e5e7eb" }),
 };
+
+/** The STATE column's dot color — mirrors the fill colors. */
+const STATE_COLORS: Record<string, ReturnType<typeof css>> = {
+  success: css({ color: "#15803d" }),
+  failed: css({ color: "#b91c1c" }),
+  skipped: css({ color: "#6b7280" }),
+  in_progress: css({ color: "#3573f6" }),
+  pending: css({ color: "#9ca3af" }),
+};
+
+/** The STATE column's human-readable label. */
+export function stateLabel(status: string): string {
+  switch (status) {
+    case "success":
+      return "success";
+    case "failed":
+      return "failed";
+    case "skipped":
+      return "skipped";
+    case "in_progress":
+      return "in progress";
+    default:
+      return "waiting";
+  }
+}
+
+/** The STATE column's hover tooltip, per status. */
+export function stateTooltip(status: string): string {
+  switch (status) {
+    case "success":
+      return "this phase passed its gates";
+    case "failed":
+      return "this phase failed";
+    case "skipped":
+      return "this phase was skipped";
+    case "in_progress":
+      return "this phase is running now";
+    default:
+      return "this phase has not started yet";
+  }
+}
+
+const stateStyle = css({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "help",
+  whiteSpace: "nowrap",
+});
+
+const stateDotStyle = css({
+  width: "7px",
+  height: "7px",
+  borderRadius: "999px",
+  background: "currentColor",
+  flexShrink: 0,
+});
 
 /** paused in-flight phase: amber fill edge (§16.7). */
 const pausedEdgeStyle = css({

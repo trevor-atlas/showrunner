@@ -191,10 +191,11 @@ test("a blueprint run shows the full §5 loop in watch: correction, envelope, ga
   const list = cli(["runs"]);
   expect(list.stdout).toContain("2/2");
 
-  // F3: the handoff landed in the scratch cwd — and THIS test added no
-  // residue to the repo root (a parallel IC's pre-existing context_handoff
-  // residue — packages/starter-kit, T12 — is not ours to delete)
-  expect(existsSync(join(blueprintCwd, "context_handoff", "plan", "outputs", "envelope.json"))).toBe(true);
+  // F3: the run workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>/outputs)
+  // — never the scratch cwd or the repo root (§9.1)
+  const runDir = runDirFor(dataDir, runId!);
+  expect(existsSync(join(runDir, "plan", "outputs", "envelope.json"))).toBe(true);
+  expect(existsSync(join(blueprintCwd, "context_handoff"))).toBe(false);
   expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(rootHadContextDir);
 });
 

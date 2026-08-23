@@ -1,6 +1,6 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 import { test, expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -233,11 +233,14 @@ test("multi-phase blueprint drives both phases to success; statuses, visits, han
       ["build", "success", 1, 0],
     ]);
 
-    // §9 minimal handoff: build's inputs carry plan's accepted envelope
+    // §9 minimal handoff: build's inputs carry plan's accepted envelope — the
+    // workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>/inputs),
+    // never the run cwd (§9.1)
     const handoff = JSON.parse(
-      readFileSync(join(env.cwd, "context_handoff", "build", "inputs", "envelope.json"), "utf8"),
+      readFileSync(join(runDirFor(env.dir, run.run_id), "build", "inputs", "envelope.json"), "utf8"),
     ) as { quality: number };
     expect(handoff.quality).toBe(7);
+    expect(existsSync(join(env.cwd, "context_handoff"))).toBe(false);
 
     // every validated envelope is an envelopes row
     expect(listEnvelopes(env.db, run.run_id)).toHaveLength(2);
@@ -993,17 +996,18 @@ test("composePrompt renders the §8.2 prompt: phase, agent, context, handoff, en
     await run.done;
 
     const prompt = composePrompt(
-      { blueprint, cwd: env.cwd, moduleDir: null } as unknown as Parameters<typeof composePrompt>[0],
+      { blueprint, cwd: env.cwd, runDir: runDirFor(env.dir, run.run_id), moduleDir: null } as unknown as Parameters<typeof composePrompt>[0],
       blueprint.phases[0]!,
       null,
     );
     expect(prompt).toContain("[Phase] prompted → build");
     expect(prompt).toContain("[Agent] builder (fake-pi)");
+    expect(prompt).toContain("[Workspace]");
     expect(prompt).toContain("literal context line");
     expect(prompt).toContain("inline this file"); // file inlined, not the path
     expect(prompt).toContain("[Handoff from previous phase]");
     expect(prompt).toContain("quality: number"); // envelope contract rendered
-    expect(prompt).toContain("context_handoff/build/outputs/envelope.json");
+    expect(prompt).toContain(join(runDirFor(env.dir, run.run_id), "build", "outputs", "envelope.json"));
   } finally {
     closeEnv(env);
   }
@@ -1155,13 +1159,15 @@ test("§12 resume: the build handoff is the predecessor's accepted envelope; the
     // envelope becomes build's §9.3 materialized input
     const handoff = pr.resume.handoff!;
     expect((handoff.envelope as { summary: string }).summary).toBe("Plan complete.");
-    // composeContinuePrompt is a standalone seam: phase + envelope contract
+    // composeContinuePrompt is a standalone seam: phase + run dir + envelope contract
     const bp = pr.prepared.blueprint;
     const build = bp.phases.find((p) => p.name === "build")!;
-    const prompt = composeContinuePrompt(bp, build);
+    const runDir = runDirFor(env.dir, runId);
+    const prompt = composeContinuePrompt(bp, build, runDir);
     expect(prompt).toContain("[Phase] demo → build");
     expect(prompt).toContain("[Resume]");
     expect(prompt).toContain("quality: number"); // the envelope contract renders
+    expect(prompt).toContain(join(runDir, "build", "outputs", "envelope.json")); // the absolute workspace path
     // resume is the interrupted-run verb only
     const prepared = await prepareBlueprintRun(env.db, env.dir, { modulePath: demoBlueprintPath, cwd: env.cwd });
     const runningRun = runBlueprint(env.db, env.dir, {

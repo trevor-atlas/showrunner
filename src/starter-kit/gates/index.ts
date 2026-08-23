@@ -15,10 +15,16 @@ import { createShell } from "../../core/index.ts";
  * is the point.
  */
 
-/** The §9.1 handoff layout is a spec fact; the gates need it to read inputs. */
-export function inputsDirFor(cwd: string, phase: string): string {
-  const slug = phase.replace(/[^A-Za-z0-9._-]/g, "_");
-  return join(cwd, "context_handoff", slug, "inputs");
+/** The §9.1 workspace layout is a spec fact; the daemon hands the gate its
+ * phase's inputs/outputs dirs via the context (§3.7). These helpers make the
+ * starter gates read them through one place. */
+export function inputsDirFor(ctx: GateContext): string {
+  return ctx.inputs_dir ?? "";
+}
+
+/** The §9.1 outputs dir — where this phase's agent wrote its files. */
+export function outputsDirFor(ctx: GateContext): string {
+  return ctx.outputs_dir ?? "";
 }
 
 /** Run one shell command in the gate's workspace; honors ctx.shell when present. */
@@ -255,7 +261,7 @@ export function envelopeShape<S extends { safeParse(input: unknown): ShapeParseR
 
 export interface MatchesPlanOptions {
   /**
-   * the exact plan file name to look for in context_handoff/<phase>/inputs/
+   * the exact plan file name to look for in this phase's inputs/ dir
    * (default: the first input file whose name contains "plan")
    */
   planFile?: string;
@@ -263,7 +269,7 @@ export interface MatchesPlanOptions {
 
 /**
  * matchesPlan — the envelope must reference the plan this phase was handed.
- * Reads the phase's materialized inputs (context_handoff/<phase>/inputs/),
+ * Reads the phase's materialized inputs (ctx.inputs_dir — <runDir>/<phase>/inputs),
  * finds the plan document (an earlier planner phase listed it in its
  * artifacts, §9.3), and passes only if the envelope names it — in its
  * artifacts, or in notes_for_next_agent/summary. Fails loudly when no plan
@@ -271,7 +277,10 @@ export interface MatchesPlanOptions {
  */
 export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
   return async function matchesPlan(envelope, ctx) {
-    const inputs = inputsDirFor(ctx.cwd, ctx.phase);
+    const inputs = inputsDirFor(ctx);
+    if (inputs === "") {
+      return violation("no inputs dir", "the daemon did not provide ctx.inputs_dir — cannot verify the phase was handed a plan");
+    }
     if (!existsSync(inputs)) {
       return violation("no plan to match", `no inputs materialized at ${inputs} — a planner phase must run first`);
     }
@@ -306,6 +315,44 @@ export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
   };
 }
 
+/**
+ * findingsReported — a read-only recon phase must have REPORTED something.
+ * The scout writes its findings to a file in its own outputs/ dir (FINDINGS.md)
+ * and lists it in envelope.artifacts; the gate fails an envelope whose
+ * artifacts do not name the file, or whose file is missing or empty — the
+ * scout skill's "a scout that reported nothing cannot pass" promise, actually
+ * enforced (the old envelopeShape gate re-parsed the same schema and always
+ * passed).
+ */
+export function findingsReported(opts: { file?: string } = {}): Gate {
+  const fileName = opts.file ?? "FINDINGS.md";
+  return async function findingsReported(envelope, ctx) {
+    if (!envelope.artifacts.includes(fileName)) {
+      return violation(
+        "findings file not listed",
+        `envelope.artifacts must list "${fileName}" — write your findings to your outputs/${fileName} and list it there`,
+      );
+    }
+    if (ctx.outputs_dir === undefined || ctx.outputs_dir === "") {
+      return violation("outputs dir unavailable", `cannot verify outputs/${fileName} — the gate context carries no outputs_dir`);
+    }
+    const full = join(ctx.outputs_dir, fileName);
+    if (!existsSync(full)) {
+      return violation("findings file missing", `${fileName} is listed in artifacts but not found in ${ctx.outputs_dir}`);
+    }
+    let size = 0;
+    try {
+      size = statSync(full).size;
+    } catch {
+      return violation("findings file unreadable", `cannot stat ${full}`);
+    }
+    if (size === 0) {
+      return violation("findings file empty", `${fileName} exists but is empty — report at least one finding`);
+    }
+    return { pass: true };
+  };
+}
+
 export interface FilesExistOptions {
   /** exact relative paths that envelope.artifacts must include (default: []) */
   paths?: string[];
@@ -315,14 +362,15 @@ export interface FilesExistOptions {
 
 /**
  * filesExist — the envelope must list real files. With `paths`, each listed
- * path must appear in envelope.artifacts (and exist in the workspace). With
- * no paths, the envelope must carry at least one artifact — the phase must
- * have produced something, not just prose.
+ * path must appear in envelope.artifacts (and exist in the phase's outputs
+ * dir). With no paths, the envelope must carry at least one artifact — the
+ * phase must have produced something, not just prose.
  */
 export function filesExist(opts: FilesExistOptions = {}): Gate {
   const required = opts.paths ?? [];
   const requireAny = opts.requireAny ?? required.length === 0;
   return async function filesExist(envelope, ctx) {
+    const out = outputsDirFor(ctx);
     const violations: string[] = [];
     if (requireAny && envelope.artifacts.length === 0) {
       violations.push("envelope lists no artifacts — the phase must produce at least one file");
@@ -332,8 +380,12 @@ export function filesExist(opts: FilesExistOptions = {}): Gate {
         violations.push(`artifact "${rel}" is missing from envelope.artifacts`);
         continue;
       }
-      const full = join(ctx.cwd, rel);
-      if (!existsSync(full)) violations.push(`artifact "${rel}" does not exist in the workspace`);
+      if (out === "") {
+        violations.push(`cannot verify artifact "${rel}" — the daemon did not provide ctx.outputs_dir`);
+        continue;
+      }
+      const full = join(out, rel);
+      if (!existsSync(full)) violations.push(`artifact "${rel}" does not exist in your outputs directory (${out})`);
     }
     if (violations.length > 0) return { pass: false, violations };
     return { pass: true };

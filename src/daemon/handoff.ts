@@ -12,12 +12,14 @@ import type { Envelope } from "../core/index.ts";
 
 /**
  * The §9 context & handoff filesystem protocol (T05) — everything the harness
- * writes and reads under the run's cwd (the workspace) and under the run's raw
- * record directory. Owned here so the run loop only calls into one module.
+ * writes and reads under the run's raw record directory ({data_dir}/runs/<run_id>)
+ * and under the run's cwd (the project the agent works on). Owned here so the
+ * run loop only calls into one module.
  *
- * Workspace layout (§9.1), all under the run's cwd:
- *   context_handoff/<phase-slug>/inputs/   envelope.json + predecessor artifacts
- *   context_handoff/<phase-slug>/outputs/  envelope.json + artifacts (the AGENT's)
+ * Run workspace layout (§9.1), all under the run's record dir — the harness
+ * NEVER writes into the run's cwd, so a run can never dirty the checkout:
+ *   <run_id>/<phase-slug>/inputs/   envelope.json + predecessor artifacts
+ *   <run_id>/<phase-slug>/outputs/  envelope.json + artifacts (the AGENT's)
  *
  * Context resolution (§9.2): the prompt composer walks each `context` entry
  * (agent defaults, then phase additions); an entry that resolves to a readable
@@ -55,23 +57,23 @@ export interface Handoff {
   fromPhase: string;
 }
 
-/** Sanitize a phase name into a URL-safe slug for context_handoff/ (§9.1). */
+/** Sanitize a phase name into a URL-safe slug for the run workspace (§9.1). */
 export function slugFor(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
-// ── §9.1 workspace layout ────────────────────────────────────────────────────
+// ── §9.1 run workspace layout (under {data_dir}/runs/<run_id>) ──────────────
 
-export function handoffDirFor(cwd: string, phaseName: string): string {
-  return join(cwd, "context_handoff", slugFor(phaseName));
+export function phaseDirFor(runDir: string, phaseName: string): string {
+  return join(runDir, slugFor(phaseName));
 }
 
-export function inputsDirFor(cwd: string, phaseName: string): string {
-  return join(handoffDirFor(cwd, phaseName), "inputs");
+export function inputsDirFor(runDir: string, phaseName: string): string {
+  return join(phaseDirFor(runDir, phaseName), "inputs");
 }
 
-export function outputsDirFor(cwd: string, phaseName: string): string {
-  return join(handoffDirFor(cwd, phaseName), "outputs");
+export function outputsDirFor(runDir: string, phaseName: string): string {
+  return join(phaseDirFor(runDir, phaseName), "outputs");
 }
 
 /**
@@ -85,19 +87,19 @@ export function sessionDirNameForCwd(cwd: string): string {
 
 // ── §9.3 materialization (envelope + artifacts, zero-friction) ───────────────
 
-/** Materialize the predecessor handoff into context_handoff/<phase>/inputs/:
+/** Materialize the predecessor handoff into <runDir>/<phase>/inputs/:
  * the accepted envelope.json (always present for phases > 0) plus every file
  * the predecessor's envelope listed in `artifacts`, copied from its outputs/.
  * The first phase has no predecessor (handoff === null). Artifacts that were
  * listed but are missing are skipped — the envelope was already accepted.
  */
-export function materializeHandoff(cwd: string, phaseName: string, handoff: Handoff | null): void {
+export function materializeHandoff(runDir: string, phaseName: string, handoff: Handoff | null): void {
   if (handoff === null) return;
-  const inputsDir = inputsDirFor(cwd, phaseName);
+  const inputsDir = inputsDirFor(runDir, phaseName);
   mkdirSync(inputsDir, { recursive: true });
   writeFileSync(join(inputsDir, "envelope.json"), handoff.raw);
 
-  const fromOutputs = outputsDirFor(cwd, handoff.fromPhase);
+  const fromOutputs = outputsDirFor(runDir, handoff.fromPhase);
   for (const artifact of handoff.envelope.artifacts ?? []) {
     if (typeof artifact !== "string" || artifact === "") continue;
     const src = join(fromOutputs, artifact);
@@ -118,13 +120,13 @@ function isWithin(dir: string, p: string): boolean {
 
 /**
  * §8.2 prompt inlining: read the materialized §9.3 inputs back — each file's
- * path relative to context_handoff/<phase>/inputs/ plus its contents, so the
- * composed prompt can name the inputs path(s) and inline what was materialized.
+ * path relative to <runDir>/<phase>/inputs/ plus its contents, so the composed
+ * prompt can name the inputs path(s) and inline what was materialized.
  * Sorted and deterministic; [] when the inputs dir was never materialized
  * (first phase, or the run loop hasn't reached materialization yet).
  */
 export function readHandoffInputs(
-  cwd: string,
+  runDir: string,
   phaseName: string,
 ): { rel: string; contents: string }[] {
   const out: { rel: string; contents: string }[] = [];
@@ -148,7 +150,7 @@ export function readHandoffInputs(
       }
     }
   };
-  walk(inputsDirFor(cwd, phaseName), "");
+  walk(inputsDirFor(runDir, phaseName), "");
   return out;
 }
 

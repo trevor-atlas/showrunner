@@ -559,8 +559,9 @@ test("FakeSessionDriver speaks the RPC steer command: queued turns, no message i
   const env = openEnv("pause-steer-driver");
   try {
     const settles: string[] = [];
-    const outputsDir = join(env.cwd, "context_handoff", "build", "outputs");
-    mkdirSync(outputsDir, { recursive: true }); // the fake writes envelope.json here
+    // the fake writes envelope.json to the runDir/phase/outputs path
+    const outputsDir = join(env.dir, "runs", "steer-run", "build", "outputs");
+    mkdirSync(outputsDir, { recursive: true });
     const driver = new FakeSessionDriver({
       sessionId: "steer_sess_v1",
       cwd: env.cwd,

@@ -6,6 +6,11 @@
  * `phase_start`/`phase_end` events in the same poll (§16.5 — the gantt and
  * the feed are always one snapshot); pending phases are empty (dimmed).
  *
+ * LIVE: status, corrections, visits, and spend are derived from the event
+ * stream too (phase_start/phase_end/correction/spend events), with the phase's
+ * DB row as fallback when it has no events — so the whole row ticks as the
+ * poll merges new events, not just the fill.
+ *
  * Timeline: the run's started_at is the left edge. While the run is not yet
  * terminal the right edge is "now"; a terminal run ends at ended_at. The
  * vertical NOW cursor sits at the run-relative time while the run is running
@@ -90,19 +95,45 @@ export function computeGantt(
   const span = Math.max(1, runEndMs - runStartMs);
   const frac = (ms: number): number => clamp01((ms - runStartMs) / span);
 
-  // Event facts: phase_start/phase_end timestamps per phase name, and the
-  // last run_status → paused moment (the fill edge while the run is paused).
+  // Event facts: phase_start/phase_end/run_status timestamps per phase name,
+  // plus the LIVE values the gantt renders from the event stream — phase
+  // status, corrections, visits, spend (the poll feeds the same events the
+  // feed shows, so the whole row live-updates; a phase with no events falls
+  // back to its DB row). The last run_status → paused moment is the fill edge
+  // while the run is paused.
   const startTs = new Map<string, number>();
   const endTs = new Map<string, number>();
+  const statuses = new Map<string, string>();
+  const corrCount = new Map<string, number>();
+  const visitMax = new Map<string, number>();
+  const spendSum = new Map<string, number>();
   let pauseTs: number | null = null;
   for (const ev of events) {
     const t = Date.parse(ev.ts);
     if (ev.type === "phase_start") {
       const phase = (ev.data as { phase?: unknown }).phase;
-      if (typeof phase === "string" && !startTs.has(phase)) startTs.set(phase, t);
+      if (typeof phase === "string") {
+        if (!startTs.has(phase)) startTs.set(phase, t);
+        const visit = (ev.data as { visit?: unknown }).visit;
+        if (typeof visit === "number") visitMax.set(phase, Math.max(visitMax.get(phase) ?? 0, visit));
+        if (!statuses.has(phase)) statuses.set(phase, "in_progress");
+      }
     } else if (ev.type === "phase_end") {
       const phase = (ev.data as { phase?: unknown }).phase;
-      if (typeof phase === "string") endTs.set(phase, t);
+      const status = (ev.data as { status?: unknown }).status;
+      if (typeof phase === "string") {
+        endTs.set(phase, t);
+        if (typeof status === "string") statuses.set(phase, status);
+      }
+    } else if (ev.type === "correction") {
+      const phase = (ev.data as { phase?: unknown }).phase;
+      if (typeof phase === "string") corrCount.set(phase, (corrCount.get(phase) ?? 0) + 1);
+    } else if (ev.type === "spend") {
+      const phase = (ev.data as { phase?: unknown }).phase;
+      const usd = (ev.data as { usd?: unknown }).usd;
+      if (typeof phase === "string") {
+        spendSum.set(phase, (spendSum.get(phase) ?? 0) + (typeof usd === "number" && Number.isFinite(usd) ? usd : 0));
+      }
     } else if (ev.type === "run_status") {
       const to = (ev.data as { to?: unknown }).to;
       if (to === "paused") pauseTs = t;
@@ -113,8 +144,14 @@ export function computeGantt(
   const bars: PhaseBar[] = phases.map((p) => {
     const startMs = p.started_at !== null ? Date.parse(p.started_at) : (startTs.get(p.name) ?? null);
     const endMs = p.ended_at !== null ? Date.parse(p.ended_at) : (endTs.get(p.name) ?? null);
-    const barStatus = barStatusFor(p.status);
-    const pending = p.status === "pending" || startMs === null;
+    // live values come from the event stream when the phase has events; the DB
+    // row is the fallback (e.g. the first render of a never-polled page)
+    const status = statuses.get(p.name) ?? p.status;
+    const corrections = corrCount.has(p.name) ? corrCount.get(p.name)! : p.corrections;
+    const visits = visitMax.has(p.name) ? visitMax.get(p.name)! : p.visits;
+    const spendUsd = spendSum.has(p.name) ? spendSum.get(p.name)! : p.spend_usd;
+    const barStatus = barStatusFor(status);
+    const pending = status === "pending" || startMs === null;
 
     let fillEndMs: number | null = null;
     let durationMs: number | null = null;
@@ -135,15 +172,15 @@ export function computeGantt(
     return {
       name: p.name,
       agent: p.agent,
-      status: p.status,
-      corrections: p.corrections,
-      visits: p.visits,
-      spendUsd: p.spend_usd,
+      status,
+      corrections,
+      visits,
+      spendUsd,
       startF,
       endF,
       filled: !pending && fillEndMs !== null,
       durationMs,
-      paused: runPaused && p.status === "in_progress",
+      paused: runPaused && status === "in_progress",
       barStatus,
     };
   });

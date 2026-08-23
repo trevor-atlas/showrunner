@@ -9,15 +9,22 @@ import { badGlyph, Card, mono, okGlyph, Pre } from "./card.tsx";
  * ENVELOPE card (§16.8) — the accepted envelope + the FULL attempt history:
  * every attempt (valid/invalid, the violations that rejected it, and the
  * correction message that followed — filled by the loop once the correction is
- * actually sent), attempt number, and timestamps. The accepted envelope's JSON
- * is viewable inline; the envelope.json source path is shown (§10).
+ * actually sent), attempt number, and timestamps. The accepted envelope is
+ * shown READABLY — what the agent said it did (summary), the handoff
+ * (notes_for_next_agent), the files it produced (artifacts — checked against
+ * its outputs/ dir), and the FINDINGS.md content when the phase wrote one —
+ * with the raw JSON viewable inline; the envelope.json source path is shown
+ * (§10).
  *
  * The data comes from the daemon's §13.1 envelope-history endpoint: ALL
- * attempts for the phase, ordered visit → attempt (T03's model).
+ * attempts for the phase, ordered visit → attempt (T03's model). `outputs` is
+ * the phase's outputs/ dir listing read server-side by the drill-in controller.
  */
 
 export interface EnvelopeCardProps {
   envelopes: EnvelopeRow[];
+  /** the phase's outputs/ dir: files the agent actually wrote + FINDINGS.md */
+  outputs: { files: string[]; findingsMd: string | null };
 }
 
 /** The accepted envelope: the last attempt that parsed AND passed its gates. */
@@ -31,7 +38,7 @@ export function acceptedEnvelope(envelopes: readonly EnvelopeRow[]): EnvelopeRow
 
 export function EnvelopeCard(handle: Handle<EnvelopeCardProps>) {
   return () => {
-    const { envelopes } = handle.props;
+    const { envelopes, outputs } = handle.props;
     const accepted = acceptedEnvelope(envelopes);
     const multiVisit = envelopes.some((e) => e.visit !== 1);
 
@@ -75,6 +82,10 @@ export function EnvelopeCard(handle: Handle<EnvelopeCardProps>) {
 
             {accepted !== null ? (
               <>
+                <section mix={sectionStyle}>
+                  <h3 mix={sectionTitleStyle}>ACCEPTED ENVELOPE</h3>
+                  <AcceptedSurface envelope={parseEnvelope(accepted.json)} outputs={outputs} />
+                </section>
                 <div mix={rowStyle}>
                   <span mix={labelStyle}>source</span>
                   <span mix={mono}>{accepted.source}</span>
@@ -122,6 +133,94 @@ function prettyJson(text: string): string {
   } catch {
     return text;
   }
+}
+
+/** The accepted envelope's fields, parsed (null when unparseable). */
+function parseEnvelope(text: string): ParsedEnvelope | null {
+  try {
+    const v = JSON.parse(text) as unknown;
+    if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+    const e = v as Record<string, unknown>;
+    return {
+      summary: str(e.summary),
+      notes: str(e.notes_for_next_agent),
+      artifacts: Array.isArray(e.artifacts) ? e.artifacts.filter((a): a is string => typeof a === "string") : [],
+      blocked: e.blocked === true,
+      blockedReason: str(e.blocked_reason),
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface ParsedEnvelope {
+  summary: string;
+  notes: string;
+  artifacts: string[];
+  blocked: boolean;
+  blockedReason: string;
+}
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+/** The readable accepted-envelope surface: summary, handoff, artifacts (+existence), FINDINGS.md. */
+function AcceptedSurface(handle: Handle<{ envelope: ParsedEnvelope | null; outputs: EnvelopeCardProps["outputs"] }>) {
+  return () => {
+    const { envelope, outputs } = handle.props;
+    if (envelope === null) return <p mix={emptyStyle}>accepted envelope could not be parsed</p>;
+    const artifactNames = new Set(outputs.files);
+    return (
+      <div mix={surfaceStyle}>
+        <div mix={rowStyle}>
+          <span mix={labelStyle} title="what the agent says it did">summary</span>
+          <span>{envelope.summary || "—"}</span>
+        </div>
+        <div mix={rowStyle}>
+          <span mix={labelStyle} title="the handoff the next phase receives">handoff</span>
+          <span>{envelope.notes || "—"}</span>
+        </div>
+        {envelope.blocked ? (
+          <div mix={rowStyle}>
+            <span mix={labelStyle}>blocked</span>
+            <span mix={blockedStyle}>{envelope.blockedReason || "agent reported blocked"}</span>
+          </div>
+        ) : null}
+        <div mix={rowStyle}>
+          <span
+            mix={labelStyle}
+            title="files this agent wrote to its outputs/ directory — forwarded to the next phase's inputs/ automatically"
+          >
+            artifacts
+          </span>
+          {envelope.artifacts.length === 0 ? (
+            <span mix={emptyStyle}>— none listed</span>
+          ) : (
+            <ul mix={artifactListStyle}>
+              {envelope.artifacts.map((a) => (
+                <li key={a} mix={mono}>
+                  {artifactNames.has(a) ? (
+                    <span title="present in this phase's outputs/">✓ {a}</span>
+                  ) : (
+                    <span mix={missingStyle} title="listed but not found in this phase's outputs/ — the agent claimed a file it did not write">
+                      ⚠ {a}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {outputs.findingsMd !== null ? (
+          <details mix={detailsStyle}>
+            <summary mix={summaryStyle}>FINDINGS.md</summary>
+            <Pre>{outputs.findingsMd}</Pre>
+          </details>
+        ) : null}
+      </div>
+    );
+  };
 }
 
 const attemptListStyle = css({
@@ -195,5 +294,47 @@ const summaryStyle = css({
 const emptyStyle = css({
   margin: 0,
   color: "#6b7280",
+  fontSize: "12px",
+});
+
+const sectionStyle = css({
+  display: "grid",
+  gap: "0.4rem",
+  padding: "0.5rem 0.6rem",
+  border: "1px solid #e5e7eb",
+  borderRadius: "8px",
+  background: "#ffffff",
+});
+
+const sectionTitleStyle = css({
+  margin: 0,
+  fontSize: "11px",
+  fontWeight: 800,
+  letterSpacing: "0.06em",
+  color: "#6b7280",
+  textTransform: "uppercase",
+});
+
+const surfaceStyle = css({
+  display: "grid",
+  gap: "0.4rem",
+});
+
+const artifactListStyle = css({
+  listStyle: "none",
+  margin: 0,
+  padding: 0,
+  display: "grid",
+  gap: "0.15rem",
+});
+
+const missingStyle = css({
+  color: "#b45309",
+  cursor: "help",
+});
+
+const blockedStyle = css({
+  color: "#b91c1c",
+  fontWeight: 600,
   fontSize: "12px",
 });

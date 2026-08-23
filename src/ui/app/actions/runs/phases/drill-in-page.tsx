@@ -35,6 +35,8 @@ export interface DrillInPageProps {
   /** dirname of the snapshot's blueprint module (context resolution fallback) */
   snapshotModuleDir: string | null;
   envelopes: EnvelopeRow[];
+  /** the phase's outputs/ dir: files the agent wrote + FINDINGS.md content */
+  outputs: { files: string[]; findingsMd: string | null };
   gates: GateResultWithOverride[];
   spend: {
     tokensIn: number;
@@ -51,7 +53,7 @@ export interface DrillInPageProps {
 
 export function DrillInPage(handle: Handle<DrillInPageProps>) {
   return () => {
-    const { runId, run, phase, snapshotPhase, snapshotModuleDir, envelopes, gates, spend, raw } =
+    const { runId, run, phase, snapshotPhase, snapshotModuleDir, envelopes, outputs, gates, spend, raw } =
       handle.props;
 
     return (
@@ -63,8 +65,8 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
                 ‹ runs
               </a>
               <span mix={crumbSepStyle}>›</span>
-              <a href={routes.runs.show.href({ runId })} mix={crumbLinkStyle}>
-                {run.blueprint}
+              <a href={routes.runs.show.href({ runId })} mix={crumbLinkStyle} title={`run ${fmtRunId(runId)}`}>
+                {fmtRunId(runId)}
               </a>
               <span mix={crumbSepStyle}>›</span>
               <span mix={crumbCurrentStyle}>{phase.name}</span>
@@ -72,7 +74,15 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
             <h1 mix={titleStyle}>
               {phase.name}
               <span mix={subtitleStyle}>
-                agent: {phase.agent} · visit {phase.visits} · corr {phase.corrections} · {phase.status}
+                agent: {phase.agent} ·{" "}
+                <span title="number of times this phase has been executed (resumed phases are re-visited)">
+                  {phase.visits} {phase.visits === 1 ? "visit" : "visits"}
+                </span>{" "}
+                ·{" "}
+                <span title="number of corrections (re-prompts) issued against this phase">
+                  {phase.corrections} {phase.corrections === 1 ? "correction" : "corrections"}
+                </span>{" "}
+                · {phase.status.replace("_", " ")}
               </span>
             </h1>
             <span mix={runIdStyle}>{fmtRunId(runId)}</span>
@@ -87,7 +97,7 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
                 cwd={run.cwd}
                 moduleDir={snapshotModuleDir}
               />
-              <EnvelopeCard envelopes={envelopes} />
+              <EnvelopeCard envelopes={envelopes} outputs={outputs} />
               <GatesCard gates={gates} />
               <SpendCard
                 tokensIn={spend.tokensIn}
@@ -128,7 +138,7 @@ export function NotFoundPage(handle: Handle<NotFoundPageProps>) {
             <>
               <span mix={crumbSepStyle}>›</span>
               <a href={routes.runs.show.href({ runId: handle.props.runId })} mix={crumbLinkStyle}>
-                {handle.props.blueprint}
+                {fmtRunId(handle.props.runId)}
               </a>
             </>
           ) : null}

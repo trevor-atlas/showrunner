@@ -143,15 +143,13 @@
       ],
       "envelope": {
         "summary": "Recon done.",
-        "artifacts": [],
-        "notes_for_next_agent": "Starter handoff.",
-        "findings": [
-          "src/index.ts is the entry point",
-          "no tests exist yet"
+        "artifacts": [
+          "FINDINGS.md"
         ],
-        "touched": [
-          "src/index.ts"
-        ]
+        "notes_for_next_agent": "Findings in FINDINGS.md; nothing in the workspace changed."
+      },
+      "artifacts": {
+        "FINDINGS.md": "# Findings\n\n- src/index.ts is the entry point\n- no tests exist yet\n"
       }
     }
   ]

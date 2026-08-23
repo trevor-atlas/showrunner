@@ -14,6 +14,7 @@ import {
   updateEnvelope,
 } from "./db.ts";
 import type { EnvelopeRow } from "./db.ts";
+import { inputsDirFor, outputsDirFor } from "./handoff.ts";
 import type { EventIds } from "./queue.ts";
 
 /**
@@ -68,8 +69,12 @@ export interface EnvelopeStageOptions {
   visit: number;
   /** corrections already issued in this visit (0 = first attempt) */
   attempt: number;
+  /** the run's cwd (the project the agent works on) — what gates call the workspace */
   cwd: string;
-  /** absolute path to context_handoff/<phase>/outputs/envelope.json */
+  /** the run's record dir ({data_dir}/runs/<run_id>) — where the per-phase
+   * inputs/outputs workspace lives (§9.1). Never the same tree as cwd. */
+  runDir: string;
+  /** absolute path to <runDir>/<phase>/outputs/envelope.json */
   envelopePath: string;
   schema: z.ZodTypeAny;
   gates: Gate[];
@@ -178,7 +183,16 @@ async function runGates(
   envelope: Envelope,
   envelopeId: string,
 ): Promise<GateRun[]> {
-  const ctx: GateContext = { run_id: opts.runId, cwd: opts.cwd, phase: opts.phaseName, visit: opts.visit };
+  const ctx: GateContext = {
+    run_id: opts.runId,
+    cwd: opts.cwd,
+    phase: opts.phaseName,
+    visit: opts.visit,
+    // gates that verify what the agent produced check the phase's outputs dir
+    outputs_dir: outputsDirFor(opts.runDir, opts.phaseName),
+    // gates that read what the phase was handed check the phase's inputs dir
+    inputs_dir: inputsDirFor(opts.runDir, opts.phaseName),
+  };
   const runs: GateRun[] = [];
   for (let i = 0; i < opts.gates.length; i++) {
     const gate = opts.gates[i]!;

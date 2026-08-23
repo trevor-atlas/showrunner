@@ -9,7 +9,7 @@
         { "type": "message_end", "message": { "id": "p1", "role": "user", "content": [{ "type": "text", "text": "Plan the work." }] } },
         { "type": "message_start", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] } },
         { "type": "message_update", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] }, "usage": { "input": 200, "output": 40, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 240, "cost": { "total": 0.0004 } } },
-        { "type": "tool_execution_start", "toolCallId": "plan_1", "toolName": "bash", "args": "ls context_handoff/plan/inputs" },
+        { "type": "tool_execution_start", "toolCallId": "plan_1", "toolName": "bash", "args": "ls build/inputs" },
         { "type": "tool_execution_update", "toolCallId": "plan_1", "toolName": "bash", "partialResult": { "content": [{ "type": "text", "text": "envelope.json\n" }] } },
         { "type": "tool_execution_end", "toolCallId": "plan_1", "toolName": "bash", "result": { "content": [{ "type": "text", "text": "envelope.json\n" }] }, "isError": false },
         { "type": "message_end", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] } },

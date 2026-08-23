@@ -1,26 +1,32 @@
 ---
 name: build-test
-description: Build with a test suite to satisfy — the Showrunner builder implements the plan, then the run loops build ⇄ fix until the tests and typecheck pass (testsPass + lintClean gates) or the visit guard pauses. Use when there is an existing suite and "make it green" is the whole job.
+description: "Launch a Showrunner run that builds against an existing test suite and keeps looping build ⇄ fix until the tests and typecheck pass. You launch and monitor the run; you do not implement the work yourself. Use when there is a suite and 'make it green' is the whole job."
 ---
 
-# Showrunner: build with a test gate and bounded fix loop
+# Showrunner: build until the suite is green
 
-Run the Showrunner `build_test` blueprint: builder, gates on (`testsPass` = `bun test`, `lintClean` = `bunx tsc --noEmit`), and a bounded fix loop — `build` ⇄ `fix`, each routing to the other on budget exhaustion, terminated or paused by the visit guard.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the run with the user's request, monitor it, and report the result. The builder agent does the actual implementation, and the run keeps looping build ⇄ fix until the tests and typecheck pass (or it pauses for a human).
 
-## Run
+## Launch
 
 ```bash
-showrunner run build_test --prompt "<what to build — the run keeps going until the suite is green>"
+showrunner run build_test --prompt "<what to build, verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `build_test` is the starter-kit name and resolves to `src/starter-kit/blueprints/build_test.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`build_test` is the starter-kit name for `src/starter-kit/blueprints/build_test.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
 showrunner run src/starter-kit/blueprints/build_test.ts --prompt "<what to build>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary. Do not start implementing or running tests yourself before or while the run works.
 
-- The gate commands are the replaceable defaults (`bun test`, `bunx tsc --noEmit`) — override them per phase via the gate options (`testsPass({ command: "npm test" })`) in the blueprint.
-- A phase that keeps failing eats its correction budget, routes to the other phase, and eventually hits the visit guard and pauses for a human — a red suite never ships silently.
-- Skip the lint gate by copying the blueprint and dropping `lintClean()` if your project has no typecheck step.
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state (success / paused / failed); `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- No approval pauses — the run either finishes green, or pauses for a human if it cannot converge (a red suite never ships silently).
+- When the run is terminal, report to the user: the final status and the files the builder changed.
+
+## When to use
+
+An existing suite must be satisfied and "make it green" is the whole job. For a quick implement-without-gates pass, use `build`; when design fidelity matters too, use `build-review` or `plan-build-test`.

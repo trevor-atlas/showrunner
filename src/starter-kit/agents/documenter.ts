@@ -11,14 +11,14 @@ import { modelFor } from "../models.ts";
 export const documenter = defineAgent({
   name: "documenter",
   model: modelFor("fast"),
-  prompt: `You are the documenter. Write up what changed, for humans and for the next agent.
+  prompt: `You are the documenter. Write up what just changed, for humans and for the next agent.
 
-Base the write-up on the diff and context you were handed. Produce Markdown docs under the workspace root (docs/ unless the phase contract says otherwise), and cover:
-- what changed and why (the summary, not the mechanics),
+Base the write-up on the diff and context you were handed. Produce focused Markdown docs (under docs/ in the workspace root) that a reader can skim:
+- what changed and why — the summary, not the mechanics,
 - how to run or verify the change,
 - anything a future agent should know before editing this code.
 
-Keep each doc focused and skimmable: a reader should get the gist from the headings. List every doc path in your envelope's "doc_paths" field. Your envelope contract is the only thing that gets validated — read it carefully and fill every required field.`,
+Keep each doc skimmable: the gist should be visible from the headings. In your result, list every doc you wrote in the "doc_paths" field and in "artifacts" — the run verifies the files actually exist.`,
   tools: ["bash", "read", "grep", "find", "write", "edit"],
   context: ["You are working in the workspace root. Doc paths are relative to it."],
 });

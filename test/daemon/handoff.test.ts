@@ -86,16 +86,18 @@ function session(turns: ScriptedTurn[]): { turns: ScriptedTurn[] } {
   return { turns };
 }
 
-function openEnv(label: string): { dir: string; db: ReturnType<typeof openDb>; cwd: string } {
+function openEnv(label: string): { dir: string; db: ReturnType<typeof openDb>; cwd: string; runDir: string } {
   const dir = tmpDataDir(label);
   const db = openDb(join(dir, "showrunner.db"));
   const cwd = mkdtempSync(join(tmpdir(), "showrunner-handoff-cwd-"));
-  return { dir, db, cwd };
+  const runDir = mkdtempSync(join(tmpdir(), "showrunner-handoff-runs-"));
+  return { dir, db, cwd, runDir };
 }
 
-function closeEnv(env: { dir: string; db: { close(): void }; cwd: string }): void {
+function closeEnv(env: { dir: string; db: { close(): void }; cwd: string; runDir: string }): void {
   env.db.close();
   rmSync(env.cwd, { recursive: true, force: true });
+  rmSync(env.runDir, { recursive: true, force: true });
   cleanupDir(env.dir);
 }
 
@@ -109,24 +111,29 @@ test("§9 round-trip on FakePi: plan's accepted envelope + plan.md land in build
     const result = await run.done;
     expect(result).toEqual({ status: "success", needs_review: false });
 
+    // the run workspace lives under the RUN RECORD DIR ({data_dir}/runs/<run_id>),
+    // never the run cwd — the checkout stays clean (§9.1)
+    const runDir = runDirFor(env.dir, run.run_id);
+    expect(existsSync(join(env.cwd, "context_handoff"))).toBe(false);
+
     // build's inputs: the predecessor's ACCEPTED envelope (plan's corrected turn)
     const handoffEnvelope = JSON.parse(
-      readFileSync(join(inputsDirFor(env.cwd, "build"), "envelope.json"), "utf8"),
+      readFileSync(join(inputsDirFor(runDir, "build"), "envelope.json"), "utf8"),
     ) as { summary: string; quality: number };
     expect(handoffEnvelope).toMatchObject({ summary: "plan complete", quality: 8 });
 
     // §9.3 zero-friction: the artifact plan listed (plan.md) is in build's inputs
-    expect(readFileSync(join(inputsDirFor(env.cwd, "build"), "plan.md"), "utf8")).toContain(
+    expect(readFileSync(join(inputsDirFor(runDir, "build"), "plan.md"), "utf8")).toContain(
       "1. Scaffold the handoff module.",
     );
 
     // plan's outputs keep the AGENT's files untouched (the daemon never writes outputs/)
-    expect(readFileSync(join(outputsDirFor(env.cwd, "plan"), "plan.md"), "utf8")).toContain(
+    expect(readFileSync(join(outputsDirFor(runDir, "plan"), "plan.md"), "utf8")).toContain(
       "1. Scaffold the handoff module.",
     );
 
     // the first phase has no predecessor: inputs/ was never materialized for it
-    expect(existsSync(join(inputsDirFor(env.cwd, "plan"), "envelope.json"))).toBe(false);
+    expect(existsSync(join(inputsDirFor(runDir, "plan"), "envelope.json"))).toBe(false);
   } finally {
     closeEnv(env);
   }
@@ -144,7 +151,7 @@ test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback
     const moduleDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "handoff");
 
     const prompt = composePrompt(
-      { blueprint: handoffFixture, cwd: env.cwd, moduleDir } as unknown as Parameters<typeof composePrompt>[0],
+      { blueprint: handoffFixture, cwd: env.cwd, runDir: env.runDir, moduleDir } as unknown as Parameters<typeof composePrompt>[0],
       handoffFixture.phases[0]!, // plan
       null,
     );
@@ -164,7 +171,7 @@ test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback
 
     // build: agent defaults then phase additions; "*.md" stays literal (no globs)
     const buildPrompt = composePrompt(
-      { blueprint: handoffFixture, cwd: env.cwd, moduleDir } as unknown as Parameters<typeof composePrompt>[0],
+      { blueprint: handoffFixture, cwd: env.cwd, runDir: env.runDir, moduleDir } as unknown as Parameters<typeof composePrompt>[0],
       handoffFixture.phases[1]!, // build
       null,
     );
@@ -181,8 +188,8 @@ test("composePrompt inlines the materialized handoff inputs into [Context], nami
   const env = openEnv("handoff-prompt-inputs");
   try {
     // mirror the run loop order: the predecessor's accepted envelope + artifacts
-    // are materialized into build/inputs/ (§9.3) BEFORE the prompt is composed
-    const planOutputs = outputsDirFor(env.cwd, "plan");
+    // are materialized into <runDir>/build/inputs/ (§9.3) BEFORE the prompt is composed
+    const planOutputs = outputsDirFor(env.runDir, "plan");
     mkdirSync(join(planOutputs, "sub"), { recursive: true });
     writeFileSync(join(planOutputs, "plan.md"), "# Plan\n1. Scaffold the handoff module.\n");
     writeFileSync(join(planOutputs, "sub", "nested.txt"), "nested artifact\n");
@@ -191,32 +198,34 @@ test("composePrompt inlines the materialized handoff inputs into [Context], nami
       raw: JSON.stringify({ summary: "plan complete", artifacts: ["plan.md", "sub/nested.txt"], notes_for_next_agent: "n", quality: 8 }, null, 2) + "\n",
       fromPhase: "plan",
     };
-    materializeHandoff(env.cwd, "build", handoff);
+    materializeHandoff(env.runDir, "build", handoff);
 
     const prompt = composePrompt(
-      { blueprint: handoffFixture, cwd: env.cwd, moduleDir: null } as unknown as Parameters<typeof composePrompt>[0],
+      { blueprint: handoffFixture, cwd: env.cwd, runDir: env.runDir, moduleDir: null } as unknown as Parameters<typeof composePrompt>[0],
       handoffFixture.phases[1]!, // build — its predecessor's handoff is materialized
       handoff,
     );
 
-    // (a) the inputs/ paths are named, not just outputs/envelope.json
-    expect(prompt).toContain("context_handoff/build/inputs/envelope.json:");
-    expect(prompt).toContain("context_handoff/build/inputs/plan.md:");
-    expect(prompt).toContain("context_handoff/build/inputs/sub/nested.txt:");
+    // (a) the inputs/ paths are named (relative to the run workspace), not just outputs/envelope.json
+    expect(prompt).toContain("build/inputs/envelope.json:");
+    expect(prompt).toContain("build/inputs/plan.md:");
+    expect(prompt).toContain("build/inputs/sub/nested.txt:");
 
     // (b) the materialized contents are inlined inside the [Context] section
     const ctx = prompt.indexOf("[Context]");
     const handoffSec = prompt.indexOf("[Handoff from previous phase]");
     expect(ctx).toBeGreaterThan(-1);
-    expect(prompt.indexOf("context_handoff/build/inputs/envelope.json:")).toBeGreaterThan(ctx);
-    expect(prompt.indexOf("context_handoff/build/inputs/envelope.json:")).toBeLessThan(handoffSec);
+    expect(prompt.indexOf("build/inputs/envelope.json:")).toBeGreaterThan(ctx);
+    expect(prompt.indexOf("build/inputs/envelope.json:")).toBeLessThan(handoffSec);
     expect(prompt).toContain('"quality": 8');
     expect(prompt).toContain("1. Scaffold the handoff module.");
     expect(prompt).toContain("nested artifact");
 
-    // the §9.2 context entries still render, and the contract still names outputs
+    // the [Workspace] section names the run dir; the contract names the absolute outputs path
+    expect(prompt).toContain("[Workspace]");
+    expect(prompt).toContain(env.runDir);
     expect(prompt).toContain("Build literal: ship the smallest thing that satisfies the plan.");
-    expect(prompt).toContain("context_handoff/build/outputs/envelope.json");
+    expect(prompt).toContain(join(env.runDir, "build", "outputs", "envelope.json"));
   } finally {
     closeEnv(env);
   }
@@ -338,7 +347,7 @@ test("materializeHandoff: nested artifacts keep their path; missing + traversal 
   const env = openEnv("handoff-materialize");
   try {
     // the "predecessor's outputs" — artifacts resolve relative to these
-    const fromOutputs = outputsDirFor(env.cwd, "plan");
+    const fromOutputs = outputsDirFor(env.runDir, "plan");
     mkdirSync(join(fromOutputs, "sub"), { recursive: true });
     writeFileSync(join(fromOutputs, "flat.txt"), "flat\n");
     writeFileSync(join(fromOutputs, "sub", "nested.txt"), "nested\n");
@@ -353,9 +362,9 @@ test("materializeHandoff: nested artifacts keep their path; missing + traversal 
       raw: "{\"quality\":9}\n",
       fromPhase: "plan",
     };
-    materializeHandoff(env.cwd, "build", handoff);
+    materializeHandoff(env.runDir, "build", handoff);
 
-    const inputs = inputsDirFor(env.cwd, "build");
+    const inputs = inputsDirFor(env.runDir, "build");
     expect(readFileSync(join(inputs, "envelope.json"), "utf8")).toBe("{\"quality\":9}\n");
     expect(readFileSync(join(inputs, "flat.txt"), "utf8")).toBe("flat\n");
     expect(readFileSync(join(inputs, "sub", "nested.txt"), "utf8")).toBe("nested\n");
@@ -365,8 +374,8 @@ test("materializeHandoff: nested artifacts keep their path; missing + traversal 
     expect(existsSync(join(inputs, "hostname"))).toBe(false);
 
     // the first phase (null handoff) materializes nothing
-    materializeHandoff(env.cwd, "plan", null);
-    expect(existsSync(inputsDirFor(env.cwd, "plan"))).toBe(false);
+    materializeHandoff(env.runDir, "plan", null);
+    expect(existsSync(inputsDirFor(env.runDir, "plan"))).toBe(false);
   } finally {
     closeEnv(env);
   }

@@ -37,8 +37,9 @@ const builder = defineAgent({
   model: "fake-pi",
   prompt: [
     "You are the builder in the drill-in demo.",
-    "Write your final result to context_handoff/build/outputs/envelope.json",
-    "matching the [Envelope contract] schema exactly, with quality >= 7.",
+    "Write your final result to envelope.json in your outputs directory (the",
+    "[Workspace] section of your prompt names the absolute path), matching the",
+    "[Envelope contract] schema exactly, with quality >= 7.",
     "If a gate rejects your envelope, read the violation and fix it.",
   ].join("\n"),
   tools: ["bash", "edit", "read"],
@@ -48,7 +49,7 @@ const builder = defineAgent({
 const verifier = defineAgent({
   name: "verifier",
   model: "fake-pi",
-  prompt: "Write your final result to context_handoff/verify/outputs/envelope.json with quality 5.",
+  prompt: "Write your final result to envelope.json in your outputs directory with quality 5.",
   tools: ["bash"],
   context: [],
 });

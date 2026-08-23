@@ -65,10 +65,10 @@ export { RawOutputFile, tailRawFile } from "./rawfile.ts";
 
 // §9 context & handoff filesystem protocol (T05)
 export {
-  handoffDirFor,
   inputsDirFor,
   materializeHandoff,
   outputsDirFor,
+  phaseDirFor,
   readAgentMap,
   readHandoffInputs,
   recordAcceptedEnvelope,

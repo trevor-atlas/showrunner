@@ -112,9 +112,11 @@ describe("phase drill-in (T11)", () => {
       // header: breadcrumb + phase context (visit/corr from the phase row)
       expect(html).toContain("drill-in-demo");
       expect(html).toContain("agent: builder");
-      expect(html).toContain("visit 1");
-      expect(html).toContain("corr 2");
+      expect(html).toContain("1 visit");
+      expect(html).toContain("2 corrections");
       expect(html).toContain(`/runs/${runId}`); // breadcrumb back-link
+      // the breadcrumb's run crumb shows the SHORT run id, not the blueprint
+      expect(html).toContain(`>${runId.slice(0, 6)}</a>`);
 
       // CONFIG from the snapshot — never the mutated live module
       expect(html).toContain("CONFIG");
@@ -135,9 +137,14 @@ describe("phase drill-in (T11)", () => {
       expect(html).toContain("✓ valid, gates passed");
       expect(html).toContain("quality 4 below 7");
       expect(html).toContain("→ no correction followed");
-      expect(html).toContain("context_handoff/build/outputs/envelope.json");
+      // the envelope's source is the runDir/phase/outputs path (§9.1 workspace)
+      expect(html).toContain(join(dir, "runs", runId, "build", "outputs", "envelope.json"));
       expect(html).toContain("view JSON");
       expect(html).toContain('"quality": 8'); // accepted envelope JSON viewable
+      // the accepted envelope renders readably: summary/handoff/artifacts labels
+      expect(html).toContain("ACCEPTED ENVELOPE");
+      expect(html).toContain("handoff");
+      expect(html).toContain("artifacts");
 
       // GATES: pass + fail rows with violations; no override on build
       expect(html).toContain("GATES");
@@ -194,6 +201,45 @@ describe("phase drill-in (T11)", () => {
     }
   });
 
+  it("renders a real scout run's drill-in: FINDINGS.md is observable on the ENVELOPE card, not a buried string list", async () => {
+    const dir = tmpDir("drillin-scout");
+    const cwd = tmpDir("drillin-scout-cwd");
+    const restore = setDataDir(dir);
+    const scoutBlueprint = new URL("../../src/starter-kit/blueprints/scout.ts", import.meta.url).pathname;
+    let daemon: DaemonHandle | null = null;
+    try {
+      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      const { run_id: runId } = await client.submitRun({ blueprint: scoutBlueprint, cwd });
+      expect(runId).toBeTruthy();
+      await waitFor(async () => {
+        const { runs } = await client.listRuns();
+        return runs.find((r) => r.id === runId)?.status === "success";
+      });
+
+      const res = await fetchDrillIn(runId, "recon");
+      expect(res.status).toBe(200);
+      const html = res.html;
+
+      // breadcrumb: runs › short run id › recon (not the blueprint name)
+      expect(html).toContain(`>${runId.slice(0, 6)}</a>`);
+      // subtitle uses full words
+      expect(html).toContain("1 visit");
+      expect(html).toContain("0 corrections");
+      // the scout's findings are an ARTIFACT file, rendered readably
+      expect(html).toContain("ACCEPTED ENVELOPE");
+      expect(html).toContain("✓ FINDINGS.md");
+      expect(html).toContain("FINDINGS.md");
+      expect(html).toContain("src/index.ts is the entry point");
+      expect(html).not.toContain("⚠ "); // every listed artifact exists in outputs/
+    } finally {
+      await daemon?.close();
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("404s with a back-link for a ghost run and a ghost phase (§16.10)", async () => {
     const dir = tmpDir("drillin-404");
     const restore = setDataDir(dir);
@@ -239,7 +285,7 @@ describe("phase drill-in (T11)", () => {
       const ghostPhase = await fetchDrillIn(runId, "ghost");
       expect(ghostPhase.status).toBe(404);
       expect(ghostPhase.html).toContain('phase "ghost" not found');
-      expect(ghostPhase.html).toContain("ghost-demo");
+      expect(ghostPhase.html).toContain(runId.slice(0, 6)); // short-id breadcrumb crumb
       expect(ghostPhase.html).toContain("back to runs");
     } finally {
       await daemon?.close();

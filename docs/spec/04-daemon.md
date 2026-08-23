@@ -31,8 +31,12 @@ The daemon renders the initial `prompt` command's message as:
 <agent.prompt>
 <phase.prompt additions, if any>
 
+[Workspace]          ← the run's record dir (data_dir/runs/<run_id>) — never the run cwd
+<run_id>/<phase>/inputs/   what the harness materialized (read-only)
+<run_id>/<phase>/outputs/  where the agent writes envelope.json + artifacts
+
 [Context]            ← §9 materialization
-<context_handoff/<phase>/inputs/…> inlined file contents
+<run_id>/<phase>/inputs/…> inlined file contents
 
 [Handoff from previous phase]
 <predecessor envelope.json rendered as YAML/JSON + notes_for_next_agent>
@@ -40,7 +44,7 @@ The daemon renders the initial `prompt` command's message as:
 [Envelope contract]
 <phase.envelope rendered as a zod description — field names, types, examples>
 Return your final result as a JSON object matching this schema, written to
-context_handoff/<phase>/outputs/envelope.json
+<data_dir>/runs/<run_id>/<phase>/outputs/envelope.json
 
 [Tools available] <agent.tools>
 ```
@@ -78,10 +82,14 @@ Responses: `{"id":<req>,"type":"response","command":…,"success":true|false}` (
 
 ### 9.1 Workspace layout
 
-All under the run's cwd (the repo being worked on):
+All under the run's raw record directory — `{data_dir}/runs/<run_id>/` (default
+`~/.showrunner/runs/<run_id>/`). The run's cwd is where the AGENT works (the
+project); the harness never writes into the cwd, so a run cannot dirty the
+checkout. The composed prompt's `[Workspace]` section names the record dir and
+the per-phase paths:
 
 ```
-context_handoff/
+<run_id>/
   <phase-name>/          # URL-safe slug of the phase name
     inputs/              # what the harness materializes for the agent (read-only)
       envelope.json      # predecessor's envelope, always present for phases > 0

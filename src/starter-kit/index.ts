@@ -39,9 +39,11 @@ export type {
 export {
   envelopeShape,
   filesExist,
+  findingsReported,
   inputsDirFor,
   lintClean,
   matchesPlan,
+  outputsDirFor,
   reviewApproved,
   testsPass,
   workspaceShell,

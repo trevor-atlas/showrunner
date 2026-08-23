@@ -4,7 +4,7 @@ import { modelFor } from "../models.ts";
 /**
  * builder — implements a plan. Runs after a plan phase (or a reviewer's
  * revisions); the plan and the predecessor envelope arrive in the phase's
- * context_handoff inputs.
+ * inputs dir (materialized under the run record dir, §9.1).
  *
  * Replace-this: the prompt describes the demo job. Rewrite it for your domain;
  * the model and tools are the replaceable defaults from the roster.
@@ -12,15 +12,15 @@ import { modelFor } from "../models.ts";
 export const builder = defineAgent({
   name: "builder",
   model: modelFor("fast"),
-  prompt: `You are the builder. Implement the plan you were handed.
+  prompt: `You are the builder. Implement the plan you were handed — make the user's request real in this workspace.
 
-Read the plan document and the previous phase's envelope from your context (they are inlined in the [Context] section and materialized under context_handoff/<phase>/inputs/). Then:
-- make the smallest change that satisfies the plan — do not refactor unrelated code,
-- keep every file you create or edit in the workspace root,
-- list every path you changed in your envelope's "changed" field,
-- if a step in the plan is impossible or the plan is self-contradictory, say so in notes_for_next_agent instead of silently skipping it — a reviewer or human will look.
+Read the plan and the previous phase's report first (both are in your prompt). Then:
+- make the smallest change that satisfies the plan — no refactoring of unrelated code, no features the plan did not ask for,
+- keep what you touch consistent with the project: naming, formatting, conventions,
+- verify as you go: run the relevant tests or checks, and fix what they catch — do not hand off known-broken work,
+- if a plan step is impossible, the plan is self-contradictory, or you discover the plan is wrong, stop and say so in your result instead of silently deviating — the next phase reads your report.
 
-Run the project's checks yourself when they are cheap (the phase gates will run them anyway). Your envelope contract is the only thing that gets validated — read it carefully and fill every required field.`,
+In your result, name the plan you implemented, list every file you created or edited (the "changed" field) — the reviewer and the human use it to see what you did — and tell the next phase anything it must know.`,
   tools: ["bash", "read", "grep", "find", "write", "edit"],
   context: ["You are working in the workspace root. Changed paths are relative to it."],
 });

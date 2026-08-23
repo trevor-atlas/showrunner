@@ -35,6 +35,7 @@ interface Env {
   db: ReturnType<typeof openDb>;
   dir: string;
   cwd: string;
+  runDir: string;
   runId: string;
   phaseId: string;
 }
@@ -42,6 +43,7 @@ interface Env {
 function setup(label: string): Env {
   const dir = tmpDataDir(label);
   const cwd = mkdtempSync(join(tmpdir(), "showrunner-cwd-"));
+  const runDir = mkdtempSync(join(tmpdir(), "showrunner-env-runs-"));
   const db = openDb(join(dir, "showrunner.db"));
   const runId = randomUUID();
   const phaseId = randomUUID();
@@ -67,12 +69,13 @@ function setup(label: string): Env {
     started_at: "t0",
     ended_at: null,
   });
-  return { db, dir, cwd, runId, phaseId };
+  return { db, dir, cwd, runDir, runId, phaseId };
 }
 
 function teardown(env: Env): void {
   env.db.close();
   rmSync(env.cwd, { recursive: true, force: true });
+  rmSync(env.runDir, { recursive: true, force: true });
   cleanupDir(env.dir);
 }
 
@@ -91,6 +94,7 @@ function makeStage(
     visit: 1,
     attempt: 0,
     cwd: env.cwd,
+    runDir: env.runDir,
     envelopePath,
     schema: opts.schema ?? QualityEnvelope,
     gates: opts.gates ?? [],
@@ -100,7 +104,7 @@ function makeStage(
   return { stage, events };
 }
 
-const outputsDir = (env: Env): string => join(env.cwd, "context_handoff", "build", "outputs");
+const outputsDir = (env: Env): string => join(env.runDir, "build", "outputs");
 
 function writeEnvelope(env: Env, value: unknown): string {
   const dir = outputsDir(env);
@@ -113,7 +117,7 @@ function writeEnvelope(env: Env, value: unknown): string {
 test("a missing envelope.json is still an attempt: valid=0 row, correction-worthy error, no gates", async () => {
   const env = setup("seam-missing");
   try {
-    const { stage, events } = makeStage(env, join(env.cwd, "context_handoff", "build", "outputs", "envelope.json"));
+    const { stage, events } = makeStage(env, join(env.runDir, "build", "outputs", "envelope.json"));
     const outcome = await runEnvelopeStage(stage);
     expect(outcome.kind).toBe("invalid");
     if (outcome.kind === "invalid") expect(outcome.error).toContain("no envelope.json written");

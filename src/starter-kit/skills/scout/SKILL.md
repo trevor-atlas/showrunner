@@ -1,25 +1,32 @@
 ---
 name: scout
-description: "Read-only reconnaissance of a codebase by the Showrunner scout agent — what files are involved, what they do, and what a builder or planner should know before touching anything. Use when nothing should change yet: exploring an unfamiliar repo, sizing up a task, or answering \"what is here and how does it fit together?\"."
+description: "Launch a read-only Showrunner recon run — the scout agent explores the codebase and reports findings without changing anything. You launch and monitor; you do not do the recon yourself. Use when nothing should change yet: an unfamiliar repo, sizing up a task, or 'what is here and how does it fit together?'."
 ---
 
 # Showrunner: scout (read-only recon)
 
-Run the Showrunner `scout` blueprint: one recon phase by the scout agent, which has no write or edit tools — it explores the workspace and reports findings. Nothing changes.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the recon run with the question to investigate, monitor it, and report the findings. The scout agent does the exploring — read-only, nothing in the workspace changes.
 
-## Run
+## Launch
 
 ```bash
-showrunner run scout --prompt "<what to investigate, e.g. 'map the auth flow and note anything fragile'>"
+showrunner run scout --prompt "<what to investigate, verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `scout` is the starter-kit name and resolves to `src/starter-kit/blueprints/scout.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`scout` is the starter-kit name for `src/starter-kit/blueprints/scout.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
 showrunner run src/starter-kit/blueprints/scout.ts --prompt "<what to investigate>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full question**, not a summary. Do not start exploring the codebase yourself before or while the run works.
 
-- The recon phase's envelope must carry `findings` (the `envelopeShape` gate) — a scout that reported nothing cannot pass.
-- Reach for this before `plan` or `build`: the scout's findings become the base of information the next agent gets.
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state; `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- No approval pauses — the run runs to completion.
+- When the run is terminal, report to the user: the final status and where the findings landed.
+
+## When to use
+
+Nothing should change yet: exploring an unfamiliar repo, sizing up a task, or answering "what is here and how does it fit together?". Reach for it before `plan` or `build` — the findings become the base of information the next agent gets.

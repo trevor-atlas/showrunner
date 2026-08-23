@@ -17,7 +17,7 @@ import type { Envelope, Gate } from "../../../src/core/index.ts";
 const builder = defineAgent({
   name: "builder",
   model: "fake-pi",
-  prompt: "Execute the phase goal and write a typed envelope to context_handoff.",
+  prompt: "Execute the phase goal and write a typed envelope to your outputs directory.",
   tools: ["bash", "edit", "read"],
   context: [],
 });

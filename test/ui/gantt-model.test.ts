@@ -30,10 +30,10 @@ const run = (overrides: { status?: string; ended_at?: string | null } = {}) => (
   status: overrides.status ?? "running",
 });
 
-const phaseStart = (name: string, offsetMs: number) => ({
+const phaseStart = (name: string, offsetMs: number, visit = 1) => ({
   type: "phase_start",
   ts: new Date(START + offsetMs).toISOString(),
-  data: { phase: name, agent: "builder", visit: 1, budget: 3 },
+  data: { phase: name, agent: "builder", visit, budget: 3 },
 });
 
 const phaseEnd = (name: string, offsetMs: number) => ({
@@ -125,18 +125,41 @@ describe("computeGantt (§16.7 fill math)", () => {
     ).toBe(false);
   });
 
-  it("uses the phase_end EVENT when the phase row has no ended_at, and passes corr/vis/spend through", () => {
+  it("uses the phase_end EVENT when the phase row has no ended_at, and derives corr/vis/spend from the event stream (DB row as fallback)", () => {
     const model = computeGantt(
       [phase({ name: "plan", status: "success", started_at: new Date(START + 10_000).toISOString(), ended_at: null, corrections: 2, visits: 3, spend_usd: 0.42 })],
       run(),
-      [phaseStart("plan", 10_000), phaseEnd("plan", 70_000)],
+      [phaseStart("plan", 10_000, 3), phaseEnd("plan", 70_000)],
       START + 140_000,
     );
     const bar = model.phases[0]!;
     expect(bar.endF).toBeCloseTo(70_000 / 140_000, 5);
+    // corrections: no correction events → the phase row's value passes through
     expect(bar.corrections).toBe(2);
+    // visits: derived from the phase_start event's visit number (3, not 1)
     expect(bar.visits).toBe(3);
+    // spend: no spend events → the phase row's value passes through
     expect(bar.spendUsd).toBeCloseTo(0.42, 5);
+  });
+
+  it("derives corrections/visits/spend/status from events when they exist — the live part of the dashboard", () => {
+    const model = computeGantt(
+      [phase({ name: "plan", status: "in_progress", corrections: 0, visits: 0, spend_usd: 0 })],
+      run(),
+      [
+        phaseStart("plan", 10_000, 2),
+        { type: "correction", ts: new Date(START + 20_000).toISOString(), data: { phase: "plan", visit: 1 } },
+        { type: "correction", ts: new Date(START + 30_000).toISOString(), data: { phase: "plan", visit: 2 } },
+        { type: "spend", ts: new Date(START + 40_000).toISOString(), data: { phase: "plan", usd: 0.1 } },
+        { type: "spend", ts: new Date(START + 50_000).toISOString(), data: { phase: "plan", usd: 0.05 } },
+      ],
+      START + 90_000,
+    );
+    const bar = model.phases[0]!;
+    expect(bar.corrections).toBe(2); // 2 correction events
+    expect(bar.visits).toBe(2); // max visit number across phase_start events
+    expect(bar.spendUsd).toBeCloseTo(0.15, 5); // sum of spend events
+    expect(bar.status).toBe("in_progress"); // phase_started, no phase_end yet
   });
 
   it("polish (T10b): a run that completes WHILE the page is open freezes the timeline — the live region feeds ended_at + the terminal status from the run_status event, so the right edge is the end moment and the now-cursor drops", () => {

@@ -42,8 +42,9 @@ const planner = defineAgent({
     "1. Write a short plan (3-5 sentences) for a builder: fix src/add.ts so",
     "   add(1,2) === 3, keep the test suite green (bun test), and keep the",
     "   typecheck clean (bunx tsc --noEmit).",
-    "2. Write that plan to context_handoff/plan/outputs/plan.md (create the file).",
-    "3. Write your final result to context_handoff/plan/outputs/envelope.json as a",
+    "2. Write that plan to plan.md IN YOUR OUTPUTS DIRECTORY (the [Workspace]",
+    "   section of your prompt names the absolute path).",
+    "3. Write your final result to envelope.json IN YOUR OUTPUTS DIRECTORY as a",
     "   JSON object matching the [Envelope contract] schema exactly, with your",
     "   plan text in the \"plan\" field and the artifact path \"plan.md\".",
     "Do NOT modify any code. Keep it minimal — this is a smoke test.",
@@ -61,9 +62,10 @@ const builder = defineAgent({
     "Your ONLY job, in the fewest steps possible:",
     "1. Read the failing test and fix src/add.ts so the suite passes",
     "   (run `bun test` to verify). Keep `bunx tsc --noEmit` clean too.",
-    "2. Write your final result to context_handoff/build/outputs/envelope.json as a",
-    "   JSON object matching the [Envelope contract] schema exactly, with",
-    "   \"implemented\": true and the artifact path \"src/add.ts\".",
+    "2. Write your final result to envelope.json IN YOUR OUTPUTS DIRECTORY (the",
+    "   [Workspace] section names the absolute path) as a JSON object matching",
+    "   the [Envelope contract] schema exactly, with \"implemented\": true and",
+    "   the artifact path \"src/add.ts\".",
     "If a gate rejects your envelope, read the violation message and follow it.",
     "Do NOT modify README.md or the plan phase's outputs. Keep it minimal.",
   ].join("\n"),
@@ -76,11 +78,11 @@ const verifier = defineAgent({
   model: "smoke-default",
   prompt: [
     "You are the verifier in a SMOKE TEST.",
-    "Your ONLY job: write your final result to",
-    "context_handoff/verify/outputs/envelope.json as a JSON object matching the",
-    "[Envelope contract] schema exactly, with \"quality\": 5 and the artifact",
-    "path \"plan.md\". Report exactly quality 5 — that is what this test phase",
-    "checks. Keep it minimal.",
+    "Your ONLY job: write your final result to envelope.json IN YOUR OUTPUTS",
+    "DIRECTORY (the [Workspace] section names the absolute path) as a JSON",
+    "object matching the [Envelope contract] schema exactly, with \"quality\": 5",
+    "and the artifact path \"plan.md\". Report exactly quality 5 — that is what",
+    "this test phase checks. Keep it minimal.",
   ].join("\n"),
   tools: ["bash", "edit", "read"],
   context: [],
@@ -92,10 +94,11 @@ const shipper = defineAgent({
   prompt: [
     "You are the shipper in a SMOKE TEST. The build passed its gates; the",
     "envelope is in your [Handoff from previous phase].",
-    "Your ONLY job: write your final result to",
-    "context_handoff/ship/outputs/envelope.json as a JSON object matching the",
-    "[Envelope contract] schema exactly, with \"shipped\": true and the",
-    "artifact path \"src/add.ts\". Keep it minimal — do NOT commit or push.",
+    "Your ONLY job: write your final result to envelope.json IN YOUR OUTPUTS",
+    "DIRECTORY (the [Workspace] section names the absolute path) as a JSON",
+    "object matching the [Envelope contract] schema exactly, with \"shipped\":",
+    "true and the artifact path \"src/add.ts\". Keep it minimal — do NOT commit",
+    "or push.",
   ].join("\n"),
   tools: ["bash", "edit", "read"],
   context: [],
@@ -108,9 +111,12 @@ const ShipEnvelope = EnvelopeBase.extend({ shipped: z.boolean() });
 
 /** The planner's plan artifact must exist (§9.3 feeds it to build). */
 const planArtifactGate: Gate = async (_envelope, ctx) => {
-  const planFile = join(ctx.cwd, "context_handoff", "plan", "outputs", "plan.md");
+  if (ctx.outputs_dir === undefined || ctx.outputs_dir === "") {
+    return { pass: false, violations: ["the daemon did not provide ctx.outputs_dir"] };
+  }
+  const planFile = join(ctx.outputs_dir, "plan.md");
   if (!existsSync(planFile)) {
-    return { pass: false, violations: ["plan.md artifact missing (write it to context_handoff/plan/outputs/plan.md)"] };
+    return { pass: false, violations: [`plan.md artifact missing (write it to your outputs directory: ${ctx.outputs_dir})`] };
   }
   return { pass: true };
 };

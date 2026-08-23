@@ -1,4 +1,5 @@
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 
 import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
@@ -7,6 +8,8 @@ import { parseSafe } from "remix/data-schema";
 import type { EventRow } from "../../../../../core/index.ts";
 
 import { readBlueprintSnapshot } from "../../../lib/blueprint-snapshot.ts";
+import { resolveDataDir, runDirFor } from "../../../../../core/index.ts";
+import { outputsDirFor } from "../../../../../daemon/handoff.ts";
 import {
   controlOverrideGate,
   controlRestartFresh,
@@ -79,6 +82,13 @@ export default createController(routes.runs.phases, {
       const snapshotPhase = snapshot.doc?.phases.find((p) => p.name === phaseName) ?? null;
       const snapshotModuleDir = snapshot.doc?.module !== null && snapshot.doc?.module !== undefined && snapshot.doc?.module !== "" ? dirname(snapshot.doc.module) : null;
 
+      // the phase's outputs/ dir — what the agent actually wrote (for the
+      // ENVELOPE card's artifact existence check + FINDINGS.md content). The
+      // workspace lives under the RUN's record dir ({data_dir}/runs/<run_id>/<phase>/outputs),
+      // never the run cwd (§9.1).
+      const runDir = runDirFor(resolveDataDir(), runId);
+      const outputs = readOutputsDir(runDir, phaseName);
+
       const spendPhase = spend.phases.find((p) => p.id === phase.id);
       const tokens = sumPhaseSpendTokens(spendEvents.events, phase.id);
 
@@ -95,6 +105,7 @@ export default createController(routes.runs.phases, {
           snapshotPhase={snapshotPhase}
           snapshotModuleDir={snapshotModuleDir}
           envelopes={envelopes.envelopes}
+          outputs={outputs}
           gates={gates.gates}
           spend={{
             tokensIn: tokens.tokens_in,
@@ -212,6 +223,42 @@ function sumPhaseSpendTokens(events: readonly EventRow[], phaseId: string): {
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Read the phase's outputs/ dir: the files the agent actually wrote (for the
+ * ENVELOPE card's artifact-existence check) and FINDINGS.md when the agent
+ * wrote one (rendered readably). Absent dir → empty listing; unreadable files
+ * are skipped (best effort — this is display, not validation).
+ */
+function readOutputsDir(
+  runDir: string,
+  phaseName: string,
+): { files: string[]; findingsMd: string | null } {
+  const dir = outputsDirFor(runDir, phaseName);
+  let files: string[] = [];
+  try {
+    files = readdirSync(dir).filter((f) => {
+      try {
+        return statSync(join(dir, f)).isFile();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return { files: [], findingsMd: null };
+  }
+  const findingsFile = files.find((f) => f.toLowerCase() === "findings.md");
+  let findingsMd: string | null = null;
+  if (findingsFile !== undefined) {
+    try {
+      const full = join(dir, findingsFile);
+      if (existsSync(full)) findingsMd = readFileSync(full, "utf8");
+    } catch {
+      findingsMd = null;
+    }
+  }
+  return { files, findingsMd };
 }
 
 /** A §13 ApiError 404 (run/phase missing) — the drill-in's "missing" case. */

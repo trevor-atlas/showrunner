@@ -1,26 +1,32 @@
 ---
 name: plan-build
-description: Plan, build, and ship a small, well-understood piece of work with Showrunner — the planner writes the plan, the builder implements it against the plan (matchesPlan gate), and the ship agent commits/PRs behind a human approval. Use when the work is small enough that a full test+review chain would be overhead.
+description: "Launch a Showrunner run that plans, builds, and ships a small piece of work — the planner writes the plan, the builder implements it, and ship commits/PRs behind human approval. You launch and monitor; the blueprint's agents do the work. Use when the work is small and a full test+review chain would be overhead."
 ---
 
 # Showrunner: plan → build → ship
 
-Run the Showrunner `plan_build` blueprint: planner writes a plan, builder implements it (the `matchesPlan` gate refuses work that does not reference the plan), and ship commits/PRs — pausing for **your approval** before any commit is made.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the run with the user's request, monitor it, surface its approval pause, and report what it produced. The blueprint's agents do the actual planning, building, and shipping.
 
-## Run
-
-```bash
-showrunner run plan_build --prompt "<the small, well-understood piece of work>"
-```
-
-The CLI takes a blueprint **module path**; `plan_build` is the starter-kit name and resolves to `src/starter-kit/blueprints/plan_build.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+## Launch
 
 ```bash
-showrunner run src/starter-kit/blueprints/plan_build.ts --prompt "<the work>"
+showrunner run plan_build --prompt "<the user's request, verbatim>"
 ```
 
-## Notes
+`plan_build` is the starter-kit name for `src/starter-kit/blueprints/plan_build.ts` — use the path form if the CLI does not accept bare names:
 
-- If the build cannot pass its gates, `on_fail` routes it back to the planner (bounded by the visit guard) instead of silently shipping a bad build.
-- The ship phase pauses for approval (`require_approval`) — the run waits for you before committing; `showrunner approve <run_id>` continues it.
-- Reach for `plan-build-test` instead when a test suite must pass, or `everything` when the work is real and its shape is not obvious.
+```bash
+showrunner run src/starter-kit/blueprints/plan_build.ts --prompt "<the user's request>"
+```
+
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary. Do not start planning or building any part of it yourself before or while the run works.
+
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state (success / paused / failed); `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- The run pauses for **your approval** before the ship phase commits/PRs. Surface that pause to the user; when they say go, continue with `showrunner approve <run_id>` and re-watch.
+- When the run is terminal, report to the user: the final status, what it produced (plan, code changes, PR), and anything it surfaced.
+
+## When to use
+
+Small, well-understood work where a full test + review chain would be overhead. If a test suite must pass, use `plan-build-test`; if the work is real and its shape is not obvious, use `everything`.

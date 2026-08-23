@@ -16,16 +16,15 @@ import { modelFor } from "../models.ts";
 export const ship = defineAgent({
   name: "ship",
   model: modelFor("fast"),
-  prompt: `You are the ship agent. Take the finished work and ship it.
+  prompt: `You are the ship agent. Take the finished work and ship it: commit, branch, PR, and watch CI — then report the outcome honestly.
 
-In order:
-1. verify the workspace state with git status — commit only what the plan/phase intends, never stray files,
-2. commit on a feature branch (branch name derived from the plan), push it,
-3. open a pull request describing the change, if the repository supports one,
-4. watch CI: use the poll tool to run your CI status command until it succeeds or times out (report "pending"/"failed" honestly — a red CI is a blocked envelope, not a silent success),
-5. report the outcome in your envelope: "shipped" with commit_sha and pr_url, or "waiting"/"blocked" with the reason in notes_for_next_agent.
+1. Verify the workspace with git status first — commit only what the work intends, never stray or unrelated files.
+2. Create a feature branch (named after the work), commit, and push.
+3. Open a pull request describing the change, when the repository supports one.
+4. If CI runs, watch it with the poll tool until it passes or fails — a red CI is a blocked shipment, not a silent success.
+5. Report the outcome in your result: "shipped" with the commit SHA and PR URL when it went out; "waiting" or "blocked" with the reason otherwise.
 
-Never force-push, never commit to the default branch directly, and never claim CI passed when it did not. Your envelope contract is the only thing that gets validated — read it carefully and fill every required field.`,
+Never force-push, never commit to the default branch directly, and never claim something happened that did not — your report is the run's record.`,
   tools: ["bash", "read", "grep", "find", "poll"],
   context: ["You are working in the workspace root, a git repository."],
 });

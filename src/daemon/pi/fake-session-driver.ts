@@ -21,7 +21,7 @@ export interface FakeSessionDriverOptions {
   script: unknown;
   /** absolute path to write the session file to (runDir/sessions/<slug>-v<visit>.json) */
   sessionFile: string;
-  /** context_handoff/<phase>/outputs — where the fake writes envelope.json */
+  /** <runDir>/<phase>/outputs — where the fake writes envelope.json and artifacts */
   outputsDir: string;
   /** pause between streamed lines (FAKE_PI_DELAY_MS) */
   delayMs?: number;

@@ -26,9 +26,10 @@ function openTmp(label: string) {
   return { dir, db };
 }
 
-/** A scratch run cwd for fixture submissions — the §9 workspace
- * (context_handoff/) must live in a scratch dir, never the repo root (the
- * test runner's working directory). Mirrors the server/e2e scratch-cwd pattern. */
+/** A scratch run cwd for fixture submissions — the agent works there, but the
+ * §9 workspace (inputs/outputs) lives under the run's record dir, never the
+ * repo root (the test runner's working directory). Mirrors the server/e2e
+ * scratch-cwd pattern. */
 function tmpCwd(label: string): string {
   return mkdtempSync(join(tmpdir(), `showrunner-driver-cwd-${label}-`));
 }

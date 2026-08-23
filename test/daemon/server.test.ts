@@ -180,13 +180,13 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
     const list = (runs.json as { runs: { phase_counts: Record<string, number> }[] }).runs;
     expect(list[0]!.phase_counts).toMatchObject({ total: 2, success: 2 });
 
-    // the §13.3 snapshot is on disk
+    // §13.3 snapshot is on disk
     expect(existsSync(join(dir, "runs", run_id, "blueprint.json"))).toBe(true);
 
-    // F3: the handoff landed in the SCRATCH cwd, and THIS test added no
-    // residue to the repo root (a parallel IC's pre-existing residue is not
-    // ours to delete)
-    expect(existsSync(join(runCwd, "context_handoff", "build", "outputs", "envelope.json"))).toBe(true);
+    // F3: the run workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>),
+    // never the cwd — a run can never dirty the checkout, scratch or not
+    expect(existsSync(join(dir, "runs", run_id, "build", "outputs", "envelope.json"))).toBe(true);
+    expect(existsSync(join(runCwd, "context_handoff"))).toBe(false);
     expect(existsSync(join(process.cwd(), "context_handoff"))).toBe(rootHadContextDir);
   } finally {
     await daemon?.close();

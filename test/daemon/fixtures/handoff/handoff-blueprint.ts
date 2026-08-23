@@ -38,7 +38,7 @@ const qualityGate: Gate = async (envelope: Envelope) => {
 const planner = defineAgent({
   name: "planner",
   model: "fake-pi",
-  prompt: "Plan the work; write context_handoff/plan/outputs/envelope.json and plan.md.",
+  prompt: "Plan the work; write your envelope.json and plan.md to your outputs directory.",
   tools: ["bash", "edit", "read"],
   context: [
     "Context literal: the plan must name the module, the slices, and the done criteria.",
@@ -51,7 +51,7 @@ const planner = defineAgent({
 const builder = defineAgent({
   name: "builder",
   model: "fake-pi",
-  prompt: "Build from the plan; write context_handoff/build/outputs/envelope.json.",
+  prompt: "Build from the plan; write your envelope.json to your outputs directory.",
   tools: ["bash", "edit", "read"],
   context: ["Build literal: ship the smallest thing that satisfies the plan."],
 });

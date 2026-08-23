@@ -152,6 +152,10 @@ function seedDetailData(dir: string): void {
   ev("correction", { phase: "build", visit: 1, reason: "gate testsPass failed", message: "tests failed: expected 3, got 2 — fix t1" }, 5 * 60_000 + 12_000, { phaseId: "ph-build" });
   ev("agent_end", { agent: "builder", pi_session_id: "s-build", exit: 0, ok: true }, 5 * 60_000 + 20_000, { phaseId: "ph-build" });
   ev("spend", { phase: "build", tokens_in: 500, tokens_out: 120, cache_read: 0, cache_write: 0, usd: 0.0021, estimated: false }, 5 * 60_000 + 21_000, { phaseId: "ph-build" });
+  // visit 2: a second phase_start + a second correction — the event stream is
+  // what the gantt derives corrections/visits from, so it must match the row
+  ev("phase_start", { phase: "build", agent: "builder", visit: 2, budget: 3 }, 5 * 60_000 + 40_000, { phaseId: "ph-build" });
+  ev("correction", { phase: "build", visit: 2, reason: "gate testsPass failed", message: "tests failed: expected 3, got 2 — fix t2" }, 5 * 60_000 + 50_000, { phaseId: "ph-build" });
   ev("run_status", { from: "running", to: "paused", reason: "correction budget exhausted (2/3)" }, 7 * 60_000);
   ev("human_action", { action: "steer", by: "operator", detail: "fix the failing test, then re-run the suite" }, 7 * 60_000 + 1_000);
 
@@ -273,6 +277,20 @@ describe("run detail (T10a) — server-side daemon data + the cursor proxy", () 
       expect(gantt).toMatch(/planner/);
       expect(gantt).toMatch(/builder/);
 
+      // column headers: full names with hover tooltips (§16.7 polish) — the
+      // bar column is TIMELINE, the outcome lives in its own STATE column
+      expect(gantt).toContain("CORRECTIONS");
+      expect(gantt).toContain("VISITS");
+      expect(gantt).toContain("TIMELINE");
+      expect(gantt).toContain('title="the phase&#39;s outcome:');
+      expect(gantt).toContain('title="re-prompts issued against this phase');
+      // STATE column: event-derived outcome per phase + human-readable labels
+      expect(gantt).toContain('data-phase-state="success"');
+      expect(gantt).toContain('data-phase-state="in_progress"');
+      expect(gantt).toContain('data-phase-state="pending"');
+      expect(gantt).toContain("in progress");
+      expect(gantt).toContain("waiting");
+
       // now cursor — a paused run still renders it (acceptance: running/paused)
       expect(html).toContain('data-now-cursor');
 
@@ -313,7 +331,7 @@ describe("run detail (T10a) — server-side daemon data + the cursor proxy", () 
       // spend delta row
       expect(html).toContain("in 500 · out 120");
       // newest-last: rowid order in the DOM
-      expect(html.indexOf('data-event-id="1"')).toBeLessThan(html.indexOf('data-event-id="16"'));
+      expect(html.indexOf('data-event-id="1"')).toBeLessThan(html.indexOf('data-event-id="18"'));
 
       // ── read-only: no forms, nothing that can mutate run state ──────────
       expect(html).not.toContain("<form");
@@ -322,7 +340,7 @@ describe("run detail (T10a) — server-side daemon data + the cursor proxy", () 
       // the daemon agrees the seeded run exists with the expected event count
       const detail = await client.getRun(RUN_A);
       expect(detail.run.status).toBe("paused");
-      expect(detail.event_count).toBe(16);
+      expect(detail.event_count).toBe(18);
     } finally {
       await daemon?.close();
       restore();
@@ -366,14 +384,14 @@ describe("run detail (T10a) — server-side daemon data + the cursor proxy", () 
       const first = await fetchEvents(RUN_A, 0);
       expect(first.status).toBe(200);
       const page1 = first.json as { events: { id: number }[]; next_cursor: number };
-      expect(page1.events).toHaveLength(16);
-      expect(page1.next_cursor).toBe(16);
+      expect(page1.events).toHaveLength(18);
+      expect(page1.next_cursor).toBe(18);
 
       // the run progresses: new events land in the daemon's DB (a second
       // writer through WAL — the same transport the daemon itself uses)
       const db = openDb(dbPathFor(dir));
       const t = new Date().toISOString();
-      insertEvent(db, { run_id: RUN_A, phase_id: "ph-build", agent_session_id: null, type: "tool_call", ts: t, data: { tool: "bash", tool_call_id: "t3", args: "ls -la context_handoff", result_snippet: "context_handoff/\nbuild/\n", ok: true, duration_ms: 120, agent: "builder" } });
+      insertEvent(db, { run_id: RUN_A, phase_id: "ph-build", agent_session_id: null, type: "tool_call", ts: t, data: { tool: "bash", tool_call_id: "t3", args: "ls ~/.showrunner/runs/<run>/build/inputs", result_snippet: "envelope.json\nplan.md\n", ok: true, duration_ms: 120, agent: "builder" } });
       insertEvent(db, { run_id: RUN_A, phase_id: "ph-build", agent_session_id: null, type: "spend", ts: t, data: { phase: "build", tokens_in: 200, tokens_out: 40, cache_read: 0, cache_write: 0, usd: 0.0009, estimated: false } });
       db.close();
 

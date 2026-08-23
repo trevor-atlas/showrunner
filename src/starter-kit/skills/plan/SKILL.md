@@ -1,26 +1,32 @@
 ---
 name: plan
-description: Produce a concrete, executable plan document with the Showrunner planner agent — scope, ordered steps, checks, and any questions it cannot answer safely. Use before any code moves when the goal is real and underspecified.
+description: "Launch a Showrunner planning run — the planner agent turns the goal into a concrete, executable plan document and surfaces questions instead of guessing. You launch and monitor the run; you do not write the plan yourself. Use before any code moves when the goal is real and underspecified."
 ---
 
-# Showrunner: plan
+# Showrunner: plan (the spec before any code)
 
-Run the Showrunner `plan` blueprint: one planning phase by the planner agent. It writes a plan document (scope, ordered steps naming files and agents, checks that prove each step, assumptions) and raises questions it cannot answer safely.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the planning run with the user's goal, monitor it, and report the plan document it produces. The planner agent does the actual planning.
 
-## Run
+## Launch
 
 ```bash
-showrunner run plan --prompt "<the goal to plan, e.g. 'add offline sync to the mobile client'>"
+showrunner run plan --prompt "<the goal to plan, verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `plan` is the starter-kit name and resolves to `src/starter-kit/blueprints/plan.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`plan` is the starter-kit name for `src/starter-kit/blueprints/plan.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
 showrunner run src/starter-kit/blueprints/plan.ts --prompt "<the goal to plan>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary. Do not start planning or exploring yourself before or while the run works.
 
-- The plan phase's envelope must carry a `plan_path` (the `envelopeShape` gate) — the plan document is the deliverable.
-- Ambiguous goals are surfaced as `questions` in the envelope, which pauses the run for a human rather than letting the planner guess.
-- Follow with `build` (the plan already exists) or `plan-build` (plan + build + ship in one run).
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state; `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- No approval pauses — the run runs to completion.
+- When the run is terminal, report to the user: the final status, where the plan document landed, and any questions the planner surfaced (an ambiguous goal pauses the run rather than being guessed).
+
+## When to use
+
+The spec before any code: the goal is real but underspecified and nothing should be built yet. If the user just wants reconnaissance first, use `scout`; if the plan already exists and only needs implementing, use `build`.

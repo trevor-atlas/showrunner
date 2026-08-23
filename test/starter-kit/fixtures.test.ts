@@ -74,7 +74,7 @@ async function runToSuccess(e: RunEnv, blueprint: Blueprint, scripts: ScriptMap)
 test("scout runs end-to-end (scout agent, recon phase)", async () => {
   const e = env("scout");
   const runId = await runToSuccess(e, scoutBlueprint, { recon: session([reconTurn()]) });
-  expect(gatePassed(e.db, runId, "envelopeShape")).toBe(true); // findings gate ran
+  expect(gatePassed(e.db, runId, "findingsReported")).toBe(true); // the findings gate ran
 });
 
 test("plan runs end-to-end (planner agent)", async () => {

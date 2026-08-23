@@ -29,7 +29,7 @@ The typed JSON output of one agent invocation: a flexible base (summary, artifac
 _Avoid_: result, response
 
 **Context**:
-The briefing material given to an agent: an array of strings, each either literal content or an exact filepath the harness reads and inlines into the prompt at runtime. Distinct from context_handoff, which carries the output handoff between phases.
+The briefing material given to an agent: an array of strings, each either literal content or an exact filepath the harness reads and inlines into the prompt at runtime. Distinct from the phase workspace, which carries the output handoff between phases.
 _Avoid_: inputs, attachments
 
 **Correction**:
@@ -48,9 +48,9 @@ _Avoid_: session, execution
 One pi invocation of one agent within a phase, keyed by a pi session id that can be continued.
 _Avoid_: —
 
-**context_handoff**:
-The filesystem channel between phases: reference files agents write, and the inputs the harness materializes for them to read. Context transfers in code, not in conversation.
-_Avoid_: scratch space
+**Phase workspace**:
+The filesystem channel between phases: per-phase `inputs/` and `outputs/` under the run's record dir (`{data_dir}/runs/<run_id>/<phase>/`). Reference files agents write land in `outputs/`; the harness materializes them into the next phase's `inputs/`. Context transfers in code, not in conversation.
+_Avoid_: scratch space, context_handoff
 
 **on_fail**:
 The phase a gate's exhausted budget branches to, letting blueprints loop by configuration rather than syntax.

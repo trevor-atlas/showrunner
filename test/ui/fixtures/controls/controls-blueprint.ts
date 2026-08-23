@@ -25,7 +25,7 @@ const QualityEnvelope = EnvelopeBase.extend({ quality: z.number().min(0).max(10)
 const builder = defineAgent({
   name: "builder",
   model: "fake-pi",
-  prompt: "Execute the phase goal and write your final result to context_handoff/build/outputs/envelope.json.",
+  prompt: "Execute the phase goal and write your final result to envelope.json in your outputs directory.",
   tools: ["bash"],
   context: [],
 });

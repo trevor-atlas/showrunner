@@ -1,7 +1,7 @@
 import { defineBlueprint } from "../../core/index.ts";
 import { scout } from "../agents/scout.ts";
 import { ScoutEnvelope } from "../envelopes.ts";
-import { envelopeShape } from "../gates/index.ts";
+import { findingsReported } from "../gates/index.ts";
 
 /**
  * scout — read-only recon (PLAN §14). Nothing changes: the scout explores,
@@ -16,8 +16,10 @@ export default defineBlueprint({
       name: "recon",
       agent: scout,
       envelope: ScoutEnvelope,
-      // the envelope must carry findings — the whole point of a recon phase
-      gates: [envelopeShape(ScoutEnvelope)],
+      // the findings are the payload — the gate insists the scout wrote its
+      // FINDINGS.md to outputs/ and listed it in artifacts, so a scout that
+      // reported nothing cannot pass
+      gates: [findingsReported()],
       budget: 3,
     },
   ],

@@ -17,10 +17,10 @@ coverage/
 *.db-wal
 *.db-shm
 
-# run-time handoff materialization under the run cwd (FINDING-3: a run with
-# the default cwd must never dirty the checkout — the README quickstart runs
-# in a scratch --cwd, and this belt-and-suspenders covers runs that don't)
-context_handoff/
+# (the harness writes all run-time inputs/outputs under the DATA directory —
+# ~/.showrunner/runs/<run_id>/<phase>/ — never the checkout; the lines above
+# are belt-and-suspenders for anyone who points --data-dir at the repo, plus
+# residue from pre-workspace runs)
 
 # misc
 .DS_Store

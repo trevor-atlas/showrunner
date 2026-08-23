@@ -24,6 +24,8 @@ import { runDirFor } from "../core/index.ts";
 
 import {
   materializeHandoff,
+  outputsDirFor,
+  phaseDirFor,
   readHandoffInputs,
   recordAcceptedEnvelope,
   resolveContext,
@@ -669,7 +671,7 @@ async function driveVisit(
     }
   }
 
-  const outputsDir = join(state.cwd, "context_handoff", slug, "outputs");
+  const outputsDir = outputsDirFor(state.runDir, phase.name);
   mkdirSync(outputsDir, { recursive: true });
 
   // ── the session driver seam (§8, T02) ─────────────────────────────────────
@@ -809,6 +811,7 @@ async function driveVisit(
         visit,
         attempt: corrections,
         cwd: state.cwd,
+        runDir: state.runDir,
         envelopePath: join(outputsDir, "envelope.json"),
         schema: phase.envelope,
         gates: phase.gates,
@@ -1006,11 +1009,11 @@ function abortCheck(state: LoopState): "fail" | null {
 // ── context & handoff (§9 full protocol — the implementation lives in handoff.ts) ──
 
 /** §9.3 materialization (handoff.ts): the predecessor's accepted envelope.json
- * and EVERY file it listed in `artifacts` land in context_handoff/<phase>/inputs/
+ * and EVERY file it listed in `artifacts` land in <runDir>/<phase>/inputs/
  * — the zero-friction handoff. The first phase has no predecessor.
  */
 export function materializeInputs(state: LoopState, phaseName: string, handoff: Handoff | null): void {
-  materializeHandoff(state.cwd, phaseName, handoff);
+  materializeHandoff(state.runDir, phaseName, handoff);
 }
 
 /** Resolve context entries (§9.2): walk agent defaults then phase additions;
@@ -1048,7 +1051,7 @@ function userPromptFromSnapshot(state: LoopState): string | null {
   return null;
 }
 
-/** The composed prompt (§8.2): phase + agent + context + handoff + envelope contract. */
+/** The composed prompt (§8.2): workspace + phase + agent + context + handoff + envelope contract. */
 export function composePrompt(
   state: LoopState,
   phase: BlueprintPhase,
@@ -1069,13 +1072,25 @@ export function composePrompt(
   if (userPrompt !== null) {
     lines.push("", "[User request]", userPrompt);
   }
+  // §9.1: this run's workspace lives in the RUN RECORD DIR, never the repo —
+  // the harness writes nothing under the run's cwd. The agent works wherever
+  // the run's cwd points (the project); its inputs and outputs live under the
+  // named run dir, addressed relative to it.
+  const slug = slugFor(phase.name);
+  lines.push(
+    "",
+    "[Workspace]",
+    `${state.runDir}   (this run's record dir — your per-phase inputs/outputs live here, addressed relative to it)`,
+    `  ${slug}/inputs/    — what the harness materialized for you (read-only)`,
+    `  ${slug}/outputs/   — where YOU write your files: envelope.json plus anything you list in artifacts`,
+  );
   // §8.2 [Context] = the §9.2 context entries plus the §9.3 materialized handoff
   // inputs — each inputs/ path named with its contents inlined, so the agent
   // never hunts for the predecessor's envelope or artifacts (§9.3).
   const contextLines: string[] = [...context];
   if (handoff !== null) {
-    for (const { rel, contents } of readHandoffInputs(state.cwd, phase.name)) {
-      contextLines.push(`context_handoff/${slugFor(phase.name)}/inputs/${rel}:`, contents);
+    for (const { rel, contents } of readHandoffInputs(state.runDir, phase.name)) {
+      contextLines.push(`${slug}/inputs/${rel}:`, contents);
     }
   }
   if (contextLines.length > 0) {
@@ -1087,7 +1102,7 @@ export function composePrompt(
     "[Envelope contract]",
     renderSchema(phase.envelope),
     "Return your final result as a JSON object matching this schema, written to",
-    `context_handoff/${slugFor(phase.name)}/outputs/envelope.json`,
+    `${phaseDirFor(state.runDir, phase.name)}/outputs/envelope.json`,
     "",
     `[Tools available] ${phase.agent.tools.join(", ")}`,
   );
@@ -1151,7 +1166,13 @@ function renderType(s: z.ZodTypeAny): string {
     }
     case "ZodObject": {
       const shape = (s as unknown as { shape: Record<string, z.ZodTypeAny> }).shape;
-      const fields = Object.entries(shape).map(([k, v]) => `  ${k}: ${renderType(v)}`);
+      // each field's .describe() text rides into the contract — the agent must
+      // see WHAT each field means ("files you WROTE to outputs/", not just
+      // `string[]`), or it fills artifacts with files it merely read
+      const fields = Object.entries(shape).map(([k, v]) => {
+        const doc = describeOf(v);
+        return `  ${k}: ${renderType(v)}${doc !== null ? ` — ${doc}` : ""}`;
+      });
       return `{\n${fields.join("\n")}\n}`;
     }
     case "ZodString":
@@ -1173,6 +1194,23 @@ function renderType(s: z.ZodTypeAny): string {
     default:
       return "any";
   }
+}
+
+function describeOf(s: z.ZodTypeAny): string | null {
+  const outer = (s as { description?: string | null }).description;
+  if (typeof outer === "string" && outer !== "") return outer;
+  // optional/nullable wrap the described schema — fall through to the inner
+  const unwrap = (s as { unwrap?: () => z.ZodTypeAny }).unwrap;
+  if (typeof unwrap === "function") {
+    const inner = describeOf(unwrap.call(s));
+    if (inner !== null) return inner;
+  }
+  const defaultOf = (s as { _def?: { innerType?: z.ZodTypeAny } })._def?.innerType;
+  if (defaultOf !== undefined) {
+    const inner = describeOf(defaultOf);
+    if (inner !== null) return inner;
+  }
+  return null;
 }
 
 function messageOf(err: unknown): string {
@@ -1251,13 +1289,13 @@ export async function submitBlueprintRun(
  * JSONL; this nudge names the phase, the interrupted state, and the envelope
  * contract the agent must still satisfy.
  */
-export function composeContinuePrompt(blueprint: Blueprint, phase: BlueprintPhase): string {
+export function composeContinuePrompt(blueprint: Blueprint, phase: BlueprintPhase, runDir: string): string {
   return [
     `[Phase] ${blueprint.name} → ${phase.name}`,
     "[Resume] your previous session for this phase was interrupted by a daemon",
     "restart. The session context has been restored — continue the work from",
     "where you left off, complete the phase, and write your final result to",
-    `context_handoff/${slugFor(phase.name)}/outputs/envelope.json.`,
+    `${phaseDirFor(runDir, phase.name)}/outputs/envelope.json.`,
     "",
     "[Envelope contract]",
     renderSchema(phase.envelope),
@@ -1356,7 +1394,7 @@ export async function prepareResume(
     resume: {
       phase: resumePhase.name,
       visit,
-      continueInstruction: composeContinuePrompt(blueprint, resumePhase),
+      continueInstruction: composeContinuePrompt(blueprint, resumePhase, runDir),
       handoff,
     },
   };

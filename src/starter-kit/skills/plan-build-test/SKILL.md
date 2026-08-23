@@ -1,31 +1,32 @@
 ---
 name: plan-build-test
-description: The standard Showrunner chain — plan, build, gate (tests + typecheck), review, ship. Planner writes the plan, builder implements it against the plan (matchesPlan + testsPass + lintClean gates), reviewer approves it (reviewApproved, rejected work loops back to the builder), and ship commits/PRs behind a human approval. Use for ordinary feature work that should be planned, green, reviewed, and shipped.
+description: "Launch the standard Showrunner chain — plan, build, test + typecheck, review, ship behind human approval — as a single run. You launch and monitor the run; the blueprint's agents do the work. Use for ordinary feature work the user wants planned, green, reviewed, and shipped."
 ---
 
-# Showrunner: the standard chain
+# Showrunner: the standard chain (plan → build → test → review → ship)
 
-Run the Showrunner `plan_build_test` blueprint: **plan → build → gate(test, lint) → review → ship** (PLAN §14's `plan_build_test`).
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the blueprint run with the user's request, monitor it, surface its approval pause, and report what it produced. The run's agents do the actual planning, building, testing, reviewing, and shipping.
 
-- **plan** — planner writes the plan document (envelope must carry `plan_path`).
-- **build** — builder implements it; gates: `matchesPlan` (must reference the plan), `testsPass`, `lintClean`. Budget exhaustion routes back to the planner.
-- **review** — reviewer must approve (`reviewApproved`); a rejected review routes back to the builder (bounded revise loop).
-- **ship** — commits/PRs behind **your approval** (`require_approval`).
-
-## Run
+## Launch
 
 ```bash
-showrunner run plan_build_test --prompt "<the feature to plan, build, test, review, and ship>"
+showrunner run plan_build_test --prompt "<the user's request, verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `plan_build_test` is the starter-kit name and resolves to `src/starter-kit/blueprints/plan_build_test.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`plan_build_test` is the starter-kit name for `src/starter-kit/blueprints/plan_build_test.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
-showrunner run src/starter-kit/blueprints/plan_build_test.ts --prompt "<the feature>"
+showrunner run src/starter-kit/blueprints/plan_build_test.ts --prompt "<the user's request>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary or a paraphrase. Do not start planning, building, or testing any part of it yourself before or while the run works.
 
-- Gate commands are the replaceable defaults (`bun test`, `bunx tsc --noEmit`) — override them in the blueprint.
-- The run pauses twice for you: at the ship approval (and only there, unless you add more `require_approval`). `showrunner approve <run_id>` continues it.
-- Use `everything` when the work is real and its shape is not obvious (adds a human approval on the plan itself and heavier budgets).
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state (success / paused / failed); `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- The run pauses for **your approval** before the ship phase commits/PRs. Surface that pause to the user; when they say go, continue with `showrunner approve <run_id>` and re-watch.
+- When the run is terminal, report to the user: the final status, what it produced (plan, code changes, PR), and anything it surfaced (questions, decisions, blocked reasons).
+
+## When to use
+
+Ordinary feature work that should be planned, green, reviewed, and shipped. For work whose shape is not obvious, use `everything` (adds a human approval on the plan itself); for a quick implement-without-gates pass, use `build`.

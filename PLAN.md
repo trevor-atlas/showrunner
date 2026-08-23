@@ -25,7 +25,7 @@ Full glossary in `CONTEXT.md`. The load-bearing distinctions:
 - **Correction** — the harness re-prompts the *same* agent session, naming exactly what was wrong. Nothing restarts; a correction costs one message.
 - **Steering** — human intervention in a live agent session (pi rpc `steer`), delivered between the agent's turns.
 - **Visit** — one execution of a phase within a run. Corrections happen inside a visit; the loop guard counts visits, not corrections.
-- **context_handoff** — the filesystem channel between phases: the reference files agents write (outputs) and the inputs the harness materializes for them (the automatic handoff).
+- **Phase workspace** — the filesystem channel between phases: per-phase `inputs/` (what the harness materializes) and `outputs/` (the files agents write), living under the run's record dir (`{data_dir}/runs/<run_id>/<phase>/`) — never the run cwd, so a run cannot dirty the checkout.
 
 ## 3 · Architecture
 
@@ -79,7 +79,7 @@ flowchart TD
     Appr -- "no" --> Mat
     Appr -- "yes" --> WaitAppr["Pause: human approves (dashboard/CLI)"]
     WaitAppr --> Mat
-    Mat["Materialize context_handoff/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
+    Mat["Materialize <run_id>/<phase>/inputs/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
     Vis -- "no" --> Spawn["Spawn: pi --mode rpc --session <id> --approve<br/>prompt = phase prompt + envelope schema + handoff"]
     Vis -- "yes" --> Pause
     Spawn --> Tail["Tail events → SQLite (live dashboard feed)"]
@@ -115,7 +115,7 @@ Every loop terminates through either a budget (corrections), a guard (`max_visit
 // envelope — the base, extended per phase (ADR-0002)
 export const EnvelopeBase = z.object({
   summary: z.string(),
-  artifacts: z.array(z.string()),          // paths in context_handoff/<phase>/outputs
+  artifacts: z.array(z.string()),          // paths in <run_id>/<phase>/outputs (run record dir, §9.1)
   notes_for_next_agent: z.string(),
   blocked: z.boolean().optional(),         // agent asserts it cannot proceed
   blocked_reason: z.string().optional(),   // shown on the pause screen
@@ -179,7 +179,7 @@ defineBlueprint({
 
 - **The rule**: at spawn, the harness walks each `context` entry — resolve against the run's cwd (fallback: the agent module's dir); if it resolves to a readable file, read and inline its contents; otherwise treat the string as literal content. Exact paths only; no globs.
 - **The automatic handoff**: the predecessor's `envelope.json` and every artifact it listed are always materialized for the next phase. This is "context transfers in code, not in conversation."
-- **Two directions, one channel**: `context_handoff/<phase>/inputs/` (what the harness gives) and `context_handoff/<phase>/outputs/` (what the agent writes and lists in `artifacts`). Outputs become the next phase's inputs.
+- **Two directions, one channel**: `<run_id>/<phase>/inputs/` (what the harness gives) and `<run_id>/<phase>/outputs/` (what the agent writes and lists in `artifacts`), both under the run's record dir. Outputs become the next phase's inputs.
 - **Zero-friction**: the phase prompt explicitly names the handoff and context; the agent never hunts.
 
 ## 9 · Human intervention & trust

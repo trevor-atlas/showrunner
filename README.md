@@ -35,11 +35,12 @@ In another terminal:
 ```bash
 # 3. run a starter blueprint. Real pi by default — the daemon auto-detects the
 #    binary and spawns the actual agent; --prompt steers it (it becomes the
-#    run's first instruction, §8.2). --cwd runs the work in a scratch
-#    workspace so the run's context_handoff/ output never lands in your
-#    checkout. (Set SHOWRUNNER_FAKE=1 to replay the scripted demo sessions
-#    instead — no tokens.)
-showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow" --cwd "$(mktemp -d)"
+#    run's first instruction, §8.2). The run's inputs/outputs live under the
+#    DATA DIRECTORY (~/.showrunner/runs/<run_id>/<phase>/), never in your
+#    checkout — nothing the harness does touches the source tree. (Set
+#    SHOWRUNNER_FAKE=1 to replay the scripted demo sessions instead — no
+#    tokens.)
+showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow"
 
 # 4. watch it live
 showrunner runs                              # list runs
@@ -74,12 +75,13 @@ surface by design (PLAN §14): the tests it ships prove the machinery, not your
 project. `showrunner run` takes a blueprint **module path**. `--prompt "<goal>"` is the
 instruction the agent works against — it is composed into the run's first
 prompt as the `[User request]` section (and snapshotted verbatim into the
-run's `blueprint.json`). Run the demo in a scratch `--cwd` so its
-`context_handoff/` output never dirties your checkout:
+run's `blueprint.json`). Every run's files live under the data directory
+(`~/.showrunner/runs/<run_id>/`, see below) — the harness writes nothing into
+your checkout, so no scratch `--cwd` is needed:
 
 ```bash
-showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow" --cwd "$(mktemp -d)"
-showrunner run src/starter-kit/blueprints/plan_build.ts --prompt "add offline sync" --cwd "$(mktemp -d)"
+showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow"
+showrunner run src/starter-kit/blueprints/plan_build.ts --prompt "add offline sync"
 ```
 
 Real-pi runs are the default (the daemon auto-detects the binary); scripted
@@ -90,7 +92,7 @@ FakePi sessions — the test fixture, not a runtime mode — are the opt-in
 
 | Variable | Meaning |
 | --- | --- |
-| `SHOWRUNNER_DATA_DIR` | data directory (default `~/.showrunner`): `showrunner.db`, `runs/`, `daemon.pid`, `prices.json`. Honored by the daemon, the CLI, and the SDK. |
+| `SHOWRUNNER_DATA_DIR` | data directory (default `~/.showrunner`): `showrunner.db`, `runs/`, `daemon.pid`, `prices.json`. Honored by the daemon, the CLI, and the SDK. One run = one folder under `runs/<run_id>/`: the §13.3 `blueprint.json` config snapshot, the §10 raw record (`raw_output.jsonl`, `envelope.json`, `agent_map.json`), `sessions/`, and the per-phase workspace `<phase>/inputs|outputs/` — everything a run produced, inspectable and modifiable by hand. |
 | `SHOWRUNNER_PORT` | the single web-server port (default `44100`): the §13 API and the dashboard share it; `0` = ephemeral (the pidfile's second line records the bound port). This replaced `SHOWRUNNER_DAEMON_URL` and `SHOWRUNNER_DASHBOARD_PORT` (deleted). |
 | `SHOWRUNNER_FAKE` | `=1` forces the scripted FakePi sessions (tests, CI, token-free demos). Unset = real pi by default (auto-detected). Explicitly overrides `SHOWRUNNER_SMOKE`. |
 | `SHOWRUNNER_SMOKE` | `=1` forces the REAL pi driver regardless of detection (the capstone smoke). The smoke runs with `SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts`. |

@@ -6,6 +6,21 @@ export interface GateContext extends RunContext {
   phase: string;
   visit: number;
   /**
+   * Absolute path to this phase's inputs/ dir — the run's per-phase workspace
+   * ({data_dir}/runs/<run_id>/<phase>/inputs) where the predecessor's accepted
+   * envelope.json and artifacts were materialized for the agent. Gates that
+   * read what the phase was handed (matchesPlan) check files here. Absent
+   * when a daemon does not provide it.
+   */
+  inputs_dir?: string;
+  /**
+   * Absolute path to this phase's outputs/ dir ({data_dir}/runs/<run_id>/<phase>/outputs)
+   * — where the agent wrote its envelope.json and artifacts. Gates that verify
+   * what the agent actually produced (findingsReported, artifact existence)
+   * check files here. Absent when a daemon does not provide it.
+   */
+  outputs_dir?: string;
+  /**
    * The §3.7 escape hatch to the host shell. Hooks always get one; v1 daemons
    * may not provide it to gates yet — gates can fall back to `createShell`
    * from this package when absent.

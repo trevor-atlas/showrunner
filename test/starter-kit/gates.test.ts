@@ -174,54 +174,62 @@ test("envelopeShape passes a conforming envelope and lists violations for a non-
 
 test("matchesPlan fails loudly when no plan arrived, and passes only when the envelope references it", async () => {
   const cwd = tmpDir("gates-matches-plan");
-  cleanups.push(cwd);
+  const runDir = tmpDir("gates-matches-plan-run");
+  cleanups.push(cwd, runDir);
+  const inputs = join(runDir, "build", "inputs");
 
-  // no inputs materialized → hard fail with a hint
-  const noInputs = await matchesPlan()(baseEnvelope(), ctx(cwd));
+  // no ctx.inputs_dir → hard fail with a hint
+  const noCtx = await matchesPlan()(baseEnvelope(), ctx(cwd));
+  expect(noCtx.pass).toBe(false);
+  expect(violationsOf(noCtx)[0]).toContain("no inputs dir");
+
+  // inputs dir named but never materialized → fail
+  const noInputs = await matchesPlan()(baseEnvelope(), ctx(cwd, "build", { inputs_dir: inputs }));
   expect(noInputs.pass).toBe(false);
   expect(violationsOf(noInputs)[0]).toContain("no plan");
 
   // inputs exist but no plan file → fail
-  const inputs = join(cwd, "context_handoff", "build", "inputs");
-  writeWorkspace(cwd, { "context_handoff/build/inputs/notes.txt": "not a plan\n" });
-  const noPlan = await matchesPlan()(baseEnvelope(), ctx(cwd));
+  writeWorkspace(runDir, { "build/inputs/notes.txt": "not a plan\n" });
+  const noPlan = await matchesPlan()(baseEnvelope(), ctx(cwd, "build", { inputs_dir: inputs }));
   expect(noPlan.pass).toBe(false);
   expect(violationsOf(noPlan)[0]).toContain("no plan");
 
   // plan file present but the envelope never names it → fail
-  writeWorkspace(cwd, { "context_handoff/build/inputs/plan.md": "# Plan\n" });
-  const notReferenced = await matchesPlan()(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  writeWorkspace(runDir, { "build/inputs/plan.md": "# Plan\n" });
+  const notReferenced = await matchesPlan()(baseEnvelope({ artifacts: [] }), ctx(cwd, "build", { inputs_dir: inputs }));
   expect(notReferenced.pass).toBe(false);
   expect(violationsOf(notReferenced)[0]).toContain("plan.md");
 
   // envelope names the plan in artifacts → pass
-  const referenced = await matchesPlan()(baseEnvelope({ artifacts: ["plan.md"] }), ctx(cwd));
+  const referenced = await matchesPlan()(baseEnvelope({ artifacts: ["plan.md"] }), ctx(cwd, "build", { inputs_dir: inputs }));
   expect(referenced).toEqual({ pass: true });
 
   // an explicit planFile option names a different file
-  const explicit = await matchesPlan({ planFile: "docs/roadmap.md" })(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  const explicit = await matchesPlan({ planFile: "docs/roadmap.md" })(baseEnvelope({ artifacts: [] }), ctx(cwd, "build", { inputs_dir: inputs }));
   expect(explicit.pass).toBe(false);
   expect(violationsOf(explicit)[0]).toContain("roadmap.md");
 });
 
 test("filesExist requires at least one artifact by default, and exact paths when asked", async () => {
   const cwd = tmpDir("gates-files-exist");
-  cleanups.push(cwd);
+  const runDir = tmpDir("gates-files-exist-run");
+  cleanups.push(cwd, runDir);
+  const outputs = join(runDir, "build", "outputs");
 
-  const empty = await filesExist()(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  const empty = await filesExist()(baseEnvelope({ artifacts: [] }), ctx(cwd, "build", { outputs_dir: outputs }));
   expect(empty.pass).toBe(false);
   expect(violationsOf(empty)[0]).toContain("artifacts");
 
-  const any = await filesExist()(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd));
+  const any = await filesExist()(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd, "build", { outputs_dir: outputs }));
   expect(any).toEqual({ pass: true });
 
-  const missing = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: [] }), ctx(cwd));
+  const missing = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: [] }), ctx(cwd, "build", { outputs_dir: outputs }));
   expect(missing.pass).toBe(false);
   expect(violationsOf(missing)[0]).toContain("docs/x.md");
 
-  // listed artifact exists in the workspace → pass
-  writeWorkspace(cwd, { "docs/x.md": "hi" });
-  const withFile = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd));
+  // listed artifact exists in the phase's outputs dir → pass
+  writeWorkspace(runDir, { "build/outputs/docs/x.md": "hi" });
+  const withFile = await filesExist({ paths: ["docs/x.md"] })(baseEnvelope({ artifacts: ["docs/x.md"] }), ctx(cwd, "build", { outputs_dir: outputs }));
   expect(withFile).toEqual({ pass: true });
 });
 

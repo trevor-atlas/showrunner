@@ -16,7 +16,7 @@
 // The base, extended per phase (ADR-0002).
 export const EnvelopeBase = z.object({
   summary: z.string(),                    // what this agent did, for humans
-  artifacts: z.array(z.string()),         // paths in context_handoff/<phase>/outputs
+  artifacts: z.array(z.string()),         // paths in <run_id>/<phase>/outputs (run record dir, §9.1)
   notes_for_next_agent: z.string(),       // the handoff in prose
   blocked: z.boolean().optional(),        // agent asserts it cannot proceed
   blocked_reason: z.string().optional(),  // shown on the pause screen
@@ -164,7 +164,7 @@ A run is `running` while a phase is `in_progress`; `paused` when parked on a hum
 
 ```
 1. require_approval? ── yes → PAUSE(approve) → (approve) → 2
-2. materialize context_handoff/<phase>/inputs/ + rendered predecessor envelope
+2. materialize <run_id>/<phase>/inputs/ (the run record dir, §9) + rendered predecessor envelope
    (the "context transfers in code" step, §9)
 3. visits >= max_visits? ── yes → PAUSE(guard exhausted)   [loop guard]
 4. spawn pi: `--mode rpc --session-id <id> --approve`, cwd = run.cwd, then send the

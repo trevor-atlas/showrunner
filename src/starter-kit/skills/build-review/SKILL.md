@@ -1,26 +1,32 @@
 ---
 name: build-review
-description: Build and get it reviewed against the plan by a Showrunner reviewer — the run loops build ⇄ review until the reviewer approves (reviewApproved gate) or the visit guard pauses. Use when "is this what was asked for" matters more than "does it run" — design fidelity, not just green tests.
+description: "Launch a Showrunner run that builds the work and loops build ⇄ review until a reviewer approves it against the plan. You launch and monitor the run; you do not implement or review yourself. Use when 'is this what was asked for' matters more than 'does it run'."
 ---
 
-# Showrunner: build with a reviewer and bounded revise loop
+# Showrunner: build with a review loop
 
-Run the Showrunner `build_review` blueprint: builder, then a reviewer that judges the work against the plan and must set `approved: true` (the `reviewApproved` gate). A rejected review routes back to the builder; a builder that cannot pass routes forward to the reviewer — the loop terminates or pauses via the visit guard.
+**Run this through Showrunner — do not do the work yourself.** Your job is operator, not implementer: launch the run with the user's request, monitor it, and report the outcome. The builder implements and a reviewer judges the work against the plan; the run loops until the review approves or it pauses for a human.
 
-## Run
+## Launch
 
 ```bash
-showrunner run build_review --prompt "<what to build and against what plan/standard it is judged>"
+showrunner run build_review --prompt "<what to build, and against what plan/standard it is judged, verbatim>"
 ```
 
-The CLI takes a blueprint **module path**; `build_review` is the starter-kit name and resolves to `src/starter-kit/blueprints/build_review.ts` (see that package's README for the name→path map). If your CLI does not accept bare names yet, use the path form:
+`build_review` is the starter-kit name for `src/starter-kit/blueprints/build_review.ts` — use the path form if the CLI does not accept bare names:
 
 ```bash
 showrunner run src/starter-kit/blueprints/build_review.ts --prompt "<what to build>"
 ```
 
-## Notes
+`--prompt` carries the run's goal: pass the user's **full request**, not a summary. Do not start building or reviewing anything yourself before or while the run works.
 
-- The reviewer is read-only and deliberately not rubber-stamping: it must write concrete `issues` when it does not approve.
-- A review that keeps rejecting eats its correction budget, routes back to the builder, and eventually pauses for a human — the verdict, not the build, decides.
-- Reach for `plan-build-test` when green tests matter *and* a review matters, or `everything` when the shape of the work is not obvious.
+## Monitor
+
+- `showrunner run` prints the run id. Then `showrunner watch <run_id>` follows it to a terminal state (success / paused / failed); `showrunner runs` or `showrunner show <run_id>` give snapshots.
+- No approval pauses — the run either finishes with an approved review, or pauses for a human if the loop cannot converge.
+- When the run is terminal, report to the user: the final status and the reviewer's verdict.
+
+## When to use
+
+Design fidelity matters more than green tests: "is this what was asked for" is the bar. If green tests matter *and* a review matters, use `plan-build-test`; if the shape of the work is not obvious, use `everything`.

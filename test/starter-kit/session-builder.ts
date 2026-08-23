@@ -80,15 +80,20 @@ export function promptTurn(): ScriptedTurn {
   return turn(baseEnvelope({ summary: "Planner considered the goal." }));
 }
 
-/** scout — ScoutEnvelope: findings required. */
+/** scout — writes its findings to outputs/FINDINGS.md and lists it in artifacts. */
 export function reconTurn(): ScriptedTurn {
-  return turn(
-    baseEnvelope({
-      summary: "Recon done.",
-      findings: ["src/index.ts is the entry point", "no tests exist yet"],
-      touched: ["src/index.ts"],
-    }),
-  );
+  return {
+    ...turn(
+      baseEnvelope({
+        summary: "Recon done.",
+        artifacts: ["FINDINGS.md"],
+        notes_for_next_agent: "Findings in FINDINGS.md; nothing in the workspace changed.",
+      }),
+    ),
+    artifacts: {
+      "FINDINGS.md": "# Findings\n\n- src/index.ts is the entry point\n- no tests exist yet\n",
+    },
+  };
 }
 
 /** plan — PlanEnvelope: plan_path required; the plan file lands in outputs. */
