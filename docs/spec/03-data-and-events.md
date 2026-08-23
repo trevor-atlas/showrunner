@@ -131,7 +131,7 @@ PLAN §3.3 leaves the count as "ten harness event types (final enumeration at im
 
 (PLAN's "ten" was an approximation; the categories it names — run/phase lifecycle, agent lifecycle, tool calls, envelopes, gate results, corrections, human actions, spend — map onto the twelve concrete types above. `tool_call`, `envelope`, `gate_result`, `spend`, and `human_action` derive from raw pi events + daemon logic rather than being raw pi events themselves; see §7.)
 
-**Naming rule for `tool_call`**: name the row the way you'd read it aloud — `bash: ls -la src`, `edit: packages/core/src/index.ts`. The `data` row keeps the structured `{tool, tool_call_id, args, result_snippet, ok, duration_ms, agent}`.
+**Naming rule for `tool_call`**: name the row the way you'd read it aloud — `bash: ls -la src`, `edit: src/core/src/index.ts`. The `data` row keeps the structured `{tool, tool_call_id, args, result_snippet, ok, duration_ms, agent}`.
 
 
 

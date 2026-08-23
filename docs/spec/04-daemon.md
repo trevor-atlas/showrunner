@@ -143,37 +143,41 @@ The predecessor's `envelope.json` and every listed artifact are materialized int
 
 ## 13 · Daemon API contract
 
-HTTP on a local socket (default `unix://~/.showrunner/daemon.sock`; `127.0.0.1:<port>` fallback where unix sockets are unavailable). JSON bodies. The UI/CLI talk only to this API — the UI is a **server-side** client: remix@next actions fetch this API; the browser never talks to the daemon directly (§16).
+HTTP on **one** local TCP listener: `http://127.0.0.1:44100` (`SHOWRUNNER_PORT` overrides; `0` = ephemeral port, a test seam). The daemon's merged web server (`src/daemon/web.ts`) serves the §13 JSON API **and** the remix@next dashboard on that single listener — there is no unix socket and no transport negotiation. Every API endpoint lives under the **`/api`** prefix (the dashboard's HTML routes own everything else). JSON bodies. The UI/CLI talk only to this API — the UI is a **server-side** client: remix@next actions call the §13 api core functions **in-process** (same process, no socket round trip); the browser never talks to the daemon directly (§16).
 
 ### 13.1 Read
 
 | endpoint | returns |
 |---|---|
-| `GET /runs` | run list: id, blueprint, status, started/ended, spend, queue position |
-| `GET /runs/:id` | run detail: phases (status, visits, corrections, spend), envelope count, needs_review |
-| `GET /runs/:id/events?cursor=<rowid>&limit=500` | the cursor query (§4.3), plus `next_cursor` |
-| `GET /runs/:id/phases/:phase/envelopes` | envelope history for a phase (all attempts) |
-| `GET /runs/:id/phases/:phase/gates` | gate results, incl. overridden |
-| `GET /runs/:id/spend` | per-phase spend breakdown |
-| `GET /runs/:id/raw` | the `raw_output.jsonl` tail (drill-in feed) |
+| `GET /api/health` | liveness: `{ ok: true }` (the CLI's daemon-up check) |
+| `GET /api/status` | daemon status: data dir, db path, pool occupancy, uptime |
+| `GET /api/runs` | run list: id, blueprint, status, started/ended, spend, queue position |
+| `GET /api/runs/:id` | run detail: phases (status, visits, corrections, spend), envelope count, needs_review |
+| `GET /api/runs/:id/events?cursor=<rowid>&limit=500` | the cursor query (§4.3), plus `next_cursor` |
+| `GET /api/runs/:id/pause` | the pause view (menu actions available for a paused run) |
+| `GET /api/runs/:id/phases/:phase/envelopes` | envelope history for a phase (all attempts) |
+| `GET /api/runs/:id/phases/:phase/gates` | gate results, incl. overridden |
+| `GET /api/runs/:id/spend` | per-phase spend breakdown |
+| `GET /api/runs/:id/raw` | the `raw_output.jsonl` tail (drill-in feed) |
 
 ### 13.2 Control
 
 | endpoint | effect |
 |---|---|
-| `POST /runs` `{ blueprint, cwd?, args? }` | submit a run (queues into pool) |
-| `POST /runs/:id/resume` | continue from last completed phase (§12) |
-| `POST /runs/:id/fail` | fail the run; kill children via `processes` (SIGTERM, SIGKILL after 1s) |
-| `POST /sessions/:pi_session_id/steer` `{ message }` | deliver steer between turns (§8.4) |
-| `POST /runs/:id/approve` | approve a `require_approval` pause |
-| `POST /runs/:id/phases/:phase/override` `{ gate, reason }` | override a gate result (audited) |
-| `POST /runs/:id/phases/:phase/restart-fresh` | new pi session, same config |
+| `POST /api/runs` `{ blueprint, cwd?, args? }` | submit a run (queues into pool) |
+| `POST /api/runs/:id/steer` `{ message }` | deliver steer to a run (queued between turns, §8.4) |
+| `POST /api/runs/:id/resume` | continue from last completed phase (§12) |
+| `POST /api/runs/:id/fail` | fail the run; kill children via `processes` (SIGTERM, SIGKILL after 1s) |
+| `POST /api/runs/:id/approve` | approve a `require_approval` pause |
+| `POST /api/runs/:id/phases/:phase/override` `{ gate, reason }` | override a gate result (audited) |
+| `POST /api/runs/:id/phases/:phase/restart-fresh` | new pi session, same config |
+| `POST /api/sessions/:pi_session_id/steer` `{ message }` | deliver steer to a raw pi session id (§8.4) |
 
 All control verbs write a `human_action` event. Override keeps the original `gate_results` row and adds an overridden marker.
 
 ### 13.3 Blueprint submission
 
-`POST /runs` accepts a blueprint **module path** (absolute path to a `.ts` file exporting `defineBlueprint(...)`). The daemon imports it at submit time (validating with zod) and snapshots the *rendered* configuration into the run — later edits to the blueprint do not mutate in-flight runs. The snapshot is stored in `{data_dir}/runs/<run_id>/blueprint.json` (debuggable, and what phase drill-in shows).
+`POST /api/runs` accepts a blueprint **module path** (absolute path to a `.ts` file exporting `defineBlueprint(...)`). The daemon imports it at submit time (validating with zod) and snapshots the *rendered* configuration into the run — later edits to the blueprint do not mutate in-flight runs. The snapshot is stored in `{data_dir}/runs/<run_id>/blueprint.json` (debuggable, and what phase drill-in shows).
 
 
 

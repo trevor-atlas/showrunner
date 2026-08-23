@@ -7,10 +7,12 @@ SQLite database. As the implementation hardened (rounds T01b–T13), the daemon
 became the single long-lived owner of execution (§2.1): it opens the database,
 owns every write (run/phase/session rows, the events log, gate results,
 envelopes, processes), spawns and reaps pi children (§8), folds the raw stream
-through the tracer (§7), and serves the local HTTP API on a unix socket (§13).
-The CLI is a thin client over that socket, and the UI (remix@next) is a
-server-side client of the same API — no other process ever opens the database
-for writing.
+through the tracer (§7), and serves the local web server on one TCP listener
+(`http://127.0.0.1:44100`; `SHOWRUNNER_PORT` overrides) — the §13 JSON API under
+the `/api` prefix and the remix@next dashboard on the same port (§16, §13).
+The CLI is a thin client over that HTTP API, and the UI is a server-side
+consumer of the same §13 api core, called **in-process** — no other process
+ever opens the database for writing.
 
 The reasons this won:
 
@@ -29,11 +31,13 @@ The reasons this won:
   paused run after a daemon restart has no handle and answers 409 — the honest
   response, surfaced as such (§13).
 
-The CLI therefore never opens SQLite; it talks HTTP over the unix socket
-(`unix://~/.showrunner/daemon.sock`, honoring `SHOWRUNNER_DATA_DIR`), with an
-`SHOWRUNNER_DAEMON_URL` HTTP-mode override for development. The typed
-`DaemonClient` (packages/daemon/src/client.ts) is the single shared client for
-the CLI and the UI.
+The CLI therefore never opens SQLite; it talks HTTP to the daemon's single
+listener (`http://127.0.0.1:44100`, honoring `SHOWRUNNER_DATA_DIR` and the
+`SHOWRUNNER_PORT` knob — the pidfile's second line carries the bound port so
+the CLI always knows where to look). The typed `DaemonClient`
+(src/daemon/client.ts) is the CLI's client. The UI does not use a client at
+all: `app/lib/daemon.ts` calls the §13 api core functions in-process via
+`requireWebState()` (src/daemon/web-state.ts).
 
 **Costs accepted**: a restarted daemon loses the in-memory control registry
 (paused runs become viewer-only until the continuation surface handles them),

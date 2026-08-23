@@ -39,15 +39,15 @@ Full glossary in `CONTEXT.md`. The load-bearing distinctions:
 
 ### 3.2 Repo layout
 
-Single repo, `packages/*` folders. No pnpm/nx/turbo layer; bun workspaces only if `core` ever needs standalone publishing (deferred).
+Single repo — one package, `src/*` directories.folders. No pnpm/nx/turbo layer; bun workspaces only if `core` ever needs standalone publishing (deferred).
 
 ```
-packages/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
+src/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
                       No pi or UI dependencies — the reusable, strongly typed heart.
-packages/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
-packages/cli          submit + watch runs, steer
-packages/ui           Remix@next dashboard
-packages/starter-kit  six agents, skill blueprints, shared gates, the polling tool
+src/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
+src/cli          submit + watch runs, steer
+src/ui           Remix@next dashboard
+src/starter-kit  six agents, skill blueprints, shared gates, the polling tool
 ```
 
 ### 3.3 Data path
@@ -260,11 +260,11 @@ Shared gates library: `testsPass`, `lintClean`, `matchesPlan`, `envelopeShape`, 
 
 ## 17 · Implementation order
 
-1. **`packages/core`** — zod types (`EnvelopeBase`, agent, blueprint, gate, run/event), the run-loop skeleton, `FakePi` test harness + first fixture tests. No pi dependency.
-2. **`packages/daemon`** — SQLite schema (7 tables, cursor query), spawn/tail pi (rpc mode), tracer with tool-call folding, envelope/gate runner, corrections, pause menu, resume.
-3. **`packages/cli`** — submit, watch, steer.
-4. **`packages/ui`** — Remix@next: run list → gantt → phase drill-in → controls.
-5. **`packages/starter-kit`** — six agents, gates library, polling tool, skill files.
+1. **`src/core`** — zod types (`EnvelopeBase`, agent, blueprint, gate, run/event), the run-loop skeleton, `FakePi` test harness + first fixture tests. No pi dependency.
+2. **`src/daemon`** — SQLite schema (7 tables, cursor query), spawn/tail pi (rpc mode), tracer with tool-call folding, envelope/gate runner, corrections, pause menu, resume.
+3. **`src/cli`** — submit, watch, steer.
+4. **`src/ui`** — Remix@next: run list → gantt → phase drill-in → controls.
+5. **`src/starter-kit`** — six agents, gates library, polling tool, skill files.
 6. Update docs (ADR-0003 candidates: daemon topology; context-as-strings) as decisions harden in code.
 
 ## 18 · Edge cases & open questions

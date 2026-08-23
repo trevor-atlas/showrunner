@@ -1,9 +1,9 @@
-# Showrunner — Specification · Core SDK (packages/core)
+# Showrunner — Specification · Core SDK (src/core)
 
 > Part of the [Showrunner specification](README.md) — sections §3, §5, §14
 > [index](README.md) · [01-overview](01-overview.md) · [02-core](02-core-sdk.md) · [03-data](03-data-and-events.md) · [04-daemon](04-daemon.md) · [05-ui](05-ui-dashboard.md) · [06-starter](06-starter-kit.md) · [07-tests](07-testing-and-rollout.md) · [08-verify](08-verification-record.md)
 
-## 3 · Core SDK (`packages/core`)
+## 3 · Core SDK (`src/core`)
 
 ### 3.1 Dependencies
 

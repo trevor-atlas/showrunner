@@ -1,7 +1,7 @@
 # Showrunner — Specification · UI — the remix@next dashboard
 
 > Part of the [Showrunner specification](README.md) — section §16.
-> **⚠️ NOT a React project** — see §16.1; read the mandatory guide list in §16.2 before touching `packages/ui`.
+> **⚠️ NOT a React project** — see §16.1; read the mandatory guide list in §16.2 before touching `src/ui`.
 > [index](README.md) · [01-overview](01-overview.md) · [02-core](02-core-sdk.md) · [03-data](03-data-and-events.md) · [04-daemon](04-daemon.md) · [05-ui](05-ui-dashboard.md) · [06-starter](06-starter-kit.md) · [07-tests](07-testing-and-rollout.md) · [08-verify](08-verification-record.md)
 
 ## 16 · UI (remix@next) — the dashboard
@@ -25,7 +25,7 @@ Why the React-free choice matters for Showrunner:
 
 ### 16.2 You MUST read the remix@next docs first
 
-Before writing or reviewing any `packages/ui` code, read the official guides at **https://guides.remix.run** — they are the primary source for everything in §16.3 onward and are structured for exactly this kind of agent-led work. Read the whole path once, then re-read the chapter relevant to the task at hand:
+Before writing or reviewing any `src/ui` code, read the official guides at **https://guides.remix.run** — they are the primary source for everything in §16.3 onward and are structured for exactly this kind of agent-led work. Read the whole path once, then re-read the chapter relevant to the task at hand:
 
 1. **start-here** — the tour: single-package app, route map, controller, render, hydration
 2. **request-handling** — runtime adapters, `createRequestListener`, middleware ordering, typed request context
@@ -51,7 +51,7 @@ remix@next is not "React plus libraries"; for this app it *is* the whole web sid
 - **Asset serving** — bundlerless: browser modules are served as source from colocated `public/` directories via `import.meta.url`
 - **Testing** — framework-provided test surface
 
-Consequence for this project: `packages/ui`'s dependency list is essentially just `remix` plus the daemon client it talks to. There is no router choice, no UI-library choice, no styling choice, no form/validation-library choice to make — the framework owns all of it, which is exactly what the Reusable tenet wants.
+Consequence for this project: `src/ui`'s dependency list is essentially just `remix` plus the daemon's §13 api core (called in-process — not a network client). There is no router choice, no UI-library choice, no styling choice, no form/validation-library choice to make — the framework owns all of it, which is exactly what the Reusable tenet wants.
 
 ### 16.4 Information architecture
 
@@ -63,48 +63,48 @@ flowchart TD
     D["/runs/:runId — run detail<br/>header · control bar · gantt · live feed"]
     E["/runs/:runId/events.json — cursor proxy<br/>polled by the live-feed clientEntry"]
     P["/runs/:runId/phases/:phase — phase drill-in<br/>config · envelope · gates · spend · output"]
-    L --> DA["daemon API (§13)"]
-    D --> DA
-    E --> DA
-    P --> DA
-    DA --> DB[("SQLite WAL —<br/>one cursor query (§4.3)")]
+    L --> C["§13 api core functions<br/>(in-process — src/daemon/server.ts)"]
+    D --> C
+    E --> C
+    P --> C
+    C --> DB[("SQLite WAL —<br/>one cursor query (§4.3)")]
 ```
 
-| page | route | renders | data source (daemon API) |
+| page | route | renders | data source (§13 api core, in-process) |
 |---|---|---|---|
-| Run list | `/` | table of runs | `GET /runs` |
-| Run detail | `/runs/:runId` | header + control bar + gantt + live feed | `GET /runs/:id` + `events?cursor=` (polled) |
-| Events proxy | `/runs/:runId/events.json` | JSON for the feed's clientEntry | `GET /runs/:id/events?cursor=` |
-| Phase drill-in | `/runs/:id/phases/:phase` | config, envelope, gates, spend, output | envelopes, gates, spend, raw |
+| Run list | `/` | table of runs | `apiListRuns` (`/api/runs`) |
+| Run detail | `/runs/:runId` | header + control bar + gantt + live feed | `apiRunDetail` + `apiEvents` (`/api/runs/:id` + `/events?cursor=`, polled) |
+| Events proxy | `/runs/:runId/events.json` | JSON for the feed's clientEntry | `apiEvents` — a direct **in-process** call, no HTTP round trip |
+| Phase drill-in | `/runs/:id/phases/:phase` | config, envelope, gates, spend, output | `apiPhaseEnvelopes`, `apiPhaseGates`, `apiSpend`, `apiRaw` |
 
 ### 16.5 Data flow & live updates
 
-Two flows: page load (server-side) and the live loop (hydrated component polling the cursor proxy). No WebSocket, no ingest path — the one cursor query (§4.3) is the only read transport, exactly as §2.3 mandates.
+Two flows: page load (server-side) and the live loop (hydrated component polling the cursor proxy). No WebSocket, no ingest path — the one cursor query (§4.3) is the only read transport, exactly as §2.3 mandates. The dashboard's server-side actions call the daemon's §13 api core functions **in-process** (`app/lib/daemon.ts` → `requireWebState()` → `src/daemon/server.ts`) — the same process, no socket round trip, no `DaemonClient` in the UI.
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant U as remix@next server (packages/ui)
-    participant D as Daemon (unix socket)
+    participant U as remix@next server (src/ui)
+    participant C as daemon api core (in-process)
     participant S as SQLite (WAL)
     B->>U: GET /runs/:id
-    U->>D: GET /runs/:id (phases)
-    D->>S: read (WAL — never blocks the writer)
-    S-->>D: rows
-    D-->>U: JSON
+    U->>C: apiRunDetail (requireWebState — same process)
+    C->>S: read (WAL — never blocks the writer)
+    S-->>C: rows
+    C-->>U: result
     U-->>B: rendered HTML (context.render)
     loop every 1 s — live feed (clientEntry)
         B->>U: fetch /runs/:id/events.json?cursor=N
-        U->>D: GET /runs/:id/events?cursor=N
-        D->>S: select * from events where run_id=? and rowid>? limit 500
-        S-->>D: rows
-        D-->>U: events + next_cursor
+        U->>C: apiEvents (in-process cursor query)
+        C->>S: select * from events where run_id=? and rowid>? limit 500
+        S-->>C: rows
+        C-->>U: events + next_cursor
         U-->>B: JSON
         B->>B: handle.update() → re-render gantt + feed
     end
     B->>U: POST steer { message }
-    U->>D: POST /sessions/:pi_session_id/steer
-    D-->>U: ok
+    U->>C: apiSessionSteer (in-process control verb)
+    C-->>U: ok
     U-->>B: redirect / re-render
 ```
 
@@ -236,17 +236,18 @@ A modal rendered by run detail when the run is `paused` (and by drill-in when th
 - `Gantt({phases, now})` — phase bars, now cursor, corr/visit marks (16.7).
 - `EventFeed` / `EventRow({event})` — typed rendering per event type 1–12; tool-call rows expandable (args + result snippet); names read aloud like `bash: ls -la src`.
 - `PauseMenu` + `SteerForm` / `OverrideForm` (16.9).
-- `NeedsReviewBanner`, `DaemonDownBanner`, `EmptyState`.
+- `NeedsReviewBanner`, `EmptyState`.
 - Formatting helpers: `fmtDuration`, `fmtMoney` (USD), `fmtTokens`, `fmtRunId` (short id).
 
-**Daemon client** (`app/lib/daemon.ts`, server-side only): a typed wrapper over the daemon API (§13) with one function per endpoint. Implementation note: Node's global `fetch` cannot address a unix socket — use `node:http` with `socketPath` (or an HTTP agent) for the default `unix://~/.showrunner/daemon.sock`; override via `SHOWRUNNER_DAEMON_URL` (http URL) for dev.
+**Daemon data layer** (`app/lib/daemon.ts`, server-side only): one function per §13 read/verb. Every call resolves the daemon's live state via `requireWebState()` (`src/daemon/web-state.ts`) and dispatches straight to the §13 api core in `src/daemon/server.ts` — **in-process**, the same process as the daemon's web server, no socket round trip, no HTTP hop, no `DaemonClient` in the UI.
 
 **States:**
 
-- **Daemon unreachable** — `DaemonDownBanner` on every page: "showrunner daemon is not running (expected at <socket>) · [retry]". Pages still render their shell; no data rows.
 - **Empty** — no runs: one-line CTA `showrunner run <blueprint>`.
 - **`needs_review`** — amber banner on run detail and drill-in: "resumed after an interruption — the transcript may be incomplete; review before trusting" (§12).
 - **Missing phase/run** — 404 with back-link, matching §13.3 snapshot semantics (blueprint edits don't change past runs).
+
+There is no daemon-unreachable state: the UI runs inside the daemon, so if a page renders, the daemon is up by construction.
 
 ### 16.11 Requirements summary (unchanged)
 

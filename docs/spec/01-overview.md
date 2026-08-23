@@ -9,7 +9,7 @@
 
 1. A run is observable while it happens: every event lands in SQLite mid-flight; the dashboard and CLI watch the same event cursor.
 2. Agents and blueprints are typed code (zod-validated at runtime, type-checked at compile time) — customization is a small edit in an obvious file.
-3. The core SDK (`packages/core`) is framework-agnostic: no pi, no UI, no SQLite dependency in its runtime.
+3. The core SDK (`src/core`) is framework-agnostic: no pi, no UI, no SQLite dependency in its runtime.
 4. A failed agent turn costs one message (a correction), never a cold restart.
 5. Loops terminate by construction: budgets (corrections), a guard (`max_visits`), a human (pause menu), or the crash path (manual continue).
 
@@ -30,38 +30,41 @@
 ### 2.1 Process topology
 
 ```
-┌──────────────┐   submit/control   ┌─────────────────────┐   spawn + tail   ┌──────────────┐
-│  CLI         │ ─────────────────► │  Daemon             │ ───────────────► │  pi agents   │
-│  pi skills   │  (HTTP)            │  (owns execution,   │   pi --mode rpc  │  (subprocs)  │
-└──────────────┘                    │   SQLite write path,│   JSONL stream   └──────────────┘
-                                    │   child PID table)  │
-┌──────────────┐   read (cursor)    │                     │
-│  Dashboard   │ ◄───────────────── │                     │
-│  (remix@next) │                    └─────────────────────┘
-└──────────────┘                         │ SQLite (WAL)
-                                    ┌────▼──────────────────┐
-                                    │  runs/phases/events/  │
-                                    │  envelopes/gate_results│
-                                    │  agent_sessions/processes│
-                                    └───────────────────────┘
+┌──────────────┐   submit/control   ┌──────────────────────────────────┐   spawn + tail  ┌──────────────┐
+│  CLI         │ ─────────────────► │  Daemon                          │ ─────────────► │  pi agents   │
+│  pi skills   │  (HTTP /api/*)     │  owns execution, SQLite write    │  pi --mode rpc │  (subprocs)  │
+└──────────────┘                    │  path, child PID table, and the  │  JSONL stream  └──────────────┘
+                                    │  ONE web server on 127.0.0.1:    │
+┌──────────────┐  browser only      │  44100: /api/* (the §13 JSON     │
+│  Browser     │ ◄───────────────── │  API) + the remix@next dashboard│
+│  (dashboard) │   HTML + events    │  (dashboard actions call the §13 │
+└──────────────┘   json proxy       │  api core in-process — no socket │
+                                    │  round trip)                     │
+                                    └───────────────┬──────────────────┘
+                                                    │ SQLite (WAL)
+                              ┌─────────────────────▼──────────────────┐
+                              │  runs / phases / events / envelopes /   │
+                              │  gate_results / agent_sessions /        │
+                              │  processes                              │
+                              └────────────────────────────────────────┘
 ```
 
 - **One daemon, long-lived.** It owns: spawning pi, tailing JSONL, the SQLite write path, the control verbs, and the `processes` table (run/session → child PID) so a stuck run can be found and stopped.
 - **CLI and pi skill files** submit runs and issue controls. Most runs start from the CLI.
-- **Dashboard is read-only plus control verbs** (steer / approve / override / resume / fail). It does not spawn runs.
+- **Dashboard** is the daemon's own page tree (read-only plus control verbs: steer / approve / override / resume / fail; it does not spawn runs) — served in-process on the daemon's single web server; its server-side actions call the §13 api core directly.
 - **Concurrency**: a configurable pool, default ~2 concurrent runs. The pool gates *spawn*, not events; tailing and DB writes are cheap regardless.
 
 ### 2.2 Package layout
 
-Single repo, `packages/*`. No pnpm/nx/turbo; bun workspaces only if `core` ever needs standalone publishing (deferred).
+Single repo — one package, `src/*` directories. No pnpm/nx/turbo; bun workspaces only if `core` ever needs standalone publishing (deferred).
 
 ```
-packages/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
+src/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
                       No pi or UI dependencies.
-packages/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
-packages/cli          submit + watch runs, steer
-packages/ui           remix@next dashboard (React-free, single `remix` dependency)
-packages/starter-kit  six agents, skill blueprints, shared gates, the polling tool
+src/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
+src/cli          submit + watch runs, steer
+src/ui           remix@next dashboard (React-free, single `remix` dependency)
+src/starter-kit  six agents, skill blueprints, shared gates, the polling tool
 ```
 
 **Dependency rule**: `core ← daemon ← cli`, `core ← daemon ← ui`. Nothing outside `daemon` touches pi's process layer; nothing outside `core` defines what a run *is*.
