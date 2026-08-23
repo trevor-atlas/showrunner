@@ -16,7 +16,11 @@ import { fixturePath } from "@showrunner/core/test/fixtures";
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const DEMO_BLUEPRINT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "daemon", "test", "fixtures", "demo-blueprint.ts");
 const dataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-"));
+// F3: blueprint runs drive in this scratch cwd — context_handoff/ must never
+// land in the repo root (the test runner's working directory)
+const blueprintCwd = mkdtempSync(join(tmpdir(), "showrunner-e2e-cwd-"));
 const env = { ...process.env, SHOWRUNNER_DATA_DIR: dataDir };
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 function cli(args: string[], timeoutMs = 30_000): { stdout: string; status: number } {
   try {
@@ -33,13 +37,14 @@ function cli(args: string[], timeoutMs = 30_000): { stdout: string; status: numb
 }
 
 afterAll(() => {
-  // stop the daemon the CLI auto-spawned, then remove the scratch dir
+  // stop the daemon the CLI auto-spawned, then remove the scratch dirs
   try {
     spawnSync(process.execPath, [CLI, "stop"], { encoding: "utf8", timeout: 15_000, env });
   } catch {
     // best-effort
   }
   rmSync(dataDir, { recursive: true, force: true });
+  rmSync(blueprintCwd, { recursive: true, force: true });
 });
 
 test("runs lists nothing, then a submitted happy run is fully visible", async () => {
@@ -109,7 +114,7 @@ test("a crash run surfaces as failed with a truncated tool call and needs_review
 });
 
 test("a blueprint run shows the full §5 loop in watch: correction, envelope, gates, phases", () => {
-  const submitted = cli(["run", DEMO_BLUEPRINT, "--delay", "2"]);
+  const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2"]);
   expect(submitted.status).toBe(0);
   const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
   expect(runId).toBeDefined();
@@ -138,6 +143,10 @@ test("a blueprint run shows the full §5 loop in watch: correction, envelope, ga
   // the runs list shows the phase counts
   const list = cli(["runs"]);
   expect(list.stdout).toContain("2/2");
+
+  // F3: the handoff landed in the scratch cwd — no residue in the repo root
+  expect(existsSync(join(blueprintCwd, "context_handoff", "plan", "outputs", "envelope.json"))).toBe(true);
+  expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(false);
 });
 
 test("stop terminates the daemon and removes the socket", async () => {

@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
@@ -132,13 +133,16 @@ test("the daemon API serves health, submit, runs, detail, events cursor, raw (§
 
 test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)", async () => {
   const dir = tmpDataDir("server-blueprint");
+  // F3: the run's cwd is a scratch dir — context_handoff/ must never land in
+  // the repo root when a test forgets to pass one
+  const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
     const { socketPath } = daemon;
 
     const demo = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "demo-blueprint.ts");
-    const submitted = await api(socketPath, "POST", "/runs", { blueprint: demo, delayMs: 0 });
+    const submitted = await api(socketPath, "POST", "/runs", { blueprint: demo, cwd: runCwd, delayMs: 0 });
     expect(submitted.status).toBe(201);
     const { run_id, blueprint } = submitted.json as { run_id: string; blueprint: string };
     expect(run_id).toBeTypeOf("string");
@@ -167,9 +171,15 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
 
     // the §13.3 snapshot is on disk
     expect(existsSync(join(dir, "runs", run_id, "blueprint.json"))).toBe(true);
+
+    // F3: the handoff landed in the SCRATCH cwd, and no residue reached the
+    // test runner's working directory
+    expect(existsSync(join(runCwd, "context_handoff", "build", "outputs", "envelope.json"))).toBe(true);
+    expect(existsSync(join(process.cwd(), "context_handoff"))).toBe(false);
   } finally {
     await daemon?.close();
     cleanupDir(dir);
+    rmSync(runCwd, { recursive: true, force: true });
   }
 });
 

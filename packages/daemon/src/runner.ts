@@ -1,9 +1,8 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { StringDecoder } from "node:string_decoder";
 import type { Database } from "bun:sqlite";
 import { z } from "zod";
 import {
@@ -21,7 +20,6 @@ import type {
   ShellResult,
   Spend,
 } from "@showrunner/core";
-import { fakeSessionEntryPath } from "@showrunner/core/test/fixtures";
 import { runDirFor } from "@showrunner/core";
 
 import {
@@ -31,26 +29,33 @@ import {
   insertProcess,
   insertRun,
   updateAgentSession,
+  updateEnvelope,
   updatePhase,
   updateRun,
 } from "./db.ts";
 import { MAX_CAPTURED_STDERR, sessionIdFor } from "./driver.ts";
 import { gateName, runEnvelopeStage } from "./envelope-runner.ts";
-import { LineSplitter } from "./linesplit.ts";
 import { EventSink } from "./queue.ts";
 import type { EventIds } from "./queue.ts";
 import { RawOutputFile } from "./rawfile.ts";
 import { Tracer } from "./tracer.ts";
+import {
+  FIRST_PROMPT_ACK_TIMEOUT_MS,
+  FakeSessionDriver,
+  PiSession,
+  sessionDriverKind,
+} from "./pi/index.ts";
+import type { RpcCommand, RpcResponse, SessionDriver } from "./pi/index.ts";
 
 /**
  * The run loop (spec §5, T01b) — the state machine that drives a blueprint's
- * phases to completion against FakePi sessions.
- *
- * Per visit (§5.2): materialize the predecessor handoff → visit guard
- * (visits >= max_visits → pause) → spawn the FakePi session (session id
- * `<run8>_<phase>_v<visit>`, §8.1) → send the composed prompt → tail/fold
- * events until agent_settled → zod-validate envelope.json → blocked? → gates →
- * record envelope → next phase. Corrections re-prompt the SAME session
+ * phases to completion. The loop itself is driver-agnostic: per visit (§5.2)
+ * it materializes the predecessor handoff → visit guard (visits >= max_visits
+ * → pause) → obtains the session driver (§8, T02: the real pi binary when
+ * SHOWRUNNER_SMOKE=1, scripted FakePi sessions otherwise; session id
+ * `<run8>_<phase>_v<visit>`, §8.1) → sends the composed prompt → tails/folds
+ * events until agent_settled → zod-validates envelope.json → blocked? → gates →
+ * records the envelope → next phase. Corrections re-prompt the SAME session
  * (one message naming exactly what was wrong) against the phase's budget
  * (default 3); exhaustion routes through `on_fail` (new visit) or pauses.
  *
@@ -466,26 +471,71 @@ async function driveVisit(
     }
   }
 
-  const script = state.scripts[phase.name];
-  if (!script) {
-    // script presence is validated at submit; this guards the direct-API path
-    return { kind: "crash", reason: `no scripted session for phase "${phase.name}"`, corrections: 0 };
-  }
-
-  // the scripted session file lives in the run dir — the run record is self-contained
-  const sessionFile = join(state.runDir, "sessions", `${slug}-v${visit}.json`);
-  mkdirSync(dirname(sessionFile), { recursive: true });
-  writeFileSync(sessionFile, JSON.stringify(script));
-
   const outputsDir = join(state.cwd, "context_handoff", slug, "outputs");
   mkdirSync(outputsDir, { recursive: true });
 
-  const child = spawn(
-    process.execPath,
-    [fakeSessionEntryPath(), sessionFile, "--session-id", piSessionId, "--output", outputsDir],
-    { cwd: state.cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, FAKE_PI_DELAY_MS: String(state.delayMs) } },
-  );
-  const pid = child.pid ?? 0;
+  // ── the session driver seam (§8, T02) ─────────────────────────────────────
+  // SHOWRUNNER_SMOKE=1 drives the real pi binary; the default build drives
+  // scripted FakePi sessions. Both speak the same SessionDriver interface, so
+  // this block never touches the child process directly — spawn, RPC command
+  // writing, stdout framing, stderr capture, and lifecycle live in
+  // packages/daemon/src/pi/.
+  const useRealPi = sessionDriverKind() === "real";
+
+  // tracer: folds this visit's stream into tool_call/spend/agent_end
+  const tracer = new Tracer({
+    phase: phase.name,
+    visit,
+    agent: phase.agent.name,
+    piSessionId,
+    sink: (evt) => ctxEmit(state, evt.type, evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
+    rawAppend: (line, final) => state.rawFile.append(line, final),
+  });
+
+  let settleCount = 0;
+  const isSettledLine = (line: string): boolean => {
+    try {
+      const o = JSON.parse(line) as { type?: unknown };
+      return o.type === "agent_settled";
+    } catch {
+      return false;
+    }
+  };
+  // every raw line is handed to the tracer verbatim (append-before-parse, §10);
+  // the driver watches the same lines for agent_settled (§8.3)
+  const feedLine = (line: string, final = false): void => {
+    tracer.onLine(line, { final });
+    if (isSettledLine(line)) settleCount += 1;
+  };
+
+  let driver: SessionDriver;
+  if (useRealPi) {
+    driver = new PiSession({
+      sessionId: piSessionId,
+      cwd: state.cwd,
+      onLine: feedLine,
+      stderrLimit: MAX_CAPTURED_STDERR,
+    });
+  } else {
+    const script = state.scripts[phase.name];
+    if (!script) {
+      // script presence is validated at submit; this guards the direct-API path
+      return { kind: "crash", reason: `no scripted session for phase "${phase.name}"`, corrections: 0 };
+    }
+    // the scripted session file lives in the run dir — the run record is self-contained
+    const sessionFile = join(state.runDir, "sessions", `${slug}-v${visit}.json`);
+    driver = new FakeSessionDriver({
+      sessionId: piSessionId,
+      cwd: state.cwd,
+      script,
+      sessionFile,
+      outputsDir,
+      delayMs: state.delayMs,
+      onLine: feedLine,
+      stderrLimit: MAX_CAPTURED_STDERR,
+    });
+  }
+  const pid = driver.pid;
 
   const agentSessionId = randomUUID();
   insertAgentSession(db, {
@@ -502,101 +552,36 @@ async function driveVisit(
   writeAgentMap(state, phase.name, { pi_session_id: piSessionId, pid, visit, model: phase.agent.model });
   ctxEmit(state, "agent_start", { agent: phase.agent.name, pi_session_id: piSessionId, pid, model: phase.agent.model }, { phase_id: phaseId, agent_session_id: agentSessionId });
 
-  // tracer: folds this visit's stream into tool_call/spend/agent_end
-  const tracer = new Tracer({
-    phase: phase.name,
-    visit,
-    agent: phase.agent.name,
-    piSessionId,
-    sink: (evt) => ctxEmit(state, evt.type, evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
-    rawAppend: (line, final) => state.rawFile.append(line, final),
-  });
+  // stderr is captured per run by the driver (§8.3) and written to stderr.log
+  // on visit end — same convention T01a/T01b used, same byte shape downstream.
 
-  const stderrChunks: string[] = [];
-  let stderrBytes = 0;
-  child.stderr.on("data", (chunk: Buffer) => {
-    stderrBytes += chunk.length;
-    if (stderrBytes <= MAX_CAPTURED_STDERR) stderrChunks.push(chunk.toString("utf8"));
-  });
-
-  // ── the stdout read loop (LF-only framing, §7.1) ───────────────────────────
-  const decoder = new StringDecoder("utf8");
-  const splitter = new LineSplitter();
-  let settleWaiter: { resolve: () => void; reject: (err: Error) => void } | null = null;
-  let settleCount = 0;
-  const isSettledLine = (line: string): boolean => {
+  // ── command writers over the same seam ────────────────────────────────────
+  const sendCommand = (cmd: RpcCommand): void => {
+    // fire-and-forget (corrections) — a dead stream surfaces via waitForSettled
+    void driver.send(cmd).catch(() => {});
+  };
+  const waitForSettled = (): Promise<void> => driver.waitForSettled();
+  const sendPrompt = async (message: string): Promise<void> => {
+    let res: RpcResponse;
     try {
-      const o = JSON.parse(line) as { type?: unknown };
-      return o.type === "agent_settled";
-    } catch {
-      return false;
+      res = await driver.send({ type: "prompt", message }, FIRST_PROMPT_ACK_TIMEOUT_MS);
+    } catch (err) {
+      // ack timeout (the model catalog may refresh on the first command, §8.1)
+      // or a dead stream — neither crashes the run: a dead stream rejects the
+      // settle waiter below, and a slow-but-alive agent still settles on its own
+      if (driver.exitCode !== null) throw err;
+      return;
     }
-  };
-  const feedLine = (line: string, final: boolean): void => {
-    tracer.onLine(line, { final });
-    if (isSettledLine(line)) {
-      settleCount += 1;
-      const w = settleWaiter;
-      settleWaiter = null;
-      w?.resolve();
+    if (!res.success) {
+      throw new Error(`pi rejected prompt: ${res.error ?? "unknown error"}`);
     }
-  };
-  const feedText = (text: string, final = false): void => {
-    for (const line of splitter.push(text)) feedLine(line, final);
-  };
-  child.stdout.on("data", (chunk: Buffer) => feedText(decoder.write(chunk)));
-
-  let finalExit: number | null = null;
-  let reaping = false;
-  let resolveClosed: () => void = () => {};
-  const closed = new Promise<void>((resolve) => {
-    resolveClosed = resolve;
-  });
-  const failPending = (reason: string): void => {
-    const w = settleWaiter;
-    settleWaiter = null;
-    w?.reject(new Error(reason));
-  };
-  child.on("error", (err: Error) => {
-    finalExit = null;
-    failPending(`failed to spawn fake session: ${err.message}`);
-    resolveClosed();
-  });
-  child.on("close", (code: number | null) => {
-    feedText(decoder.end());
-    for (const line of splitter.flush()) feedLine(line, true); // final line: no invented \n
-    finalExit = code;
-    if (!reaping) failPending(`session died before agent_settled (exit ${code})`);
-    resolveClosed();
-  });
-
-  const sendCommand = (cmd: Record<string, unknown>): void => {
-    try {
-      child.stdin.write(JSON.stringify(cmd) + "\n");
-    } catch {
-      // stdin is closed (crash); the settle waiter will surface it
-    }
-  };
-  const waitForSettled = (): Promise<void> =>
-    new Promise<void>((resolve, reject) => {
-      settleWaiter = { resolve, reject };
-    });
-  const reap = async (): Promise<void> => {
-    reaping = true;
-    try {
-      child.stdin.end();
-    } catch {
-      // already closed
-    }
-    await closed;
   };
 
   // ── the correction loop (§5.2 steps 4–9) ───────────────────────────────────
-  sendCommand({ type: "prompt", message: composePrompt(state, phase, handoff) });
-
   let corrections = 0;
   let outcome: VisitOutcome;
   try {
+    await sendPrompt(composePrompt(state, phase, handoff));
     for (;;) {
       await waitForSettled();
       const stage = await runEnvelopeStage({
@@ -631,6 +616,8 @@ async function driveVisit(
         break;
       }
       corrections += 1;
+      // §16.8: the correction that followed this attempt lives on its envelope row
+      updateEnvelope(db, stage.envelopeId, { correction: message });
       updatePhase(db, phaseId, { corrections });
       ctxEmit(state, "correction", { phase: phase.name, visit, reason, message }, { phase_id: phaseId, agent_session_id: agentSessionId });
       sendCommand({ type: "prompt", message: message });
@@ -641,12 +628,18 @@ async function driveVisit(
   }
 
   // reap the session and finalize its accounting (agent_end, sessions row, processes)
-  if (outcome.kind !== "crash") await reap();
-  tracer.onEnd({ exitCode: finalExit }, { settled: settleCount > 0 });
+  if (outcome.kind !== "crash") {
+    await driver.close(); // stdin EOF → the process reaps itself (exit 0, §8.3)
+  } else if (driver.exitCode === null) {
+    // the stream died on an internal error while the child is still alive —
+    // never orphan it (fail-run semantics: SIGTERM, SIGKILL after 1s, §8.3)
+    await driver.stop();
+  }
+  tracer.onEnd({ exitCode: driver.exitCode }, { settled: settleCount > 0 });
   updateAgentSession(db, agentSessionId, { ended_at: now() });
   deleteProcess(db, agentSessionId);
-  if (stderrChunks.length > 0) {
-    writeFileSync(join(state.runDir, "stderr.log"), stderrChunks.join(""), { flag: "a" });
+  if (driver.stderr.length > 0) {
+    writeFileSync(join(state.runDir, "stderr.log"), driver.stderr, { flag: "a" });
   }
   return outcome;
 }

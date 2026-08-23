@@ -13,12 +13,19 @@ import type { EventRow, EventType } from "@showrunner/core";
  * schemas (§6) before insert - zod is the single source of truth.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * v1 — the seven tables (spec §4.2), plus the cursor index. `events.id` is
  * INTEGER PRIMARY KEY AUTOINCREMENT, which SQLite aliases to rowid — the
  * cursor contract (§4.3) is an index scan on (run_id, id).
+ *
+ * v2 (T03, issue #8) — additive only: every envelope attempt is now a row
+ * (valid=0 for zod-rejected / unreadable envelopes), each attempt carries the
+ * gate violations that rejected it and the correction message issued after it,
+ * and gate overrides (§5.3) are audited in their own table — the original
+ * gate_results row is KEPT (the audit trail is the point); this table is the
+ * "who + why + when" marker hanging off it.
  */
 const MIGRATIONS: string[] = [
   `
@@ -95,6 +102,22 @@ CREATE TABLE processes (
   started_at    TEXT NOT NULL
 );
 `,
+  // v2 (T03, issue #8): full attempt history + audited gate overrides
+  `
+ALTER TABLE envelopes ADD COLUMN valid INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE envelopes ADD COLUMN violations TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE envelopes ADD COLUMN correction TEXT;
+
+CREATE TABLE gate_overrides (
+  id             TEXT PRIMARY KEY,
+  gate_result_id TEXT NOT NULL REFERENCES gate_results(id),
+  run_id         TEXT NOT NULL REFERENCES runs(id),
+  envelope_id    TEXT NOT NULL REFERENCES envelopes(id),
+  by             TEXT NOT NULL,
+  reason         TEXT NOT NULL,
+  created_at     TEXT NOT NULL
+);
+`,
 ];
 
 /** Open (creating if needed) and migrate the DB, with the §4.1 pragmas. */
@@ -160,10 +183,20 @@ export interface EnvelopeRow {
   run_id: string;
   phase_id: string;
   visit: number;
+  /** 0..budget — corrections issued before this attempt (0 = first attempt of the visit) */
   attempt: number;
+  /** the envelope text, verbatim — for a valid attempt it parsed; for an
+   * invalid attempt it is the rejected text (or "" when the file was missing) */
   json: string;
   source: string;
   validated_at: string;
+  /** 1 = parsed and processed (gates/blocked); 0 = zod-rejected or unreadable */
+  valid: number;
+  /** gate violations that rejected this attempt, JSON array of strings ('[]' when none) */
+  violations: string;
+  /** the correction message issued AFTER this attempt; null when none followed
+   * (accepted, blocked, or the run stopped) */
+  correction: string | null;
 }
 
 export interface GateResultRow {
@@ -173,6 +206,31 @@ export interface GateResultRow {
   pass: number;
   violations: string;
   ran_at: string;
+}
+
+/** A gate result with its override marker (§5.3) — the drill-in badge: the
+ * original row is kept, so pass stays 0 and the override is a separate marker. */
+export interface GateResultWithOverride extends GateResultRow {
+  overridden: number; // 1 when an override marker exists for this gate result
+  override_by: string | null;
+  override_reason: string | null;
+  overridden_at: string | null;
+}
+
+export interface GateOverrideRow {
+  id: string;
+  gate_result_id: string;
+  run_id: string;
+  envelope_id: string;
+  by: string;
+  reason: string;
+  created_at: string;
+}
+
+/** An override joined with its gate result — the run-level audit trail. */
+export interface GateOverrideWithGate extends GateOverrideRow {
+  gate: string;
+  pass: number;
 }
 
 export interface AgentSessionRow {
@@ -249,6 +307,10 @@ export function listPhases(db: Database, runId: string): PhaseRow[] {
   return q<PhaseRow>(db, "SELECT * FROM phases WHERE run_id = ? ORDER BY started_at").all(runId);
 }
 
+export function getPhaseById(db: Database, id: string): PhaseRow | null {
+  return q<PhaseRow>(db, "SELECT * FROM phases WHERE id = ?").get(id) ?? null;
+}
+
 export function sumRunSpend(db: Database, runId: string): number {
   const row = q<{ s: number | null }>(
     db,
@@ -319,15 +381,28 @@ export function eventCount(db: Database, runId: string): number {
 export function insertEnvelope(db: Database, e: EnvelopeRow): void {
   q(
     db,
-    "INSERT INTO envelopes (id, run_id, phase_id, visit, attempt, json, source, validated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(e.id, e.run_id, e.phase_id, e.visit, e.attempt, e.json, e.source, e.validated_at);
+    "INSERT INTO envelopes (id, run_id, phase_id, visit, attempt, json, source, validated_at, valid, violations, correction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(e.id, e.run_id, e.phase_id, e.visit, e.attempt, e.json, e.source, e.validated_at, e.valid, e.violations, e.correction);
+}
+
+export function updateEnvelope(db: Database, id: string, patch: Partial<EnvelopeRow>): void {
+  const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) return;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  q(db, `UPDATE envelopes SET ${sets} WHERE id = ?`).run(...entries.map(([, v]) => v as SQLQueryBindings), id);
+}
+
+export function getEnvelope(db: Database, id: string): EnvelopeRow | null {
+  return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE id = ?").get(id) ?? null;
 }
 
 export function listEnvelopes(db: Database, runId: string, phaseId?: string): EnvelopeRow[] {
+  // per-attempt history order: visit, then attempt within the visit (the drill-in's
+  // "attempts: 1 ✗ … 2 ✓ …" list, §16.8)
   if (phaseId !== undefined) {
-    return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE run_id = ? AND phase_id = ? ORDER BY validated_at").all(runId, phaseId);
+    return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE run_id = ? AND phase_id = ? ORDER BY visit, attempt").all(runId, phaseId);
   }
-  return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE run_id = ? ORDER BY validated_at").all(runId);
+  return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE run_id = ? ORDER BY visit, attempt").all(runId);
 }
 
 // ── gate results ─────────────────────────────────────────────────────────────
@@ -339,13 +414,49 @@ export function insertGateResult(db: Database, g: GateResultRow): void {
   ).run(g.id, g.envelope_id, g.gate, g.pass, g.violations, g.ran_at);
 }
 
-export function listGateResults(db: Database, runId: string, phaseId?: string): GateResultRow[] {
-  const sql = phaseId !== undefined
-    ? `SELECT gr.* FROM gate_results gr JOIN envelopes e ON e.id = gr.envelope_id WHERE e.run_id = ? AND e.phase_id = ? ORDER BY gr.ran_at`
-    : `SELECT gr.* FROM gate_results gr JOIN envelopes e ON e.id = gr.envelope_id WHERE e.run_id = ? ORDER BY gr.ran_at`;
-  return (phaseId !== undefined
-    ? q<GateResultRow>(db, sql).all(runId, phaseId)
-    : q<GateResultRow>(db, sql).all(runId));
+export function getGateResult(db: Database, id: string): GateResultRow | null {
+  return q<GateResultRow>(db, "SELECT * FROM gate_results WHERE id = ?").get(id) ?? null;
+}
+
+/** Every gate result for a run (or phase), with its override marker (§5.3). The
+ * original row is KEPT on override: pass stays 0 and overridden=1 carries the
+ * audit badge. */
+export function listGateResults(db: Database, runId: string, phaseId?: string): GateResultWithOverride[] {
+  const where =
+    phaseId !== undefined
+      ? "e.run_id = ? AND e.phase_id = ?"
+      : "e.run_id = ?";
+  const sql = `SELECT gr.*,
+      CASE WHEN go.id IS NULL THEN 0 ELSE 1 END AS overridden,
+      go.by AS override_by, go.reason AS override_reason, go.created_at AS overridden_at
+    FROM gate_results gr
+    JOIN envelopes e ON e.id = gr.envelope_id
+    LEFT JOIN gate_overrides go ON go.gate_result_id = gr.id
+    WHERE ${where}
+    ORDER BY gr.ran_at`;
+  const bindings = phaseId !== undefined ? [runId, phaseId] : [runId];
+  return q<GateResultWithOverride>(db, sql).all(...bindings);
+}
+
+// ── gate overrides (§5.3) ────────────────────────────────────────────────────
+
+export function insertGateOverride(db: Database, o: GateOverrideRow): void {
+  q(
+    db,
+    "INSERT INTO gate_overrides (id, gate_result_id, run_id, envelope_id, by, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(o.id, o.gate_result_id, o.run_id, o.envelope_id, o.by, o.reason, o.created_at);
+}
+
+/** The run-level override audit trail: who + why + when per overridden gate. */
+export function listGateOverrides(db: Database, runId: string): GateOverrideWithGate[] {
+  return q<GateOverrideWithGate>(
+    db,
+    `SELECT go.*, gr.gate, gr.pass
+     FROM gate_overrides go
+     JOIN gate_results gr ON gr.id = go.gate_result_id
+     WHERE go.run_id = ?
+     ORDER BY go.created_at`,
+  ).all(runId);
 }
 
 // ── agent sessions ───────────────────────────────────────────────────────────

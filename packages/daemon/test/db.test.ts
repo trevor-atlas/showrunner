@@ -25,17 +25,44 @@ const tables = [
   "events",
   "envelopes",
   "gate_results",
+  "gate_overrides", // v2 (T03): the audited override marker table (§5.3)
   "agent_sessions",
   "processes",
 ];
 
-test("migrating a fresh DB creates all seven tables (§4.2)", () => {
+test("migrating a fresh DB creates the §4.2 tables plus the T03 gate_overrides (§4.2, v2)", () => {
   const dir = tmpDataDir("schema");
   try {
     const db = openDb(join(dir, "showrunner.db"));
     const names = listTables(db);
     for (const t of tables) expect(names).toContain(t);
-    expect(names).toHaveLength(tables.length); // exactly the seven, no extras
+    expect(names).toHaveLength(tables.length); // exactly these, no extras
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("v2 migration adds the attempt-history columns and gate_overrides to a v1 DB", () => {
+  const dir = tmpDataDir("schema-v2");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    // §4.2 columns from v1
+    const envCols = (db.query("PRAGMA table_info(envelopes)").all() as { name: string }[]).map((c) => c.name);
+    expect(envCols).toContain("valid");
+    expect(envCols).toContain("violations");
+    expect(envCols).toContain("correction");
+    expect(listTables(db)).toContain("gate_overrides");
+
+    // a gate_overrides row references real parent rows (FKs are enforced)
+    db.query("INSERT INTO runs (id, blueprint, status, cwd, needs_review, started_at, ended_at) VALUES ('r1', 'b', 'running', '/w', 0, 't', NULL)").run();
+    db.query("INSERT INTO phases (id, run_id, name, agent, status, visits, corrections, budget, spend_usd, started_at, ended_at) VALUES ('p1', 'r1', 'build', 'a', 'in_progress', 1, 0, 3, 0, 't', NULL)").run();
+    db.query("INSERT INTO envelopes (id, run_id, phase_id, visit, attempt, json, source, validated_at) VALUES ('e1', 'r1', 'p1', 1, 0, '{}', 's', 't')").run();
+    db.query("INSERT INTO gate_results (id, envelope_id, gate, pass, violations, ran_at) VALUES ('g1', 'e1', 'q', 0, '[]', 't')").run();
+    db.query("INSERT INTO gate_overrides (id, gate_result_id, run_id, envelope_id, by, reason, created_at) VALUES ('o1', 'g1', 'r1', 'e1', 'reviewer', 'manual check', 't')").run();
+    expect(
+      (db.query("SELECT by, reason FROM gate_overrides WHERE id = 'o1'").get() as { by: string; reason: string }).reason,
+    ).toBe("manual check");
     db.close();
   } finally {
     cleanupDir(dir);

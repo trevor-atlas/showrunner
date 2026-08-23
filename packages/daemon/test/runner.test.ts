@@ -10,12 +10,17 @@ import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import {
   composePrompt,
   cursorEvents,
+  EventSink,
   getRun,
+  isEnvelopeApproved,
   listAgentSessions,
   listEnvelopes,
+  listGateOverrides,
   listGateResults,
   listPhases,
   openDb,
+  overrideGateResult,
+  recordEnvelopeAcceptance,
   runBlueprint,
   snapshotBlueprint,
 } from "../src/index.ts";
@@ -366,6 +371,12 @@ test("a throwing gate is a violation, never a daemon crash (§5.5)", async () =>
     expect(gates[0]!.pass).toBe(0);
     expect(gates[0]!.violations).toContain("kaboom: roster missing");
 
+    // T03: the crash violation is also on the envelope row (§16.8 per-attempt violations)
+    const envelopes = listEnvelopes(env.db, run.run_id);
+    expect(envelopes.map((e) => e.valid)).toEqual([1, 1]);
+    expect(JSON.parse(envelopes[0]!.violations)).toEqual(["gate \"explodingGate\" crashed: kaboom: roster missing"]);
+    expect(envelopes[0]!.correction).toContain("kaboom: roster missing");
+
     const correction = cursorEvents(env.db, run.run_id, 0, 10_000).find((e) => e.type === "correction")!
       .data as { message: string };
     expect(correction.message).toContain("kaboom: roster missing");
@@ -374,7 +385,263 @@ test("a throwing gate is a violation, never a daemon crash (§5.5)", async () =>
   }
 });
 
-test("a zod-invalid envelope is corrected with the exact issue; only valid envelopes are recorded", async () => {
+// ── attempt history (T03): every attempt, valid/invalid + violations + correction ─
+
+test("attempt history: invalid → gate-fail → accepted records three attempts with violations + corrections", async () => {
+  const env = openEnv("runner-attempts");
+  try {
+    const blueprint = defineBlueprint({
+      name: "attempts",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [qualityGate], budget: 3 }],
+    });
+    const invalidTurn: ScriptedTurn = {
+      events: settledTurn().events,
+      envelope: { summary: "s", artifacts: [], quality: 4 }, // missing notes_for_next_agent
+    };
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([invalidTurn, settledTurn({ quality: 2 }), settledTurn({ quality: 9 })]) },
+    });
+    const result = await run.done;
+    expect(result.status).toBe("success");
+
+    const phase = listPhases(env.db, run.run_id)[0]!;
+    expect(phase.corrections).toBe(2);
+
+    // per-attempt history in visit/attempt order: the drill-in list (§16.8)
+    const envelopes = listEnvelopes(env.db, run.run_id);
+    expect(envelopes.map((e) => e.attempt)).toEqual([0, 1, 2]);
+    expect(envelopes.map((e) => e.valid)).toEqual([0, 1, 1]);
+    // the correction that followed each rejected attempt is stamped on the row
+    expect(envelopes[0]!.correction).toContain("notes_for_next_agent"); // invalid → zod issue
+    expect(envelopes[1]!.correction).toBe("Gate violations: quality 2 below 7"); // verbatim §3.4
+    expect(envelopes[2]!.correction).toBeNull(); // accepted: nothing followed
+    // gate violations live on the rejected attempt's row
+    expect(JSON.parse(envelopes[1]!.violations)).toEqual(["quality 2 below 7"]);
+    expect(JSON.parse(envelopes[2]!.violations)).toEqual([]);
+
+    // the drill-in query: accepted + rejected + violations + the correction issued
+    const accepted = envelopes.find((e) => e.attempt === 2)!;
+    expect(JSON.parse(accepted.json)).toMatchObject({ quality: 9 });
+
+    const corrections = cursorEvents(env.db, run.run_id, 0, 10_000).filter((e) => e.type === "correction");
+    expect(corrections.map((c) => (c.data as { reason: string }).reason)).toEqual([
+      "invalid_envelope",
+      "gate_violations",
+    ]);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── gate results per gate (T03) ──────────────────────────────────────────────
+
+test("one gate_results row per gate run per envelope, with pass/violations/ran_at + override badge column", async () => {
+  const env = openEnv("runner-gates");
+  try {
+    const passGate: Gate = async () => ({ pass: true });
+    const blueprint = defineBlueprint({
+      name: "twogates",
+      phases: [
+        {
+          name: "build",
+          agent: agent(),
+          envelope: QualityEnvelope,
+          gates: [passGate, qualityGate],
+          budget: 3,
+        },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn({ quality: 4 }), settledTurn({ quality: 9 })]) },
+    });
+    const result = await run.done;
+    expect(result.status).toBe("success");
+
+    // two envelopes × two gates = four rows, one per gate run
+    const gates = listGateResults(env.db, run.run_id);
+    expect(gates).toHaveLength(4);
+    expect(gates.map((g) => [g.gate, g.pass])).toEqual([
+      ["passGate", 1],
+      ["qualityGate", 0], // fail → correction
+      ["passGate", 1],
+      ["qualityGate", 1], // pass on the corrected attempt
+    ]);
+    expect(JSON.parse(gates[1]!.violations)).toEqual(["quality 4 below 7"]);
+    expect(typeof gates[0]!.ran_at).toBe("string");
+    // no overrides yet: the drill-in badge columns are null
+    expect(gates.map((g) => g.overridden)).toEqual([0, 0, 0, 0]);
+    expect(gates[0]!.override_by).toBeNull();
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── gate overrides (§5.3): the audited mechanism T04/T08 call ────────────────
+
+test("override: a failed gate is marked overridden (row kept, audited), envelope approved, acceptance recorded", async () => {
+  const env = openEnv("runner-override");
+  try {
+    const blueprint = defineBlueprint({
+      name: "override",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1 }],
+    });
+    // budget 1: first failure gets one correction, second failure pauses the run
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn({ quality: 9 }), settledTurn({ quality: 9 })]) },
+    });
+    const result = await run.done;
+    expect(result).toEqual({ status: "paused", needs_review: false }); // parked on the human (T04)
+
+    // the last rejected envelope + its failed gate result are the override targets
+    const envelopes = listEnvelopes(env.db, run.run_id);
+    expect(envelopes.map((e) => e.attempt)).toEqual([0, 1]);
+    const rejected = envelopes[1]!; // attempt 1 (no correction followed: budget hit)
+    const gates = listGateResults(env.db, run.run_id);
+    const failed = gates.find((g) => g.envelope_id === rejected.id)!;
+    expect(failed.pass).toBe(0);
+    // before the override the envelope is NOT approved (gate treated as failed),
+    // and acceptance recording refuses to fire for it (correct-by-construction)
+    expect(isEnvelopeApproved(env.db, rejected.id)).toBe(false);
+    const earlySink = new EventSink(env.db, { runId: run.run_id, phaseId: null, agentSessionId: null });
+    expect(() =>
+      recordEnvelopeAcceptance({ db: env.db, envelopeId: rejected.id, emit: (t, d) => earlySink.push(t, d) }),
+    ).toThrow(/un-overridden gate violations/);
+
+    // the human overrides the failed gate (who + why, audited)
+    const over = overrideGateResult({
+      db: env.db,
+      gateResultId: failed.id,
+      by: "reviewer",
+      reason: "quality 9 is acceptable per manual check",
+      emit: () => {}, // event sink is a no-op here; the DB row is what matters
+    });
+    expect(over.approved).toBe(true); // gate treated as passed
+    expect(over.gate).toBe("alwaysFailGate");
+    expect(isEnvelopeApproved(env.db, rejected.id)).toBe(true);
+
+    // original gate_results row KEPT: pass stays 0, now carrying the override badge
+    const after = listGateResults(env.db, run.run_id).find((g) => g.id === failed.id)!;
+    expect(after.pass).toBe(0);
+    expect(after.overridden).toBe(1);
+    expect(after.override_by).toBe("reviewer");
+    expect(after.override_reason).toBe("quality 9 is acceptable per manual check");
+    expect(after.overridden_at).toBeTypeOf("string");
+
+    // the run-level audit trail: who + why + when
+    const trail = listGateOverrides(env.db, run.run_id);
+    expect(trail).toHaveLength(1);
+    expect(trail[0]).toMatchObject({ gate: "alwaysFailGate", pass: 0, by: "reviewer" });
+
+    // the resume path: approved → acceptance recorded (§6 #8) → run continues
+    const sink = new EventSink(env.db, { runId: run.run_id, phaseId: null, agentSessionId: null });
+    const accepted = recordEnvelopeAcceptance({
+      db: env.db,
+      envelopeId: rejected.id,
+      emit: (type, data) => sink.push(type, data),
+    });
+    await sink.flush();
+    expect(accepted.id).toBe(rejected.id);
+    const events = cursorEvents(env.db, run.run_id, 0, 10_000);
+    // one acceptance: the attempt-0 envelope was rejected (gates failed), so the
+    // only envelope event is the post-override acceptance — and it never fired
+    // while the run was live (violations path), so exactly one appears
+    const envelopeEvents = events.filter((e) => e.type === "envelope");
+    expect(envelopeEvents).toHaveLength(1);
+    expect(envelopeEvents[0]!.data).toMatchObject({ phase: "build", attempt: 1, valid: true });
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("override guardrails: passing gates, missing results, and double overrides are rejected", async () => {
+  const env = openEnv("runner-override-guards");
+  try {
+    const blueprint = defineBlueprint({
+      name: "ovrguard",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [qualityGate], budget: 1 }],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn({ quality: 9 })]) },
+    });
+    expect((await run.done).status).toBe("success");
+
+    const gates = listGateResults(env.db, run.run_id);
+    const passing = gates[0]!; // quality 9 passes
+    expect(() => overrideGateResult({ db: env.db, gateResultId: passing.id, by: "x", reason: "r" })).toThrow(/passed/);
+    expect(() => overrideGateResult({ db: env.db, gateResultId: "ghost", by: "x", reason: "r" })).toThrow(/no gate result/);
+
+    // a failing gate result from the run can be overridden exactly once
+    const failing: Gate = async () => ({ pass: false, violations: ["nope"] });
+    const blueprint2 = defineBlueprint({
+      name: "ovrguard2",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [failing], budget: 1 }],
+    });
+    const run2 = runBlueprint(env.db, env.dir, {
+      blueprint: blueprint2,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn({ quality: 9 }), settledTurn({ quality: 9 })]) },
+    });
+    expect((await run2.done).status).toBe("paused");
+    const fg = listGateResults(env.db, run2.run_id).find((g) => g.pass === 0)!;
+    overrideGateResult({ db: env.db, gateResultId: fg.id, by: "x", reason: "r" });
+    expect(() => overrideGateResult({ db: env.db, gateResultId: fg.id, by: "x", reason: "r" })).toThrow(/already overridden/);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── loop guard (§19, T03): the exact fixture — 2-phase cycle, max_visits 3 ──
+
+test("loop guard: reviewer → builder → reviewer cycle with max_visits 3 pauses at 3 visits (§19)", async () => {
+  const env = openEnv("runner-guard3");
+  try {
+    const blueprint = defineBlueprint({
+      name: "cycle3",
+      phases: [
+        { name: "review", agent: agent("reviewer"), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "build" } },
+        { name: "build", agent: agent("builder"), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "review" } },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { review: session([settledTurn(), settledTurn()]), build: session([settledTurn(), settledTurn()]) },
+      maxVisits: 3,
+    });
+    const result = await run.done;
+    expect(result).toEqual({ status: "paused", needs_review: false });
+
+    const statuses = cursorEvents(env.db, run.run_id, 0, 10_000).filter((e) => e.type === "run_status");
+    const final = statuses[statuses.length - 1]!.data as { to: string; reason?: string };
+    expect(final.to).toBe("paused");
+    expect(final.reason).toMatch(/max_visits \(3\)/);
+
+    // each phase visited exactly max_visits times, then the guard fired
+    const phases = listPhases(env.db, run.run_id);
+    expect(phases.map((p) => [p.name, p.status, p.visits])).toEqual([
+      ["review", "failed", 3],
+      ["build", "failed", 3],
+    ]);
+    // §8.1 session ids carry the visit number: review ran v1, v2, and v3
+    const sessions = listAgentSessions(env.db, run.run_id).map((s) => s.pi_session_id);
+    for (const v of [1, 2, 3]) {
+      expect(sessions).toContain(`${run.run_id.slice(0, 8)}_review_v${v}`);
+      expect(sessions).toContain(`${run.run_id.slice(0, 8)}_build_v${v}`);
+    }
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("a zod-invalid envelope is corrected with the exact issue; EVERY attempt is recorded (T03)", async () => {
   const env = openEnv("runner-invalid");
   try {
     const blueprint = defineBlueprint({
@@ -399,9 +666,17 @@ test("a zod-invalid envelope is corrected with the exact issue; only valid envel
     expect(correction.reason).toBe("invalid_envelope");
     expect(correction.message).toContain("notes_for_next_agent");
 
-    // only the VALID envelope got a row (attempt = 1 after one correction)
+    // T03: the invalid attempt is a row too — full history, attempt 0 invalid
+    // (rejected text stored verbatim), attempt 1 valid + accepted
     const envelopes = listEnvelopes(env.db, run.run_id);
-    expect(envelopes.map((e) => e.attempt)).toEqual([1]);
+    expect(envelopes.map((e) => e.attempt)).toEqual([0, 1]);
+    expect(envelopes.map((e) => e.valid)).toEqual([0, 1]);
+    // the invalid attempt's json is the rejected text, verbatim
+    expect(JSON.parse(envelopes[0]!.json)).toEqual({ summary: "x", artifacts: [], quality: "not-a-number" });
+    // the correction that followed it is stamped on the row; the accepted row has none
+    expect(envelopes[0]!.correction).toContain("notes_for_next_agent");
+    expect(envelopes[1]!.correction).toBeNull();
+    expect(envelopes.map((e) => e.violations)).toEqual(["[]", "[]"]); // no gates ran
   } finally {
     closeEnv(env);
   }
