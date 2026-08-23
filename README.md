@@ -1,6 +1,6 @@
 # Showrunner
 
-An agent orchestration tool: blueprints of phases, each running a configured agent against a local pi harness — observed live, corrected in place, and paused for humans when success cannot be earned.
+An agent orchestration tool: blueprints of phases, each running a configured set of agents — observed live, corrected in place, and paused for humans when success cannot be earned.
 
 **Status**: design phase. The full plan is in [PLAN.md](./PLAN.md).
 
