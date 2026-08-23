@@ -13,7 +13,9 @@ import {
   drivePreparedRun,
   getControl,
   getRun,
+  isPidAlive,
   listAgentSessions,
+  listProcesses,
   openDb,
   prepareBlueprintRun,
   pricesPathFor,
@@ -492,6 +494,112 @@ test(
       const prepared = await prepareBlueprintRun(env.db, env.dir, { modulePath: HAPPY_BP, cwd: env.cwd });
       const run = drivePreparedRun(env.db, env.dir, prepared);
       expect((await run.terminal).status).toBe("success");
+    } finally {
+      closeEnv(env);
+    }
+  },
+  { timeout: 20_000 },
+);
+
+// ── §19 "on_fail + loop guard": a redrive cycle pauses at max_visits ─────────
+
+test(
+  "§5.2 on_fail + loop guard: a budget-exhausted phase routing to a phase that also fails PAUSES at max_visits across the redrives (not running forever)",
+  async () => {
+    const env = openEnv("edge-onfail-guard");
+    try {
+      // the capstone FINDING 2 shape: BOTH phases fail and route to each
+      // other via on_fail — the plan↔build cycle must terminate at the §5.2
+      // step-3 guard (visits >= max_visits → pause), never run forever. The
+      // on_fail target counts as a NEW visit on the same per-phase counter.
+      const blueprint = defineBlueprint({
+        name: "failcycle",
+        phases: [
+          { name: "plan", agent: agent("planner"), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "build" } },
+          { name: "build", agent: agent("builder"), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "plan" } },
+        ],
+      });
+      const run = runBlueprint(env.db, env.dir, {
+        blueprint,
+        cwd: env.cwd,
+        scripts: { plan: session([settledTurn()]), build: session([settledTurn()]) },
+        maxVisits: 3,
+      });
+
+      // poll the control surface exactly like the HTTP layer does
+      const deadline = Date.now() + 20_000;
+      let guardPause = false;
+      for (;;) {
+        const control = getControl(run.run_id);
+        const row = getRun(env.db, run.run_id)!;
+        if (control !== null && control.paused && control.pauseInfo!.kind === "guard_exhausted") {
+          guardPause = true;
+          break;
+        }
+        if (row.status !== "running") {
+          // terminal without a guard pause — the cycle ran away
+          throw new Error(`run reached ${row.status} without a guard pause — the on_fail cycle did not terminate`);
+        }
+        if (Date.now() > deadline) break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(guardPause).toBe(true);
+      expect(getRun(env.db, run.run_id)!.status).toBe("paused");
+
+      // visits are counted per phase ACROSS the on_fail redrives: exactly
+      // max_visits (3) per phase — plan v1..v3, build v1..v3, then the guard
+      // paused plan's 4th entry. No phase exceeded max_visits.
+      const sessions = listAgentSessions(env.db, run.run_id);
+      const visitsByPhase = new Map<string, number[]>();
+      for (const s of sessions) {
+        const phaseRow = env.db
+          .query<{ name: string }, [string]>("SELECT name FROM phases WHERE id = ?")
+          .get(s.phase_id);
+        const name = phaseRow?.name ?? "?";
+        const list = visitsByPhase.get(name) ?? [];
+        list.push(s.visit);
+        visitsByPhase.set(name, list);
+      }
+      expect(visitsByPhase.get("plan")).toEqual([1, 2, 3]);
+      expect(visitsByPhase.get("build")).toEqual([1, 2, 3]);
+
+      getControl(run.run_id)!.fail("test");
+      expect((await run.terminal).status).toBe("failed");
+    } finally {
+      closeEnv(env);
+    }
+  },
+  { timeout: 30_000 },
+);
+
+// ── §8.3/§19: no fake-session child outlives its run ────────────────────────
+
+test(
+  "§8.3 child lifecycle: no fake-session child outlives a completed run (reaped at visit end, processes table clean)",
+  async () => {
+    const env = openEnv("edge-reap");
+    try {
+      const passGateLocal: Gate = async () => ({ pass: true });
+      const blueprint = defineBlueprint({
+        name: "reap",
+        phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [passGateLocal], budget: 1 }],
+      });
+      const run = runBlueprint(env.db, env.dir, {
+        blueprint,
+        cwd: env.cwd,
+        scripts: { build: session([settledTurn({ quality: 9 })]) },
+      });
+      const result = await run.terminal;
+      expect(result).toEqual({ status: "success", needs_review: false });
+
+      // every session's child process is GONE — no lingering fake-pi child
+      const sessions = listAgentSessions(env.db, run.run_id);
+      expect(sessions.length).toBe(1);
+      for (const s of sessions) {
+        expect(isPidAlive(s.pid)).toBe(false);
+      }
+      // the daemon's process bookkeeping reaped every row too
+      expect(listProcesses(env.db)).toHaveLength(0);
     } finally {
       closeEnv(env);
     }

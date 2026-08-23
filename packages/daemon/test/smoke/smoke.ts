@@ -554,6 +554,10 @@ console.log("\n=== smoke summary ===");
 if (failures.length === 0) {
   console.log("smoke PASSED: capstone (correction + real gates + steer + override + approve + spend), crash-with-live-child, real-pi backfill, poll runtime load.");
   console.log("smoke: run `SHOWRUNNER_SMOKE_KEEP=1 …` to keep the scratch dirs for inspection.");
+  // FINDING 4: the PASS path must exit explicitly — a leaked handle (the
+  // daemon children / keep-alive sockets) otherwise keeps the process alive
+  // after "smoke PASSED" with no exit code.
+  process.exit(0);
 } else {
   console.error(`smoke FAILED (${failures.length}):`);
   for (const f of failures) console.error(`  - ${f}`);

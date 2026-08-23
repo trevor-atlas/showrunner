@@ -76,7 +76,7 @@ function usage(): void {
       "usage:",
       "  showrunner daemon                        run the daemon in the foreground",
       "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
-      "  showrunner run <blueprint.ts> [--delay] submit a blueprint run (driven by FakePi sessions)",
+      "  showrunner run <blueprint.ts> [--delay] [--cwd DIR] [--prompt \"<goal>\"] submit a blueprint run (driven by FakePi sessions; --prompt becomes the run's first instruction)",
       "  showrunner runs                          list runs with status + phase counts",
       "  showrunner show <run_id>                run detail: phases, visits, corrections, spend",
       "  showrunner watch <run_id> [--interval N] stream a run's folded events",
@@ -137,6 +137,12 @@ async function cmdRun(flags: Flags): Promise<number> {
     const body: Record<string, unknown> = { blueprint: resolve(arg) };
     if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
     if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
+    // FINDING-1 (§13.2/§13.3 `args?`): `--prompt "<goal>"` is the user
+    // instruction channel the skills use (`showrunner run <bp> --prompt "…"`).
+    // It rides the opaque `args` array — the daemon snapshots it verbatim into
+    // blueprint.json AND composes it as the [User request] section of the run's
+    // first prompt (§8.2), so the instruction actually reaches the agent.
+    if (flags.rest.prompt !== undefined) body.args = ["--prompt", flags.rest.prompt];
     const res = await submit(body);
     if (res === null) return 1;
     console.log(`run submitted: ${res.run_id}`);

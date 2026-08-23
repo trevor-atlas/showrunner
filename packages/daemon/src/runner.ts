@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -6,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { Database } from "bun:sqlite";
 import { z } from "zod";
 import {
+  createShell,
   DEFAULT_BUDGET,
   EnvelopeBase,
   validateBlueprint,
@@ -1023,6 +1023,31 @@ function ctxEmit(state: LoopState, type: EventType, data: unknown, ids?: EventId
   state.emit(type, data, ids);
 }
 
+/** FINDING-1 (§8.2, §13.3): the run's `--prompt` user instruction. The CLI
+ * sends it as `args: ["--prompt", <text>]`; the submit-time snapshot records
+ * it verbatim in blueprint.json. The composed prompt renders it as the
+ * [User request] section — the agent's actual goal. Null when the run was
+ * submitted without a prompt (or the snapshot is unreadable — the helper
+ * never throws, so composition stays best-effort). */
+function userPromptFromSnapshot(state: LoopState): string | null {
+  // tests build the state shape by hand without runDir — stay tolerant
+  const runDir = (state as { runDir?: string }).runDir;
+  if (typeof runDir !== "string" || runDir === "") return null;
+  let snap: { args?: unknown };
+  try {
+    snap = JSON.parse(readFileSync(join(runDir, "blueprint.json"), "utf8")) as { args?: unknown };
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(snap.args)) return null;
+  for (let i = 0; i < snap.args.length; i++) {
+    if (snap.args[i] === "--prompt" && typeof snap.args[i + 1] === "string" && snap.args[i + 1] !== "") {
+      return snap.args[i + 1]!;
+    }
+  }
+  return null;
+}
+
 /** The composed prompt (§8.2): phase + agent + context + handoff + envelope contract. */
 export function composePrompt(
   state: LoopState,
@@ -1037,6 +1062,13 @@ export function composePrompt(
     "",
     phase.agent.prompt,
   ];
+  // FINDING-1: the submit-time `--prompt "<goal>"` is the agent's instruction
+  // (the skills' `showrunner run <bp> --prompt "…"` contract). It rides right
+  // after the agent's own prompt, before any context — the goal comes first.
+  const userPrompt = userPromptFromSnapshot(state);
+  if (userPrompt !== null) {
+    lines.push("", "[User request]", userPrompt);
+  }
   // §8.2 [Context] = the §9.2 context entries plus the §9.3 materialized handoff
   // inputs — each inputs/ path named with its contents inlined, so the agent
   // never hunts for the predecessor's envelope or artifacts (§9.3).
@@ -1071,10 +1103,13 @@ function hookContext(state: LoopState, phaseName: string): PhaseHookContext {
   };
 }
 
-/** §3.7 shell(): one subprocess one-liner, full result. */
+/** §3.7 shell(): one subprocess one-liner, full result. Runs TRULY async
+ * (spawn, promisified — never spawnSync): a hook command must not block the
+ * daemon's event loop (§19 backpressure; the FINDING-1 freeze was the hook
+ * shell AND the gate shell both blocking on spawnSync). The 30s cap is kept
+ * — a hook that exceeds it returns code -1 (the hook decides how to fail). */
 async function runShell(cwd: string, cmd: string): Promise<ShellResult> {
-  const res = spawnSync("/bin/sh", ["-c", cmd], { cwd, encoding: "utf8", timeout: 30_000 });
-  return { code: res.status ?? -1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  return createShell(cwd, { timeoutMs: 30_000 })(cmd);
 }
 
 // ── agent_map.json (§10) ─────────────────────────────────────────────────────

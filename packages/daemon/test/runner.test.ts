@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1003,6 +1003,38 @@ test("composePrompt renders the §8.2 prompt: phase, agent, context, handoff, en
     expect(prompt).toContain("[Handoff from previous phase]");
     expect(prompt).toContain("quality: number"); // envelope contract rendered
     expect(prompt).toContain("context_handoff/build/outputs/envelope.json");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("FINDING-1: a run submitted with --prompt composes it as [User request] in the first prompt", async () => {
+  const env = openEnv("runner-prompt-args");
+  try {
+    const blueprint = defineBlueprint({
+      name: "prompted_args",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [] }],
+    });
+    // the CLI's §13.3 args channel lands in the run's snapshot (blueprint.json)
+    // — build the state by hand over a REAL snapshot written via the public
+    // snapshot function, exactly as the submit path records it
+    const runDir = runDirFor(env.dir, "f1-snap");
+    mkdirSync(runDir, { recursive: true });
+    snapshotBlueprint(runDir, blueprint, 3, null, ["--prompt", "map the auth flow"]);
+    const state = { blueprint, cwd: env.cwd, moduleDir: null, runDir } as unknown as Parameters<typeof composePrompt>[0];
+
+    const prompt = composePrompt(state, blueprint.phases[0]!, null);
+    expect(prompt).toContain("[User request]");
+    expect(prompt).toContain("map the auth flow");
+    // the instruction is the goal: it rides right after the agent prompt, before any context
+    const reqIdx = prompt.indexOf("[User request]");
+    expect(reqIdx).toBeGreaterThan(prompt.indexOf("execute the phase"));
+    expect(prompt.indexOf("[Context]")).toBe(-1); // no context entries → no [Context] block
+
+    // no --prompt → no [User request] section (the old silent no-op shape)
+    snapshotBlueprint(runDir, blueprint, 3, null, ["--go", "fast"]);
+    const plain = composePrompt(state, blueprint.phases[0]!, null);
+    expect(plain).not.toContain("[User request]");
   } finally {
     closeEnv(env);
   }

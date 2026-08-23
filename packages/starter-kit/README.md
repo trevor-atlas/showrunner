@@ -39,6 +39,24 @@ lowercase a-z, 0-9, hyphens); blueprint **names/modules** use the underscores fr
 PLAN §14's table (`plan_build`). The skill names are what pi's model sees;
 the blueprint names are what the run loop records.
 
+## The command gates (`testsPass`, `lintClean`)
+
+The two command gates run REAL commands in the run's workspace (`ctx.cwd`).
+They resolve their target instead of failing with an opaque exit-1:
+
+- `lintClean()` — an explicit `command`/`tsconfig` option wins; otherwise the
+  **nearest `tsconfig.json` up from the run cwd** runs as `bunx tsc -p <path> --noEmit`;
+  otherwise the nearest `package.json`'s `"typecheck"` script runs as
+  `bun run typecheck`; otherwise the gate **fails loudly** ("no tsconfig found
+  at <path>").
+- `testsPass()` — an explicit `command` wins; otherwise the nearest
+  `package.json`'s `"test"` script runs as `bun run test`; otherwise any
+  `*.test.ts`/`*.spec.ts` files under the run cwd run as `bun test`; otherwise
+  the gate **fails loudly** ("no test target").
+
+Both are replace-this: pass `{ command: "npm test" }` / `{ tsconfig }` /
+`{ command: "bun run lint" }` per phase to point them at your project.
+
 ## Running the blueprints
 
 `showrunner run` takes a blueprint **module path** (the CLI has no name registry

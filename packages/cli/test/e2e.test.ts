@@ -175,6 +175,32 @@ test("a blueprint run shows the full §5 loop in watch: correction, envelope, ga
   expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(rootHadContextDir);
 });
 
+test("FINDING-1: --prompt rides the §13.3 args into the snapshot (the composed-prompt input)", async () => {
+  const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2", "--prompt", "map the auth flow"]);
+  expect(submitted.status).toBe(0);
+  const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
+  expect(runId).toBeDefined();
+
+  // §13.3: the snapshot records the submit-time args verbatim — the daemon
+  // composes the --prompt value into the run's first prompt (§8.2, [User request])
+  const snap = JSON.parse(readFileSync(join(runDirFor(dataDir, runId!), "blueprint.json"), "utf8")) as {
+    args: string[] | null;
+  };
+  expect(snap.args).toEqual(["--prompt", "map the auth flow"]);
+
+  // the prompt must not break the loop — the run still reaches success
+  let sawSuccess = false;
+  for (let i = 0; i < 200 && !sawSuccess; i++) {
+    const poll = cli(["runs"]);
+    if (poll.stdout.includes("success")) {
+      sawSuccess = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  expect(sawSuccess).toBe(true);
+});
+
 test("stop terminates the daemon and removes the socket", async () => {
   const socket = join(dataDir, "daemon.sock");
   expect(existsSync(socket)).toBe(true);

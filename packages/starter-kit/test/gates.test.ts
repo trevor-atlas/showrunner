@@ -66,6 +66,84 @@ test("lintClean passes when the typecheck is clean and fails with a type error",
   expect(violationsOf(fail)[0]).toContain("lint/typecheck failed");
 });
 
+test("FINDING-2: lintClean fails loudly when no tsconfig/typecheck target exists, and names the resolution", async () => {
+  const empty = tmpDir("gates-lint-empty");
+  cleanups.push(empty);
+
+  const noTarget = await lintClean()(baseEnvelope(), ctx(empty));
+  expect(noTarget.pass).toBe(false);
+  const msg = violationsOf(noTarget)[0]!;
+  expect(msg).toContain("no tsconfig found");
+  expect(msg).toContain(empty); // the checked path is named — no opaque exit-1
+  expect(msg).toContain("typecheck");
+
+  // a package.json "typecheck" script (no tsconfig anywhere) is a valid target
+  const scripted = tmpDir("gates-lint-script");
+  cleanups.push(scripted);
+  writeWorkspace(scripted, {
+    "package.json": JSON.stringify({ name: "scripted", scripts: { typecheck: "echo typecheck-ok" } }),
+  });
+  const viaScript = await lintClean()(baseEnvelope(), ctx(scripted));
+  expect(viaScript).toEqual({ pass: true });
+});
+
+test("FINDING-2: lintClean finds the NEAREST tsconfig up from the run cwd and honors the explicit tsconfig option", async () => {
+  const ws = tmpDir("gates-lint-up");
+  cleanups.push(ws);
+  passingWorkspace(ws); // ws/tsconfig.json + src + node_modules symlink
+  writeWorkspace(ws, { "sub/deep/.keep": "" });
+
+  // the run cwd is a subdirectory — the gate walks UP to the project tsconfig
+  const viaWalkUp = await lintClean()(baseEnvelope(), ctx(join(ws, "sub", "deep")));
+  expect(viaWalkUp).toEqual({ pass: true });
+
+  // an explicit tsconfig wins over the walk-up
+  const boom = tmpDir("gates-lint-explicit");
+  cleanups.push(boom);
+  passingWorkspace(boom);
+  writeWorkspace(boom, { "src/boom.ts": "const n: number = \"not a number\";\nexport default n;\n" });
+  const viaOption = await lintClean({ tsconfig: join(boom, "tsconfig.json") })(baseEnvelope(), ctx(boom));
+  expect(viaOption.pass).toBe(false);
+  expect(violationsOf(viaOption)[0]).toContain("lint/typecheck failed");
+
+  // an explicit command wins over everything
+  const viaCommand = await lintClean({ command: "echo lint-cmd" })(baseEnvelope(), ctx(boom));
+  expect(viaCommand).toEqual({ pass: true });
+});
+
+test("FINDING-2: testsPass fails loudly without a suite, and resolves test script / test files", async () => {
+  // no suite anywhere → a clear violation, not an opaque `bun test` exit-1
+  const empty = tmpDir("gates-tests-empty");
+  cleanups.push(empty);
+  const noTarget = await testsPass()(baseEnvelope(), ctx(empty));
+  expect(noTarget.pass).toBe(false);
+  const msg = violationsOf(noTarget)[0]!;
+  expect(msg).toContain("no test target");
+  expect(msg).toContain(empty);
+
+  // only test files (no package.json) → bun's auto-discovery
+  const files = tmpDir("gates-tests-files");
+  cleanups.push(files);
+  writeWorkspace(files, {
+    "test/trivial.test.ts": 'import { test, expect } from "bun:test";\ntest("green", () => expect(1).toBe(1));\n',
+  });
+  const viaFiles = await testsPass()(baseEnvelope(), ctx(files));
+  expect(viaFiles).toEqual({ pass: true });
+
+  // a package.json "test" script is the project's own runner
+  const scripted = tmpDir("gates-tests-script");
+  cleanups.push(scripted);
+  writeWorkspace(scripted, {
+    "package.json": JSON.stringify({ name: "scripted", scripts: { test: "echo tests-ok" } }),
+  });
+  const viaScript = await testsPass()(baseEnvelope(), ctx(scripted));
+  expect(viaScript).toEqual({ pass: true });
+
+  // an explicit command wins over the resolution
+  const viaCommand = await testsPass({ command: "echo tests-cmd" })(baseEnvelope(), ctx(empty));
+  expect(viaCommand).toEqual({ pass: true });
+});
+
 test("workspaceShell honors ctx.shell when provided and falls back to a real subprocess otherwise", async () => {
   const cwd = tmpDir("gates-shell");
   cleanups.push(cwd);

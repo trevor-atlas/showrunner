@@ -186,13 +186,42 @@ export class FakeSessionDriver implements SessionDriver {
     });
   }
 
+  /**
+   * stdin EOF → the process reaps itself (exit 0, §8.3); resolves when gone.
+   * HARDENED (capstone FINDING 3): if the child ever ignores stdin EOF and
+   * lingers past a 1s grace period, escalate SIGTERM → SIGKILL after 1s (the
+   * same semantics as stop()) — a long-lived daemon must never accumulate
+   * fake-session children, no matter how a script misbehaves.
+   */
   async close(): Promise<void> {
     try {
       this.child.stdin?.end();
     } catch {
       // already closed / never opened
     }
-    await this.exit;
+    if (this.exitCodeValue !== null || this.closed) return;
+    await Promise.race([
+      this.exit,
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          try {
+            this.child.kill("SIGTERM");
+          } catch {
+            // already gone
+          }
+          const killTimer = setTimeout(() => {
+            try {
+              this.child.kill("SIGKILL");
+            } catch {
+              // already gone
+            }
+            resolve();
+          }, 1_000);
+          void this.exit.then(() => clearTimeout(killTimer));
+        }, 1_000);
+        void this.exit.then(() => clearTimeout(timer));
+      }),
+    ]);
   }
 
   async stop(): Promise<void> {

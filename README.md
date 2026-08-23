@@ -33,14 +33,25 @@ showrunner daemon            # or: bun packages/cli/src/index.ts daemon
 In another terminal:
 
 ```bash
-# 3. run a starter blueprint (FakePi sessions ship with the kit — no tokens)
-showrunner run packages/starter-kit/src/blueprints/plan_build_test.ts
+# 3. run a starter blueprint (FakePi sessions ship with the kit — no tokens).
+#    --prompt steers the agent: it becomes the run's first instruction (§8.2).
+#    --cwd runs the work in a scratch workspace, so the run's context_handoff/
+#    output never lands in your checkout:
+showrunner run packages/starter-kit/src/blueprints/scout.ts --prompt "map the auth flow" --cwd "$(mktemp -d)"
 
 # 4. watch it live
 showrunner runs                              # list runs
 showrunner watch <run_id>                    # stream the folded events
 showrunner show <run_id>                     # phases, visits, corrections, spend
 ```
+
+That first run drives one recon phase and ends `success` — you just steered an
+agent with your own words. `plan_build` is the full plan → build → ship loop:
+it pauses for **your approval** before the ship agent commits
+(`showrunner approve <run_id>` continues it). `plan_build_test` adds the
+project's real tests + typecheck as build gates — run it in a project that has
+a `tsconfig.json` (or a `"typecheck"` script) and a test suite; the gates fail
+loudly, naming the missing piece, when it does not.
 
 Paused runs (approval / budget / guard / blocked) surface with `showrunner pause
 <run_id>`; the menu verbs are `approve`, `steer`, `override`, `restart-fresh`,
@@ -53,11 +64,15 @@ Six agents, a shared gates library (`testsPass`, `lintClean`, `matchesPlan`,
 …), ten blueprint modules, ten skill files, and the `poll` tool live in
 [`packages/starter-kit`](packages/starter-kit/README.md) — a replace-this
 surface by design (PLAN §14): the tests it ships prove the machinery, not your
-project. `showrunner run` takes a blueprint **module path**:
+project. `showrunner run` takes a blueprint **module path**. `--prompt "<goal>"` is the
+instruction the agent works against — it is composed into the run's first
+prompt as the `[User request]` section (and snapshotted verbatim into the
+run's `blueprint.json`). Run the demo in a scratch `--cwd` so its
+`context_handoff/` output never dirties your checkout:
 
 ```bash
-showrunner run packages/starter-kit/src/blueprints/scout.ts --prompt "map the auth flow"
-showrunner run packages/starter-kit/src/blueprints/plan_build.ts --prompt "add offline sync"
+showrunner run packages/starter-kit/src/blueprints/scout.ts --prompt "map the auth flow" --cwd "$(mktemp -d)"
+showrunner run packages/starter-kit/src/blueprints/plan_build.ts --prompt "add offline sync" --cwd "$(mktemp -d)"
 ```
 
 Real-pi runs (env-gated) drive the same loop against the actual pi binary and
@@ -103,7 +118,7 @@ blueprint runs out of the box with zero token spend.
 ## Development
 
 ```bash
-bun test                              # 215 fixtures across all packages (FakePi; no pi binary, no tokens)
+bun test                              # 267 fixtures across all packages (230 + 37 UI) (FakePi; no pi binary, no tokens)
 bunx tsc -p packages/daemon/tsconfig.json --noEmit   # per-package typecheck
 SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun packages/daemon/test/smoke/smoke.ts
                                       # the capstone smoke: real pi, real repo, real tokens (T13)
