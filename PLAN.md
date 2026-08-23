@@ -139,7 +139,7 @@ defineBlueprint({
   phases: [{
     agent,                                // imported module
     envelope,                             // zod schema, extended from EnvelopeBase
-    gate?,                                // Gate | Gate[]
+    gates,                                // Gate[]
     budget?,                              // max corrections per visit (default ~3)
     on_fail?: { to: phase },              // fired after budget exhaustion — loops by config
     require_approval?: boolean,           // pause for human before start
