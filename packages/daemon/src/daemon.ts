@@ -17,7 +17,11 @@ import { createDaemonServer } from "./server.ts";
 
 export interface DaemonHandle {
   dataDir: string;
-  socketPath: string;
+  /** unix socket path when listening on a unix socket; null in http mode */
+  socketPath: string | null;
+  /** the daemon's base URL: "unix://<socketPath>" or "http://<host>:<port>" —
+   * what the typed client's SHOWRUNNER_DAEMON_URL override points at */
+  baseUrl: string;
   close(): Promise<void>;
 }
 
@@ -30,7 +34,7 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {}): DaemonHandle {
+export function startDaemon(opts: { dataDir?: string; poolSlots?: number; listen?: { port?: number; host?: string } } = {}): DaemonHandle {
   const dataDir = opts.dataDir ?? resolveDataDir();
   mkdirSync(dataDir, { recursive: true });
 
@@ -39,7 +43,7 @@ export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {})
   if (existsSync(pidFile)) {
     const pid = Number(readFileSync(pidFile, "utf8").trim());
     if (Number.isInteger(pid) && isProcessAlive(pid)) {
-      throw new Error(`daemon already running (pid ${pid}) at ${socketPathFor(dataDir)}`);
+      throw new Error(`daemon already running (pid ${pid}) for data dir ${dataDir}`);
     }
   }
 
@@ -66,27 +70,45 @@ export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {})
   }
   const socketPath = socketPathFor(dataDir);
   const server = createDaemonServer({ db, dataDir, poolSlots: opts.poolSlots });
-
-  try {
-    unlinkSync(socketPath); // stale socket from a dead daemon
-  } catch {
-    // nothing to unlink
+  const httpListen = opts.listen;
+  let boundSocket: string | null = null;
+  let baseUrl: string;
+  if (httpListen !== undefined) {
+    // dev override: listen on http://host:port so the typed client's
+    // SHOWRUNNER_DAEMON_URL (an http base URL) can reach the daemon; the unix
+    // socket stays the default transport
+    const host = httpListen.host ?? "127.0.0.1";
+    server.listen({ port: httpListen.port ?? 0, host });
+    const addr = server.address();
+    const port = addr !== null && typeof addr === "object" ? addr.port : httpListen.port ?? 0;
+    baseUrl = `http://${host}:${port}`;
+  } else {
+    try {
+      unlinkSync(socketPath); // stale socket from a dead daemon
+    } catch {
+      // nothing to unlink
+    }
+    server.listen({ path: socketPath });
+    boundSocket = socketPath;
+    baseUrl = `unix://${socketPath}`;
   }
-  server.listen({ path: socketPath });
   writeFileSync(pidFile, `${process.pid}\n`);
 
   return {
     dataDir,
-    socketPath,
+    socketPath: boundSocket,
+    baseUrl,
     close: async () => {
       // graceful shutdown (§13, T07): stop recorded children (SIGTERM →
       // SIGKILL after 1s) — events are already durable, nothing is persisted
       stopRecordedChildren(db);
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      try {
-        unlinkSync(socketPath);
-      } catch {
-        // already gone
+      if (boundSocket !== null) {
+        try {
+          unlinkSync(boundSocket);
+        } catch {
+          // already gone
+        }
       }
       try {
         rmSync(pidFile);

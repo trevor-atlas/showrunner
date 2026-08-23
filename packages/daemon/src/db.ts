@@ -311,6 +311,12 @@ export function getPhaseById(db: Database, id: string): PhaseRow | null {
   return q<PhaseRow>(db, "SELECT * FROM phases WHERE id = ?").get(id) ?? null;
 }
 
+/** A phase of a run, looked up by its blueprint NAME (the §13 phase-scoped
+ * endpoints use the name — the URL-safe slug the UI carries). */
+export function getPhaseByName(db: Database, runId: string, name: string): PhaseRow | null {
+  return q<PhaseRow>(db, "SELECT * FROM phases WHERE run_id = ? AND name = ? LIMIT 1").get(runId, name) ?? null;
+}
+
 export function sumRunSpend(db: Database, runId: string): number {
   const row = q<{ s: number | null }>(
     db,
@@ -394,6 +400,12 @@ export function cursorEvents(db: Database, runId: string, afterRowid: number, li
 
 export function eventCount(db: Database, runId: string): number {
   const row = q<{ n: number }>(db, "SELECT COUNT(*) AS n FROM events WHERE run_id = ?").get(runId);
+  return row?.n ?? 0;
+}
+
+/** Accepted/attempt envelope rows for a run — the §13 detail's envelope count. */
+export function envelopeCount(db: Database, runId: string): number {
+  const row = q<{ n: number }>(db, "SELECT COUNT(*) AS n FROM envelopes WHERE run_id = ?").get(runId);
   return row?.n ?? 0;
 }
 

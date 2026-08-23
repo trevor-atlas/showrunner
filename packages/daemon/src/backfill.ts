@@ -73,6 +73,13 @@ function rawLinesSeen(rawPath: string): Set<string> {
  * realpath-resolved one, then scan every session subdir as a fallback. */
 function findSessionFile(sessionRoot: string, cwd: string, piSessionId: string): string | null {
   const wanted = `_${piSessionId}.jsonl`;
+  // A custom session root (PI_CODING_AGENT_SESSION_DIR / --session-dir) makes
+  // pi write FLAT files — <root>/<ts>_<id>.jsonl, no cwd subdir (verified
+  // against pi 0.84.2, T13 real-pi backfill probe). The default root nests
+  // under --<sanitized-cwd>--; try the flat layout first, then the nested
+  // names, then a scan of every subdir as a last resort.
+  const flat = latestIn(sessionRoot, wanted);
+  if (flat !== null) return flat;
   const dirs = [join(sessionRoot, sessionDirNameForCwd(cwd))];
   try {
     const resolved = sessionDirNameForCwd(realpathSync(cwd));

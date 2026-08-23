@@ -196,6 +196,31 @@ export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
 export { createDaemonServer } from "./server.ts";
 export type { DaemonDeps } from "./server.ts";
 
+// The typed §13 client (ships for the CLI and the UI; unix socket default,
+// SHOWRUNNER_DAEMON_URL http override for dev)
+export {
+  ApiError,
+  DaemonClient,
+  isSocketDown,
+  resolveTransport,
+} from "./client.ts";
+export type {
+  DaemonClientOptions,
+  DaemonStatus,
+  DaemonTransport,
+  EventsPage,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  PhaseSummary,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  SpendBreakdown,
+  SubmitRunBody,
+  SubmitRunResult,
+} from "./client.ts";
+
 // Daemon lifecycle
 export { daemonEntryPath, installSignalHandlers, startDaemon } from "./daemon.ts";
 export type { DaemonHandle } from "./daemon.ts";

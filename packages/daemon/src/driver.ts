@@ -90,6 +90,12 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
   const visit = 1;
   const budget = 3;
   const piSessionId = sessionIdFor(runId, phase, visit);
+  // §11.1: the roster is read BEFORE any row is created — a malformed
+  // prices.json is a config error that must fail fast with NO run row left
+  // behind (a fixture submit returning 500 must not strand a zombie 'running'
+  // run; the daemon survives either way — §13, T13 #5). The blueprint path
+  // validates at submit (a clean 400); this path validates here, before insert.
+  const roster = loadRoster(dataDir);
   const runDir = runDirFor(dataDir, runId);
   const startedAt = nowIso();
 
@@ -149,7 +155,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     visit,
     agent,
     model,
-    roster: loadRoster(dataDir),
+    roster,
     piSessionId,
     sink: (evt) => emit(evt.type as Parameters<EventSink["push"]>[0], evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
     rawAppend: (line, final) => rawFile.append(line, final),

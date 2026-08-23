@@ -314,6 +314,73 @@ test("edge case (§7.3): cumulative usage stays zero during streaming, real cost
   expect(spends[0]!.estimated).toBe(false);
 });
 
+test("roster fallback: a regression to EXACTLY 0.0 is clamped, never estimated — pi's reported number wins (T13 #4)", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
+    messageUpdate(1000, 200, { cost: 0.01 }),
+    messageUpdate(1500, 300, { cost: 0 }), // cumulative cost regressed to exactly 0.0
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  expect(spends).toHaveLength(2);
+  expect(spends[0]!.usd).toBe(0.01); // reported
+  expect(spends[0]!.estimated).toBe(false);
+  // the regression delta: tokens are tracked, usd is OUR clamp (0) — the
+  // roster must not fabricate an estimate over pi's reported cost
+  expect(spends[1]!.tokens_in).toBe(500);
+  expect(spends[1]!.tokens_out).toBe(100);
+  expect(spends[1]!.usd).toBe(0);
+  expect(spends[1]!.estimated).toBe(false);
+});
+
+test("roster fallback: cost reported then ABSENT (null) — no estimate either (T13 #4)", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
+    messageUpdate(1000, 200, { cost: 0.01 }),
+    messageUpdate(1500, 300), // provider stopped reporting cost
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  expect(spends).toHaveLength(2);
+  const delta = spends[1]!;
+  expect(delta.tokens_in).toBe(500); // tokens still tracked
+  expect(delta.tokens_out).toBe(100);
+  expect(delta.usd).toBeNull(); // never fabricated
+  expect(delta.estimated).toBe(false);
+});
+
+test("§19: message_update is delta-only (0.84.1+): folding keys off evt.usage, the authoritative snapshot lives on message_end", () => {
+  // message_update events carry a DELTA-shaped message (no cumulative content,
+  // no nested usage) plus a cumulative usage on the event itself; message_end
+  // carries the authoritative cumulative usage on message.usage. The tracer
+  // must never assume message_update.message holds the cumulative content.
+  const { events } = runStream([
+    '{"type":"message_update","message":{"id":"m1","role":"assistant","delta":{"text":"go"}},"usage":{"input":100,"output":10,"totalTokens":110,"cost":{"total":0.0002}}}',
+    '{"type":"message_update","message":{"id":"m1","role":"assistant","delta":{"text":" fi"}},"usage":{"input":200,"output":30,"totalTokens":230,"cost":{"total":0.0005}}}',
+    '{"type":"message_end","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"go fix"}],"usage":{"input":300,"output":50,"totalTokens":350,"cost":{"total":0.0009}}}}',
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  // deltas: (100,10,$0.0002) → (100,20,$0.0003) → (100,20,$0.0004) — the
+  // authoritative numbers come from the message_end snapshot, never folded
+  // from the delta-only message bodies
+  expect(spends).toHaveLength(3);
+  expect(spends[0]).toMatchObject({ tokens_in: 100, tokens_out: 10, estimated: false });
+  expect(spends[0]!.usd).toBeCloseTo(0.0002);
+  expect(spends[1]).toMatchObject({ tokens_in: 100, tokens_out: 20, estimated: false });
+  expect(spends[1]!.usd).toBeCloseTo(0.0003);
+  expect(spends[2]).toMatchObject({ tokens_in: 100, tokens_out: 20, estimated: false });
+  expect(spends[2]!.usd).toBeCloseTo(0.0004);
+});
+
+test("§19: a delta-only message_update with no usage at all folds nothing (raw only, §7.4)", () => {
+  const { events } = runStream([
+    '{"type":"message_update","message":{"id":"m1","role":"assistant","delta":{"text":"partial"}}}',
+    toolStart("c1", "bash", "ls"),
+    toolEnd("c1", "bash", "ok"),
+    messageEnd(10, 2, { cost: 0.0001 }),
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  expect(spends).toHaveLength(1); // only the message_end snapshot folds
+  expect(spends[0]!.tokens_in).toBe(10);
+  expect(ofType(events, "tool_call")).toHaveLength(1);
+});
+
 test("machinery events are recorded raw but never folded (§7.4)", () => {
   const { events } = runStream(['{"type":"queue_update","queued":1}', '{"type":"compaction_start"}', toolStart("c1", "bash", "x"), toolEnd("c1", "bash", "y")]);
   expect(ofType(events, "tool_call")).toHaveLength(1);

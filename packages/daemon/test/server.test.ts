@@ -61,7 +61,8 @@ test("the daemon API serves health, submit, runs, detail, events cursor, raw (§
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
 
     // health
     const health = await api(socketPath, "GET", "/health");
@@ -142,7 +143,8 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
 
     const demo = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "demo-blueprint.ts");
     const submitted = await api(socketPath, "POST", "/runs", { blueprint: demo, cwd: runCwd, delayMs: 0 });
@@ -192,7 +194,8 @@ test("POST /runs rejects a blueprint path without scripted sessions", async () =
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
     const submitted = await api(socketPath, "POST", "/runs", { blueprint: "/nonexistent/blueprint.ts" });
     expect(submitted.status).toBe(400);
     expect(String((submitted.json as { error: string }).error)).toMatch(/blueprint/);
@@ -217,7 +220,8 @@ test("a second daemon on the same data dir refuses to start (pidfile guard)", as
 test("daemon.close removes the socket and the pidfile", async () => {
   const dir = tmpDataDir("server-close");
   const daemon = startDaemon({ dataDir: dir });
-  const { socketPath } = daemon;
+  // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
   expect(existsSync(socketPath)).toBe(true);
   expect(existsSync(join(dir, "daemon.pid"))).toBe(true);
   await daemon.close();

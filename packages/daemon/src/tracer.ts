@@ -262,14 +262,23 @@ export class Tracer {
     };
     this.lastUsage = usage;
     // §11.1 roster fallback: when the PROVIDER reports no cost for this delta
-    // (zero or absent `cost.total`), `usd` becomes an ESTIMATE from the local
-    // prices.json (tokens × per-mtok), flagged `estimated: true`; a missing
-    // roster entry keeps it null — never fabricated, and tokens are tracked
-    // either way. A delta clamped to 0 by a snapshot REGRESSION does not
-    // count: pi reported a cost, so the reported number wins.
+    // (zero or absent `cost.total`) — and it is NOT a clamped snapshot
+    // regression — `usd` becomes an ESTIMATE from the local prices.json
+    // (tokens × per-mtok), flagged `estimated: true`; a missing roster entry
+    // keeps it null — never fabricated, and tokens are tracked either way.
+    //
+    // Reported-zero vs clamped-zero (T13/T06 review pin): a snapshot whose
+    // cumulative `cost.total` DROPPED to exactly 0.0 after a previous nonzero
+    // report is a regression — this delta's 0 is OUR clamp, not the provider's
+    // number, and the roster must NEVER override pi's reported cost. Only a
+    // genuinely reported zero (first snapshot, or a consistently-zero provider)
+    // takes the estimate path. The same goes for a null `cost.total` after a
+    // nonzero report: the provider stopped reporting, so no estimate either.
+    const prevReportedCost = prev !== null && prev.costTotal !== null && prev.costTotal > 0;
+    const providerReportsNoCost = usage.costTotal === null || usage.costTotal === 0;
     let usd = delta.usd;
     let estimated = false;
-    if (usage.costTotal === null || usage.costTotal === 0) {
+    if (providerReportsNoCost && !prevReportedCost) {
       const est = estimateUsd(this.opts.roster ?? {}, this.opts.model ?? "", {
         tokens_in: delta.tokens_in,
         tokens_out: delta.tokens_out,

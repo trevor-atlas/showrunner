@@ -53,6 +53,13 @@ export class FakeSessionDriver implements SessionDriver {
   private exitCodeValue: number | null = null;
   private settleWaiter: { resolve: () => void; reject: (err: Error) => void } | null = null;
   /**
+   * The stream is closed (child exited OR was killed). Latched separately
+   * from exitCodeValue — a signal-killed child reports exitCode null, and
+   * waitForSettled must still reject (T13 capstone: killing the child
+   * mid-flight must crash the run, not hang it).
+   */
+  private closed = false;
+  /**
    * The settle latch (G1, T02 review) — same edge-triggered latch as
    * PiSession: `agent_settled` is recorded even when no waiter is registered,
    * so a settle arriving in the ack→register window is not dropped (which
@@ -120,6 +127,7 @@ export class FakeSessionDriver implements SessionDriver {
       for (const line of splitter.push(decoder.end())) this.handleLine(line, false);
       for (const line of splitter.flush()) this.handleLine(line, true);
       this.exitCodeValue = code;
+      this.closed = true;
       this.exitResolve(code);
       const w = this.settleWaiter;
       this.settleWaiter = null;
@@ -154,7 +162,9 @@ export class FakeSessionDriver implements SessionDriver {
   }
 
   waitForSettled(): Promise<void> {
-    if (this.exitCodeValue !== null) {
+    // a SIGNAL-killed child reports exitCode null — the closed latch makes the
+    // death visible; null exitCode must not mean "still alive"
+    if (this.exitCodeValue !== null || this.closed) {
       return Promise.reject(
         new Error(`session died before agent_settled (exit ${this.exitCodeValue})`),
       );

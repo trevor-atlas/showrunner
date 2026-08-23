@@ -7,7 +7,7 @@ import { join } from "node:path";
 // package dependency). The daemon stays a separate package with its own
 // dependency on core.
 import { daemonEntryPath } from "../../daemon/src/daemon.ts";
-import { getJson } from "./client.ts";
+import { DaemonClient } from "../../daemon/src/client.ts";
 
 /**
  * Daemon lifecycle for the CLI: if no daemon is listening on the socket, spawn
@@ -18,7 +18,7 @@ import { getJson } from "./client.ts";
 
 export async function isDaemonUp(socketPath: string): Promise<boolean> {
   try {
-    await getJson(socketPath, "/health");
+    await new DaemonClient({ socketPath }).health();
     return true;
   } catch {
     return false;

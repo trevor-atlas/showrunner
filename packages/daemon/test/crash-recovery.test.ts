@@ -199,9 +199,15 @@ test(
       };
       expect(done.run.status).toBe("success");
       expect(done.run.needs_review).toBe(1); // T04 pin: any resume flags it, success keeps it
-      expect(new Set(done.sessions.map((s) => s.pi_session_id))).toEqual(
-        new Set([`${runId.slice(0, 8)}_build_v1`]),
-      ); // no v2 — same --session-id
+      // §12.3 (T13 #10): the shared --session-id is asserted EXPLICITLY — the
+      // crashed visit's row (never ended) plus the resumed incarnation are
+      // BOTH `..._build_v1` (no v2). A Set would mask a stray different id
+      // (or a wrong incarnation count); the explicit check cannot.
+      const sharedSessionId = `${runId.slice(0, 8)}_build_v1`;
+      const resumedSessionIds = done.sessions.map((s) => s.pi_session_id);
+      expect(resumedSessionIds).toHaveLength(2); // crashed row + resumed incarnation
+      expect(resumedSessionIds.every((id) => id === sharedSessionId)).toBe(true);
+      expect(resumedSessionIds).not.toContain(`${runId.slice(0, 8)}_build_v2`); // no v2
 
       // stop the daemon, then verify the DB cold (no concurrent writer)
       process.kill(daemonPid, "SIGKILL");
@@ -278,6 +284,52 @@ test("cleanupProcesses removes dead-pid rows and SIGTERMs live orphans (§12.1)"
 
 // ── §12.4 backfill, unit level: the missed session tail is restored and the
 //    sweep is idempotent (deduplicated — the events table is append-only) ─────
+
+test("backfill finds FLAT session files too — a custom session root (PI_CODING_AGENT_SESSION_DIR) has no cwd subdir (T13)", async () => {
+  const dir = tmpDataDir("backfill-flat");
+  const runCwd = mkdtempSync(join(tmpdir(), "showrunner-backfill-flat-cwd-"));
+  const sessionRoot = mkdtempSync(join(tmpdir(), "showrunner-backfill-flat-sess-"));
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    const runId = "f1af1af1-0000-4000-8000-000000000002";
+    const piSessionId = `${runId.slice(0, 8)}_build_v1`;
+    const t = new Date().toISOString();
+    insertRun(db, { id: runId, blueprint: "flat-backfill", status: "interrupted", cwd: runCwd, needs_review: 0, started_at: t, ended_at: null });
+    const phaseId = "p1";
+    insertPhase(db, { id: phaseId, run_id: runId, name: "build", agent: "builder", status: "in_progress", visits: 1, corrections: 0, budget: 3, spend_usd: 0, started_at: t, ended_at: null });
+    insertAgentSession(db, { id: "s1", run_id: runId, phase_id: phaseId, pi_session_id: piSessionId, visit: 1, pid: 9998, started_at: t, ended_at: null });
+
+    // pi 0.84.2 with PI_CODING_AGENT_SESSION_DIR set writes the session FLAT
+    // in the root: <root>/<ts>_<id>.jsonl — NO --<cwd>-- subdir
+    const l = (o: Record<string, unknown>): string => JSON.stringify({ ...o, sessionId: piSessionId });
+    const tail: string[] = [
+      l({ type: "turn_start" }),
+      l({ type: "message_update", message: { id: "m1", role: "assistant" }, usage: { input: 100, output: 20, totalTokens: 120, cost: { total: 0.0002 } } }),
+      l({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: "ls" }),
+      l({ type: "tool_execution_end", toolCallId: "c1", toolName: "bash", result: { content: [{ type: "text", text: "ok" }] }, isError: false }),
+      l({ type: "agent_settled" }),
+    ];
+    writeFileSync(join(sessionRoot, `20240101T000000000_${piSessionId}.jsonl`), tail.join("\n") + "\n");
+    const runDir = runDirFor(dir, runId);
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, "raw_output.jsonl"), ""); // nothing folded yet
+    writeAgentMap(runDir, "build", { pi_session_id: piSessionId, pid: 9998, visit: 1, model: "fake-pi" });
+
+    const first = backfillMissedEvents(db, dir, { sessionDir: sessionRoot });
+    expect(first.lines_restored).toBe(tail.length); // the flat file WAS found
+    const events = cursorEvents(db, runId, 0, 10_000);
+    expect(events.some((e) => e.type === "spend" && (e.data as { usd: number | null }).usd === 0.0002)).toBe(true);
+
+    // idempotent second sweep
+    const second = backfillMissedEvents(db, dir, { sessionDir: sessionRoot });
+    expect(second.lines_restored).toBe(0);
+    db.close();
+  } finally {
+    cleanupDir(dir);
+    rmSync(runCwd, { recursive: true, force: true });
+    rmSync(sessionRoot, { recursive: true, force: true });
+  }
+});
 
 test("backfill restores the missed session tail, deduplicated (idempotent sweep)", async () => {
   const dir = tmpDataDir("backfill");
@@ -455,7 +507,8 @@ test("GET /status reports health, pool utilization, and run status counts (§13)
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir, poolSlots: 1 });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
     const s0 = (await api(socketPath, "GET", "/status")).json as {
       ok: boolean;
       pid: number;
@@ -510,7 +563,8 @@ test("graceful shutdown stops recorded children and removes the socket + pidfile
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir, poolSlots: 1 });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
     const sub = await api(socketPath, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 30 });
     const runId = (sub.json as { run_id: string }).run_id;
     await waitFor(async () => {
@@ -539,8 +593,8 @@ test("graceful shutdown stops recorded children and removes the socket + pidfile
     // the run left mid-flight surfaces as interrupted on the next start (§12.2)
     const daemon2 = startDaemon({ dataDir: dir, poolSlots: 1 });
     try {
-      const { socketPath: sp2 } = daemon2;
-      await waitForStatus(sp2, runId, "interrupted");
+      const socketPath2 = daemon2.socketPath!; // unix-mode daemon
+      await waitForStatus(socketPath2, runId, "interrupted");
     } finally {
       await daemon2.close();
     }

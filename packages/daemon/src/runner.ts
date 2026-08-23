@@ -37,6 +37,7 @@ import {
   getEnvelope,
   getRun,
   insertAgentSession,
+  insertEvent,
   insertPhase,
   insertProcess,
   insertRun,
@@ -206,7 +207,7 @@ export function resolveScriptedSessions(blueprint: Blueprint, scriptDir: string)
 export async function prepareBlueprintRun(
   db: Database,
   dataDir: string,
-  opts: { modulePath: string; cwd?: string; maxVisits?: number; delayMs?: number },
+  opts: { modulePath: string; cwd?: string; maxVisits?: number; delayMs?: number; args?: string[] },
 ): Promise<PreparedRun> {
   const modulePath = isAbsolute(opts.modulePath) ? opts.modulePath : join(process.cwd(), opts.modulePath);
   // fail fast on a malformed prices.json (§11.1): a broken roster is a config
@@ -224,6 +225,7 @@ export async function prepareBlueprintRun(
     moduleDir,
     modulePath,
     maxVisits: opts.maxVisits,
+    args: opts.args,
   });
   return { runId, blueprint, cwd, scripts, moduleDir, maxVisits: opts.maxVisits, delayMs: opts.delayMs };
 }
@@ -265,7 +267,7 @@ interface LoopState extends InitOptions {
 function createRunRows(
   db: Database,
   dataDir: string,
-  opts: { blueprint: Blueprint; cwd: string; moduleDir: string | null; modulePath?: string | null; maxVisits?: number },
+  opts: { blueprint: Blueprint; cwd: string; moduleDir: string | null; modulePath?: string | null; maxVisits?: number; args?: string[] },
 ): string {
   const runId = randomUUID();
   const runDir = runDirFor(dataDir, runId);
@@ -279,6 +281,17 @@ function createRunRows(
     needs_review: 0,
     started_at: nowIso(),
     ended_at: null,
+  });
+  // §6 #1 (F2): run_submitted fires at ACCEPTANCE — the run row + snapshot
+  // exist here, before any driving (the pool may still have the run queued;
+  // the submitted→running transition lands at drive start in driveState).
+  insertEvent(db, {
+    run_id: runId,
+    phase_id: null,
+    agent_session_id: null,
+    type: "run_submitted",
+    ts: nowIso(),
+    data: { blueprint: opts.blueprint.name, cwd: opts.cwd },
   });
   for (const phase of opts.blueprint.phases) {
     insertPhase(db, {
@@ -297,7 +310,7 @@ function createRunRows(
   }
   // §13.3: the rendered configuration is snapshotted at submit time, so later
   // edits to the blueprint never mutate an in-flight run
-  snapshotBlueprint(runDir, opts.blueprint, opts.maxVisits ?? DEFAULT_MAX_VISITS, opts.modulePath ?? null);
+  snapshotBlueprint(runDir, opts.blueprint, opts.maxVisits ?? DEFAULT_MAX_VISITS, opts.modulePath ?? null, opts.args);
   return runId;
 }
 
@@ -375,10 +388,12 @@ export function snapshotBlueprint(
   blueprint: Blueprint,
   maxVisits: number,
   modulePath?: string | null,
+  args?: string[] | null,
 ): void {
   const doc = {
     name: blueprint.name,
     module: modulePath ?? null,
+    args: args ?? null,
     max_visits: maxVisits,
     phases: blueprint.phases.map((p) => ({
       name: p.name,
@@ -442,7 +457,13 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
 
     // per-phase visit loop (T04): a human restart-fresh re-enters it with a new visit
     let phaseApproved = false; // §5.2 step 1 — one approval per phase entry
-    let restarted = false; // a human restart bypasses the visit guard for this phase
+    // §5.2 step 3 pin (T13): the guard bypass is ONE-SHOT. A human restart/steer
+    // from a guard_exhausted pause earns exactly ONE more visit, then the guard
+    // re-asserts (visits >= max_visits → pause) — restart-fresh can never
+    // silently exceed max_visits, and guard_exhausted stays reachable through
+    // the pause menu. A restart from any OTHER pause (budget/blocked/hook)
+    // never bypasses the guard at all.
+    let guardBypass = false;
     // §12.3: the interrupted phase already earned its approval (it spawned) —
     // a resume must not re-pause on require_approval
     if (resume !== undefined && resume.phase === phase.name) phaseApproved = true;
@@ -474,10 +495,11 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
 
       // 3. visit guard (§5.2 step 3, §19): visits >= max_visits → pause. The
       // RESUME visit is exempt — it re-visits the recorded visit, it does not
-      // add one.
+      // add one. A pending guardBypass (a restart/steer from a guard pause)
+      // is consumed by exactly one visit, then the guard re-asserts.
       const currentVisits = state.phaseVisits.get(phase.name) ?? 0;
       const isResumeVisit = resume !== undefined && resume.phase === phase.name;
-      if (!restarted && !isResumeVisit && currentVisits >= state.maxVisits) {
+      if (!guardBypass && !isResumeVisit && currentVisits >= state.maxVisits) {
         const action = await pauseAt(state, {
           kind: "guard_exhausted",
           phase: phase.name,
@@ -487,9 +509,10 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
-        restarted = true;
+        guardBypass = true; // one new visit, then the guard fires again
         continue;
       }
+      guardBypass = false; // consumed — the visit below is the bypassed one
       const visit = isResumeVisit ? currentVisits : currentVisits + 1;
 
       const result = await driveVisit(state, phase, visit, handoff, {
@@ -509,7 +532,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
           if (d.directive === "fail") {
             return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
           }
-          restarted = true;
+          // NOT a guard bypass: the guard re-asserts on the next iteration
           continue;
         }
         handoff = { envelope: result.envelope, raw: result.raw, fromPhase: phase.name };
@@ -531,7 +554,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
-        restarted = true;
+        // NOT a guard bypass: the guard re-asserts on the next iteration
         continue;
       }
 
@@ -546,7 +569,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
-        restarted = true;
+        // NOT a guard bypass: the guard re-asserts on the next iteration
         continue;
       }
 
@@ -564,7 +587,8 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (action.kind === "restart_fresh" || action.kind === "steer") {
           const d = menuDirective(state, action);
           void d;
-          restarted = true;
+          // NOT a guard bypass: a restart from a budget pause re-asserts the
+          // guard on the next iteration (visits >= max_visits → pause, §5.2)
           continue;
         }
         if (action.kind === "override") {
@@ -627,12 +651,21 @@ async function driveVisit(
   updatePhase(db, phaseId, { status: "in_progress", visits: visit, started_at: startedAt });
   state.phaseVisits.set(phase.name, visit);
 
-  // hooks (§14): onPhaseStart, with ctx.shell()
+  // hooks (§14): onPhaseStart, with ctx.shell(). A thrown hook is NOT a run
+  // crash — the phase ends failed, the failure is audited as a human_action
+  // hook_error event, and the loop parks the run at the hook_failed menu.
   if (state.blueprint.onPhaseStart) {
     try {
       await state.blueprint.onPhaseStart(hookContext(state, phase.name));
     } catch (err) {
-      return { kind: "hook_failed", reason: `onPhaseStart threw: ${messageOf(err)}`, corrections: 0 };
+      const reason = `onPhaseStart threw: ${messageOf(err)}`;
+      ctxEmit(
+        state,
+        "human_action",
+        { action: "hook_error", detail: `phase "${phase.name}" ${reason}` },
+        { phase_id: phaseId },
+      );
+      return { kind: "hook_failed", reason, corrections: 0 };
     }
   }
 
@@ -756,6 +789,15 @@ async function driveVisit(
         ? opts.continueInstruction
         : composePrompt(state, phase, handoff),
     );
+    // §5.3 pin (T13, #8): deliver steers queued while the run was paused —
+    // the menu says 'then the visit continues', so the queued messages ride
+    // this session's RPC stream (queued between turns, no message id, §8.4).
+    // The drain is per-spawn: a live steer was delivered immediately and never
+    // enters the queue, so nothing here double-sends; a queued steer whose
+    // continuation spawned no session (gate override) rides the NEXT spawn.
+    for (const steerMessage of state.control.drainQueuedSteers()) {
+      sendCommand({ type: "steer", message: steerMessage });
+    }
     for (;;) {
       await waitForSettled();
       const stage = await runEnvelopeStage({
@@ -815,7 +857,7 @@ async function driveVisit(
     // never orphan it (fail-run semantics: SIGTERM, SIGKILL after 1s, §8.3)
     await driver.stop();
   }
-  tracer.onEnd({ exitCode: driver.exitCode }, { settled: settleCount > 0 });
+  tracer.onEnd({ exitCode: driver.exitCode }, { settled: outcome.kind !== "crash" && settleCount > 0 });
   updateAgentSession(db, agentSessionId, { ended_at: now() });
   deleteProcess(db, agentSessionId);
   state.control.setLiveSession(null);
@@ -839,6 +881,14 @@ async function endPhase(
       await state.blueprint.onPhaseEnd(hookContext(state, phase.name));
     } catch (err) {
       hookError = messageOf(err);
+      // §14: the failure is audited like a human action — the phase_end below
+      // carries status failed and the loop parks at the hook_failed menu
+      ctxEmit(
+        state,
+        "human_action",
+        { action: "hook_error", detail: `phase "${phase.name}" onPhaseEnd threw: ${hookError}` },
+        { phase_id: state.phaseIds.get(phase.name)! },
+      );
     }
   }
   const finalStatus = hookError === null ? status : "failed";
@@ -1303,7 +1353,16 @@ function driveState(
   opts: InitOptions & { runId: string; scripts: ScriptMap },
   resume?: ResumeSpec,
 ): BlueprintRun {
-  const state = initState(db, dataDir, opts);
+  // §13 hardening (T13, #12): a synchronous initState throw — e.g. a
+  // prices.json that became malformed between submit (validated at the 400)
+  // and drive (the §11.1 roster is re-read once per run, §13.3 snapshot
+  // doctrine) — must NOT strand the run in "running" with nothing driving it.
+  let state: LoopState;
+  try {
+    state = initState(db, dataDir, opts);
+  } catch (err) {
+    return failRunNoState(db, opts.runId, `internal error: ${messageOf(err)}`);
+  }
   if (resume !== undefined) {
     // §12.3: a resumed run is NOT re-submitted — it leaves `interrupted` and
     // re-enters `running` (the §6 #1 run_submitted event belongs to the
@@ -1316,8 +1375,9 @@ function driveState(
     );
     updateRun(db, opts.runId, { status: "running" });
   } else {
-    // §6 #1/#2: run-level events, tagged with NULL phase/session ids
-    state.emit("run_submitted", { blueprint: state.blueprint.name, cwd: state.cwd }, { phase_id: null, agent_session_id: null });
+    // §6 #2: the submitted→running transition fires when the run STARTS
+    // driving. The §6 #1 run_submitted event fired earlier, at ACCEPTANCE
+    // (createRunRows) — F2: a pool-queued run is submitted before it drives.
     state.emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
   }
   const control = state.control;
@@ -1337,4 +1397,30 @@ function driveState(
     }
   })();
   return { run_id: opts.runId, done: control.stable, terminal: control.terminal };
+}
+
+/**
+ * Finalize a run whose loop state could not be constructed (an initState
+ * throw — §13, T13 #12). The run row already exists with run_submitted on
+ * record (createRunRows), so the honest terminal state is failed, not a
+ * zombie "running": a run_status event records the reason and needs_review is
+ * flagged (a human should see why the drive could not start). There is no
+ * control handle (initState never got that far), so the run's promises are
+ * plain resolved-failed promises — the server's pool slot is released via the
+ * normal terminal path.
+ */
+function failRunNoState(db: Database, runId: string, reason: string): BlueprintRun {
+  const ts = new Date().toISOString();
+  insertEvent(db, {
+    run_id: runId,
+    phase_id: null,
+    agent_session_id: null,
+    type: "run_status",
+    ts,
+    data: { from: "running", to: "failed", reason },
+  });
+  updateRun(db, runId, { status: "failed", ended_at: ts, needs_review: 1 });
+  const result: RunResult = { status: "failed", needs_review: true };
+  const done = Promise.resolve(result);
+  return { run_id: runId, done, terminal: done };
 }

@@ -69,6 +69,16 @@ export class PiSession implements SessionDriver {
   private exitCodeValue: number | null = null;
   private settleWaiter: { resolve: () => void; reject: (err: Error) => void } | null = null;
   /**
+   * The stream is closed (the child exited OR was killed). Latched SEPARATELY
+   * from exitCodeValue because a signal-killed child reports exitCode null —
+   * and null must not mean "still alive": the run loop's sendPrompt catch
+   * treats a null exit code as a slow-ack timeout and proceeds to
+   * waitForSettled, which must then reject. Without this latch a death during
+   * the ack window is lost forever and the run hangs (T13 capstone: SIGKILL
+   * the pi child mid-flight).
+   */
+  private closed = false;
+  /**
    * The settle latch (G1, T02 review): `agent_settled` is recorded even when
    * no waiter is registered yet, so a settle that arrives between the prompt
    * ack's resolution and the loop's `waitForSettled()` registration is NOT
@@ -134,6 +144,7 @@ export class PiSession implements SessionDriver {
       for (const line of splitter.push(decoder.end())) this.handleLine(line, false);
       for (const line of splitter.flush()) this.handleLine(line, true);
       this.exitCodeValue = code;
+      this.closed = true;
       this.exitResolve(code);
       const w = this.settleWaiter;
       this.settleWaiter = null;
@@ -179,7 +190,9 @@ export class PiSession implements SessionDriver {
   }
 
   waitForSettled(): Promise<void> {
-    if (this.exitCodeValue !== null) {
+    // a SIGNAL-killed child reports exitCode null — the closed latch is what
+    // makes the death visible; null exitCode must not mean "still alive"
+    if (this.exitCodeValue !== null || this.closed) {
       return Promise.reject(
         new Error(`session died before agent_settled (exit ${this.exitCodeValue})`),
       );

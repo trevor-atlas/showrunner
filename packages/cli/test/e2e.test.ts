@@ -40,11 +40,32 @@ function cli(args: string[], timeoutMs = 30_000): { stdout: string; status: numb
 }
 
 afterAll(() => {
-  // stop the daemon the CLI auto-spawned, then remove the scratch dirs
+  // Hermetic daemon teardown (T13 #15): the CLI auto-spawned a detached
+  // daemon for this suite's data dir — it must NEVER outlive the suite, even
+  // when a test failed mid-run or the graceful verb misbehaved.
+  // 1. the graceful CLI verb (removes socket + pidfile, stops children)
   try {
     spawnSync(process.execPath, [CLI, "stop"], { encoding: "utf8", timeout: 15_000, env });
   } catch {
     // best-effort
+  }
+  // 2. hermetic fallback: SIGTERM the pidfile's pid directly — a detached
+  // daemon is our own child; if the verb above did not take it down, the
+  // pidfile still names it and the signal still stops it
+  try {
+    const pidFile = join(dataDir, "daemon.pid");
+    if (existsSync(pidFile)) {
+      const pid = Number(readFileSync(pidFile, "utf8").trim());
+      if (Number.isInteger(pid) && pid > 0) process.kill(pid, "SIGTERM");
+    }
+  } catch {
+    // already gone
+  }
+  // 3. wait for the socket to disappear (bounded) before deleting the dirs
+  const socket = join(dataDir, "daemon.sock");
+  const deadline = Date.now() + 5_000;
+  while (existsSync(socket) && Date.now() < deadline) {
+    // busy-wait — afterAll must stay synchronous
   }
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(blueprintCwd, { recursive: true, force: true });

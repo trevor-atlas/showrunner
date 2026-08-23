@@ -5,7 +5,10 @@ import { FIXTURE_NAMES, isFixtureName } from "@showrunner/core/test/fixtures";
 
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../../daemon/src/daemon.ts";
-import { getJson, isSocketDown, postJson } from "./client.ts";
+// the typed §13 client is the single HTTP surface — unix socket by default,
+// SHOWRUNNER_DAEMON_URL (http) override for dev
+import { DaemonClient, isSocketDown } from "../../daemon/src/client.ts";
+import type { RunDetail, SubmitRunBody } from "../../daemon/src/client.ts";
 import { ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
 import { formatEvent } from "./render.ts";
 import { watchRun } from "./watch.ts";
@@ -101,10 +104,11 @@ async function cmdRun(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
 
-  const submit = async (body: Record<string, unknown>): Promise<unknown> => {
+  const submit = async (body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     try {
-      return await postJson(socketPath, "/runs", body);
+      return (await client.submitRun(body as SubmitRunBody)) as unknown as Record<string, unknown>;
     } catch (err) {
       if (isSocketDown(err)) throw err;
       // the daemon rejected the submit (bad blueprint, missing scripts, ...)
@@ -121,12 +125,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     if (flags.rest.model !== undefined) body.model = flags.rest.model;
     if (flags.rest.phase !== undefined) body.phase = flags.rest.phase;
 
-    const res = (await submit(body)) as {
-      run_id: string;
-      phase_id: string;
-      agent_session_id: string;
-      fixture: string;
-    } | null;
+    const res = await submit(body);
     if (res === null) return 1;
     console.log(`run submitted: ${res.run_id}`);
     console.log(`  fixture: ${res.fixture}  phase: ${res.phase_id}  session: ${res.agent_session_id}`);
@@ -138,7 +137,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     const body: Record<string, unknown> = { blueprint: resolve(arg) };
     if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
     if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
-    const res = (await submit(body)) as { run_id: string; blueprint: string } | null;
+    const res = await submit(body);
     if (res === null) return 1;
     console.log(`run submitted: ${res.run_id}`);
     console.log(`  blueprint: ${res.blueprint}`);
@@ -155,18 +154,8 @@ async function cmdRuns(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
-  const { runs } = (await getJson(socketPath, "/runs")) as {
-    runs: {
-      id: string;
-      blueprint: string;
-      status: string;
-      started_at: string;
-      ended_at: string | null;
-      spend_usd: number;
-      needs_review: number;
-      phase_counts: Record<string, number>;
-    }[];
-  };
+  const client = new DaemonClient({ socketPath });
+  const { runs } = await client.listRuns();
   if (runs.length === 0) {
     console.log("no runs yet - submit one with: showrunner run happy");
     return 0;
@@ -175,8 +164,10 @@ async function cmdRuns(flags: Flags): Promise<number> {
   for (const r of runs) {
     const review = r.needs_review ? " (needs review)" : "";
     const phases = `${r.phase_counts.success ?? 0}/${r.phase_counts.total ?? 0}`;
+    // §13.1 queue position — surfaced for pool-queued runs
+    const queue = r.queue_position !== null && r.queue_position > 0 ? `  queued #${r.queue_position}` : "";
     console.log(
-      `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} ${phases.padStart(9)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}`,
+      `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} ${phases.padStart(9)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}${queue}`,
     );
   }
   return 0;
@@ -191,16 +182,11 @@ async function cmdShow(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
 
-  let detail: {
-    run: { id: string; blueprint: string; status: string; cwd: string; started_at: string; ended_at: string | null; needs_review: number };
-    spend_usd: number;
-    estimated_spend_usd: number;
-    event_count: number;
-    phases: { name: string; status: string; visits: number; corrections: number; budget: number; spend_usd: number; estimated_spend_usd: number }[];
-  };
+  let detail: RunDetail;
   try {
-    detail = (await getJson(socketPath, `/runs/${runId}`)) as typeof detail;
+    detail = await client.getRun(runId);
   } catch (err) {
     if (!isSocketDown(err)) {
       console.error(`run ${runId}: not found`);
@@ -217,7 +203,7 @@ async function cmdShow(flags: Flags): Promise<number> {
   console.log(`  started: ${run.started_at}`);
   if (run.ended_at) console.log(`  ended: ${run.ended_at}`);
   const estTotal = detail.estimated_spend_usd > 0 ? ` (est ${detail.estimated_spend_usd.toFixed(4)})` : "";
-  console.log(`  spend: $${detail.spend_usd.toFixed(4)}${estTotal}  events: ${detail.event_count}`);
+  console.log(`  spend: $${detail.spend_usd.toFixed(4)}${estTotal}  events: ${detail.event_count}  envelopes: ${detail.envelope_count}`);
   console.log("phases:");
   for (const p of detail.phases) {
     const est = p.estimated_spend_usd > 0 ? ` est=$${p.estimated_spend_usd.toFixed(4)}` : "";
@@ -237,10 +223,11 @@ async function cmdWatch(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
 
   // fail fast on an unknown run id
   try {
-    await getJson(socketPath, `/runs/${runId}`);
+    await client.getRun(runId);
   } catch (err) {
     if (!isSocketDown(err)) {
       console.error(`run ${runId}: not found`);
@@ -251,7 +238,7 @@ async function cmdWatch(flags: Flags): Promise<number> {
 
   await watchRun({
     runId,
-    socketPath,
+    client,
     intervalMs: flags.rest.interval !== undefined ? Number(flags.rest.interval) : 500,
     onEvent: (e) => console.log(formatEvent(e)),
   });
@@ -299,9 +286,9 @@ interface RunSummary {
   ended_at: string | null;
 }
 
-async function fetchRun(socketPath: string, runId: string): Promise<RunSummary | null> {
+async function fetchRun(client: DaemonClient, runId: string): Promise<RunSummary | null> {
   try {
-    const body = (await getJson(socketPath, `/runs/${runId}`)) as { run: RunSummary };
+    const body = await client.getRun(runId);
     return body.run;
   } catch (err) {
     if (!isSocketDown(err)) return null; // unknown run → caller reports
@@ -311,16 +298,16 @@ async function fetchRun(socketPath: string, runId: string): Promise<RunSummary |
 
 /** Poll /runs/:id until the status leaves the pre-action state (timeout ~10s). */
 async function pollStatus(
-  socketPath: string,
+  client: DaemonClient,
   runId: string,
   until: (s: string) => boolean,
   timeoutMs = 10_000,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run !== null && until(run.status)) return run.status;
-    if (Date.now() > deadline) return (await fetchRun(socketPath, runId))?.status ?? "?";
+    if (Date.now() > deadline) return (await fetchRun(client, runId))?.status ?? "?";
     await new Promise((r) => setTimeout(r, 50));
   }
 }
@@ -328,10 +315,6 @@ async function pollStatus(
 function printRunState(run: RunSummary): void {
   console.log(`  status: ${run.status}${run.needs_review ? " (needs review)" : ""}`);
   if (run.ended_at) console.log(`  ended: ${run.ended_at}`);
-}
-
-function bodyBy(flags: Flags): Record<string, unknown> {
-  return flags.rest.by !== undefined ? { by: flags.rest.by } : {};
 }
 
 async function cmdSteer(flags: Flags): Promise<number> {
@@ -344,14 +327,12 @@ async function cmdSteer(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    const res = (await postJson(socketPath, `/runs/${runId}/steer`, {
-      message,
-      ...bodyBy(flags),
-    })) as { ok: boolean; status: string; queued_steers: number; message: string };
+    const res = await client.steerRun(runId, message, flags.rest.by);
     console.log(`steer queued for run ${runId} (${res.queued_steers} queued): ${message}`);
     console.log(res.message);
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run) printRunState(run);
     return 0;
   } catch (err) {
@@ -369,18 +350,9 @@ async function cmdPause(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    const body = (await getJson(socketPath, `/runs/${runId}/pause`)) as {
-      run_id: string;
-      paused: boolean;
-      status: string;
-      kind?: string;
-      phase?: string;
-      reason?: string | null;
-      actions?: string[];
-      queued_steers?: string[];
-      live_session_id?: string | null;
-    };
+    const body = await client.pause(runId);
     if (!body.paused) {
       console.log(`run ${runId} is ${body.status} — not paused${body.reason ? ` (last reason: ${body.reason})` : ""}`);
       console.log("pauses are automatic (approval, budget, guard, blocked); see showrunner help");
@@ -396,9 +368,7 @@ async function cmdPause(flags: Flags): Promise<number> {
     }
     console.log(`  live session: ${body.live_session_id ?? "none (no pi process while paused)"}`);
     console.log("recent events:");
-    const events = (await getJson(socketPath, `/runs/${runId}/events?cursor=0&limit=12`)) as {
-      events: import("@showrunner/core").EventRow[];
-    };
+    const events = await client.getEvents(runId, { cursor: 0, limit: 12 });
     for (const e of events.events) console.log(`  ${formatEvent(e)}`);
     return 0;
   } catch (err) {
@@ -416,11 +386,12 @@ async function cmdApprove(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    await postJson(socketPath, `/runs/${runId}/approve`, bodyBy(flags));
-    const status = await pollStatus(socketPath, runId, (s) => s !== "paused");
+    await client.approve(runId, { by: flags.rest.by });
+    const status = await pollStatus(client, runId, (s) => s !== "paused");
     console.log(`run ${runId} approved — status: ${status}`);
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run) printRunState(run);
     return 0;
   } catch (err) {
@@ -438,12 +409,9 @@ async function cmdResume(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    const res = (await postJson(socketPath, `/runs/${runId}/resume`, bodyBy(flags))) as {
-      run_id: string;
-      status: string;
-      needs_review: number;
-    };
+    const res = await client.resume(runId, { by: flags.rest.by });
     console.log(`run ${runId} resumed — status: ${res.status}, needs_review: ${res.needs_review === 1 ? "yes" : "no"}`);
     console.log("the interrupted phase was relaunched with the same session id + a continue instruction (§12)");
     return 0;
@@ -462,13 +430,7 @@ async function cmdStatus(flags: Flags): Promise<number> {
     return 0;
   }
   try {
-    const s = (await getJson(socketPath, "/status")) as {
-      pid: number;
-      data_dir: string;
-      uptime_ms: number;
-      pool: { slots: number; running: string[]; queued: string[] };
-      runs: Record<string, number>;
-    };
+    const s = await new DaemonClient({ socketPath }).status();
     console.log(`daemon: up (pid ${s.pid}, socket ${socketPath})`);
     console.log(`data dir: ${s.data_dir}`);
     console.log(`uptime: ${Math.round(s.uptime_ms / 1000)}s`);
@@ -496,11 +458,12 @@ async function cmdFail(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    await postJson(socketPath, `/runs/${runId}/fail`, bodyBy(flags));
-    const status = await pollStatus(socketPath, runId, (s) => s === "failed" || s === "success");
+    await client.failRun(runId, { by: flags.rest.by });
+    const status = await pollStatus(client, runId, (s) => s === "failed" || s === "success");
     console.log(`run ${runId} failed — status: ${status}`);
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run) printRunState(run);
     return 0;
   } catch (err) {
@@ -510,10 +473,10 @@ async function cmdFail(flags: Flags): Promise<number> {
 }
 
 /** Resolve the paused phase (explicit arg, else the pause viewer's phase). */
-async function pausedPhase(socketPath: string, runId: string, explicit: string | undefined): Promise<string | null> {
+async function pausedPhase(client: DaemonClient, runId: string, explicit: string | undefined): Promise<string | null> {
   if (explicit !== undefined && explicit !== "") return explicit;
   try {
-    const body = (await getJson(socketPath, `/runs/${runId}/pause`)) as { paused: boolean; phase?: string };
+    const body = await client.pause(runId);
     return body.paused && body.phase ? body.phase : null;
   } catch {
     return null;
@@ -529,16 +492,17 @@ async function cmdRestartFresh(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    const phase = await pausedPhase(socketPath, runId, flags.positionals[1]);
+    const phase = await pausedPhase(client, runId, flags.positionals[1]);
     if (phase === null) {
       console.error(`run ${runId} is not paused — restart-fresh is a pause-menu verb`);
       return 1;
     }
-    await postJson(socketPath, `/runs/${runId}/phases/${encodeURIComponent(phase)}/restart-fresh`, bodyBy(flags));
-    const status = await pollStatus(socketPath, runId, (s) => s !== "paused");
+    await client.restartFresh(runId, phase, { by: flags.rest.by });
+    const status = await pollStatus(client, runId, (s) => s !== "paused");
     console.log(`run ${runId} phase "${phase}" restarted fresh — status: ${status}`);
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run) printRunState(run);
     return 0;
   } catch (err) {
@@ -558,20 +522,17 @@ async function cmdOverride(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
+  const client = new DaemonClient({ socketPath });
   try {
-    const phase = await pausedPhase(socketPath, runId, flags.rest.phase);
+    const phase = await pausedPhase(client, runId, flags.rest.phase);
     if (phase === null) {
       console.error(`run ${runId} is not paused — override is a pause-menu verb`);
       return 1;
     }
-    await postJson(socketPath, `/runs/${runId}/phases/${encodeURIComponent(phase)}/override`, {
-      gate,
-      reason,
-      ...bodyBy(flags),
-    });
-    const status = await pollStatus(socketPath, runId, (s) => s !== "paused");
+    await client.overrideGate(runId, phase, { gate, reason, by: flags.rest.by });
+    const status = await pollStatus(client, runId, (s) => s !== "paused");
     console.log(`run ${runId} gate "${gate}" overridden — status: ${status}`);
-    const run = await fetchRun(socketPath, runId);
+    const run = await fetchRun(client, runId);
     if (run) printRunState(run);
     return 0;
   } catch (err) {

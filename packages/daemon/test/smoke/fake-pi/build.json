@@ -1,0 +1,12 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "turn_start" },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {}
+    }
+  ]
+}

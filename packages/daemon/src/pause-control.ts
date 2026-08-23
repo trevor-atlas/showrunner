@@ -41,11 +41,16 @@ import type { RpcCommand, SessionDriver } from "./pi/index.ts";
  * Paused-run steer semantics (pinned): a steer is ALWAYS audited as a
  * `human_action` and shown in the feed; on a RUNNING run with a live session
  * the RPC steer is written to the SAME session's stdin via
- * SessionDriver.send (queued between turns, no message id — §8.4); on a
- * PAUSED run (no live process) the message is queued on the run's control and
- * the run stays paused — delivery lands with the continuation machinery
- * (T07). Resume-from-interrupted (§12) records the attempt + sets
- * needs_review per the §19 pin; the relaunch+backfill continuation is T07.
+ * SessionDriver.send (queued between turns, no message id — §8.4) and is NOT
+ * re-queued; on a PAUSED run (no live process) the message is queued on the
+ * run's control and the run stays paused — delivery lands with the
+ * continuation machinery: the next spawned session's driveVisit drains the
+ * queue (drainQueuedSteers) and writes each message as an RPC steer after its
+ * first prompt (§5.3's 'then the visit continues'). A queued steer whose
+ * continuation never spawns (e.g. a gate override accepts the rejected
+ * envelope without a new visit) stays queued and rides the NEXT spawn.
+ * Resume-from-interrupted (§12) records the attempt + sets needs_review per
+ * the §19 pin; the relaunch+backfill continuation is T07.
  */
 
 export type PauseKind =
@@ -168,6 +173,19 @@ export class RunControl {
     return [...this.queuedSteers];
   }
 
+  /**
+   * Drain + clear the steers queued while the run was paused. Called by the
+   * continuation machinery (driveVisit) once a session is spawned and its
+   * first prompt is sent: each queued message is written to the new session
+   * as an RPC steer (queued between turns, §8.4). Live steers never enter
+   * this queue — they were delivered to the session immediately.
+   */
+  drainQueuedSteers(): string[] {
+    const drained = this.queuedSteers;
+    this.queuedSteers.length = 0;
+    return drained;
+  }
+
   get liveSessionId(): string | null {
     return this.liveSessionValue?.piSessionId ?? null;
   }
@@ -211,10 +229,12 @@ export class RunControl {
   // ── control surface (server verbs call these; each validates + audits) ─────
 
   /**
-   * steer: RPC steer on the SAME session via SessionDriver.send — queued
-   * between turns, no message id (§8.4) — when the session is live; on a
-   * paused run the message is audited + queued and the run stays paused
-   * (delivery lands with the continuation machinery, T07). Works mid-run on
+   * steer: on a RUNNING run with a live session, the RPC steer is written to
+   * the SAME session via SessionDriver.send — queued between turns, no
+   * message id (§8.4) — and is not re-queued. On a PAUSED run (no live
+   * process) the message is audited + queued and the run stays paused;
+   * delivery lands with the continuation machinery (drainQueuedSteers on the
+   * next spawned visit, §5.3 'then the visit continues'). Works mid-run on
    * both a paused and a running run; always writes the human_action event.
    */
   steer(message: string, by?: string): void {
@@ -222,14 +242,17 @@ export class RunControl {
       throw new Error("steer message must be a non-empty string");
     }
     this.emitHuman("steer", by, message);
-    this.queuedSteers.push(message);
     const live = this.liveSessionValue;
     if (live !== null) {
+      // running: deliver to the live session NOW (queued between turns, §8.4)
       const cmd: RpcCommand = { type: "steer", message };
       // fire-and-forget: a dead stream surfaces via the loop's settle waiter
       void live.driver.send(cmd).catch(() => {});
+      return;
     }
-    // paused: queued only — the pause stays until a proceed action
+    // paused: audited + queued — the pause stays until a proceed action; the
+    // continuation machinery drains this on the next spawned visit
+    this.queuedSteers.push(message);
   }
 
   /** approve: only valid on a require_approval pause; the run proceeds to spawn. */

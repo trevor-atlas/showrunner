@@ -3,8 +3,8 @@
  * the pool queue at the daemon. A run holds a slot from first spawn to its
  * terminal state — `release` is called when the run's `done` resolves.
  *
- * Queue-position surfacing (list-runs) is deferred to T08's full §13 contract;
- * this pool is the spawn gate itself.
+ * Queue-position surfacing (GET /runs, POST /runs — §13.1) is served by
+ * `position` (T08); this pool is the spawn gate itself.
  */
 export class RunPool {
   private readonly running = new Set<string>();
@@ -36,6 +36,16 @@ export class RunPool {
 
   get queuedIds(): string[] {
     return this.queued.map((q) => q.id);
+  }
+
+  /**
+   * §13.1 queue position: the run's 1-based position in the spawn queue (1 =
+   * next to start), or null when the run is not queued (running — its slot is
+   * live — or already terminal). Surfaced on GET /runs and POST /runs.
+   */
+  position(id: string): number | null {
+    const idx = this.queued.findIndex((q) => q.id === id);
+    return idx === -1 ? null : idx + 1;
   }
 
   /** total pool capacity (§13 status verb) */

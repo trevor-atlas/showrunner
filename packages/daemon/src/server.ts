@@ -6,9 +6,13 @@ import { isFixtureName } from "@showrunner/core/test/fixtures";
 
 import {
   cursorEvents,
+  envelopeCount,
   eventCount,
+  getPhaseByName,
   getRun,
   listAgentSessions,
+  listEnvelopes,
+  listGateResults,
   listPhases,
   listRuns,
   sumEstimatedPhaseSpend,
@@ -138,7 +142,13 @@ async function handleRequest(
   }
 
   if (method === "GET" && path === "/runs") {
-    const runs = listRuns(db).map((r) => ({ ...r, phase_counts: phaseStatusCounts(db, r.id) }));
+    const runs = listRuns(db).map((r) => ({
+      ...r,
+      phase_counts: phaseStatusCounts(db, r.id),
+      // §13.1 queue position (F2 from the T01b review): 1-based spawn-queue
+      // position for pool-queued runs, null when not queued
+      queue_position: pool.position(r.id),
+    }));
     json(res, 200, { runs });
     return;
   }
@@ -168,6 +178,8 @@ async function handleRequest(
         phase_id: sub.phase_id,
         agent_session_id: sub.agent_session_id,
         fixture,
+        // observation fixtures spawn immediately — never pool-queued
+        queue_position: null,
       });
       return;
     }
@@ -176,11 +188,20 @@ async function handleRequest(
     // drive behind the pool (§5.4)
     const blueprintPath = body.blueprint;
     if (typeof blueprintPath === "string" && blueprintPath !== "") {
+      // §13.2/§13.3 `args?`: opaque per-submit arguments, recorded in the
+      // §13.3 snapshot (the run record is the snapshot — later edits to the
+      // blueprint do not change an in-flight run)
+      const args = body.args;
+      if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== "string"))) {
+        json(res, 400, { error: "args must be an array of strings" });
+        return;
+      }
       let prepared;
       try {
         prepared = await prepareBlueprintRun(db, dataDir, {
           modulePath: blueprintPath,
           cwd: typeof body.cwd === "string" && body.cwd !== "" ? body.cwd : undefined,
+          args: args as string[] | undefined,
         });
       } catch (err) {
         json(res, 400, { error: err instanceof Error ? err.message : String(err) });
@@ -201,7 +222,13 @@ async function handleRequest(
           pool.release(prepared.runId);
         }
       });
-      json(res, 201, { run_id: prepared.runId, blueprint: prepared.blueprint.name });
+      // §13.1 queue position in the submit response: null when a free slot
+      // already started it, else its 1-based place in line
+      json(res, 201, {
+        run_id: prepared.runId,
+        blueprint: prepared.blueprint.name,
+        queue_position: pool.position(prepared.runId),
+      });
       return;
     }
 
@@ -226,9 +253,75 @@ async function handleRequest(
       run,
       spend_usd: sumRunSpend(db, runId),
       estimated_spend_usd: estimatedSpend,
+      // §13.1: envelope count (accepted/attempt rows for the run)
+      envelope_count: envelopeCount(db, runId),
       phases: listPhases(db, runId).map((p) => ({ ...p, estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0 })),
       sessions: listAgentSessions(db, runId),
       event_count: eventCount(db, runId),
+    });
+    return;
+  }
+
+  // §13.1 per-phase spend breakdown (+ estimated markers per §11.1).
+  const spendMatch = path.match(/^\/runs\/([^/]+)\/spend$/);
+  if (spendMatch && method === "GET") {
+    const runId = spendMatch[1]!;
+    if (!getRun(db, runId)) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const estimatedByPhase = sumEstimatedPhaseSpend(db, runId);
+    let estimatedSpend = 0;
+    for (const s of estimatedByPhase.values()) estimatedSpend += s;
+    json(res, 200, {
+      run_id: runId,
+      spend_usd: sumRunSpend(db, runId),
+      estimated_spend_usd: estimatedSpend,
+      phases: listPhases(db, runId).map((p) => ({
+        id: p.id,
+        name: p.name,
+        status: p.status,
+        spend_usd: p.spend_usd,
+        estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0,
+      })),
+    });
+    return;
+  }
+
+  // ── §13.1 phase-scoped read endpoints (envelope history, gate results).
+  // Both 404 on a missing run OR a phase name the run has no row for. ────────
+
+  const phaseEnvelopesMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/envelopes$/);
+  if (phaseEnvelopesMatch && method === "GET") {
+    const runId = phaseEnvelopesMatch[1]!;
+    const phaseName = decodeURIComponent(phaseEnvelopesMatch[2]!);
+    const phase = requirePhase(db, res, runId, phaseName);
+    if (phase === null) return;
+    // §13.1 envelope history for a phase: ALL attempts (valid and rejected,
+    // per T03's model), ordered visit → attempt
+    json(res, 200, {
+      run_id: runId,
+      phase: phase.name,
+      phase_id: phase.id,
+      envelopes: listEnvelopes(db, runId, phase.id),
+    });
+    return;
+  }
+
+  const phaseGatesMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/gates$/);
+  if (phaseGatesMatch && method === "GET") {
+    const runId = phaseGatesMatch[1]!;
+    const phaseName = decodeURIComponent(phaseGatesMatch[2]!);
+    const phase = requirePhase(db, res, runId, phaseName);
+    if (phase === null) return;
+    // §13.1 gate results incl. overridden: each row carries the §5.3 override
+    // badge (who + why + when) when the original row was overridden — the
+    // original pass stays 0, the audit trail is the point
+    json(res, 200, {
+      run_id: runId,
+      phase: phase.name,
+      phase_id: phase.id,
+      gates: listGateResults(db, runId, phase.id),
     });
     return;
   }
@@ -251,9 +344,18 @@ async function handleRequest(
   const rawMatch = path.match(/^\/runs\/([^/]+)\/raw$/);
   if (rawMatch && method === "GET") {
     const runId = rawMatch[1]!;
-    const n = intParam(url.searchParams.get("n"), 200, 5000);
+    if (!getRun(db, runId)) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    // §13.1 tail semantics: ?lines=N (alias: ?n=) returns the LAST N raw
+    // output lines (default 200, capped 5000) — the drill-in feed into the
+    // byte-identical raw record (§10). line_count is the FULL line count;
+    // truncated reports whether the tail dropped earlier lines.
+    const linesParam = url.searchParams.get("lines") ?? url.searchParams.get("n");
+    const n = intParam(linesParam, 200, 5000);
     const tail = tailRawFile(join(dataDir, "runs", runId, "raw_output.jsonl"), n);
-    json(res, 200, tail);
+    json(res, 200, { ...tail, run_id: runId });
     return;
   }
 
@@ -410,6 +512,11 @@ async function handleRequest(
   const resumeMatch = path.match(/^\/runs\/([^/]+)\/resume$/);
   if (resumeMatch && method === "POST") {
     const runId = resumeMatch[1]!;
+    if (!getRun(db, runId)) {
+      // §13 404 semantics: a missing run 404s before any resume logic
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
     const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
     const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
     const delayMs =
@@ -478,6 +585,22 @@ async function handleRequest(
   }
 
   json(res, 404, { error: `no such route: ${method} ${path}` });
+}
+
+/** Resolve a run's phase by name; 404 (JSON error) and return null when the
+ * run or the phase does not exist — the phase-scoped §13 read endpoints rely
+ * on these semantics for the UI. */
+function requirePhase(db: Database, res: ServerResponse, runId: string, phaseName: string): import("./db.ts").PhaseRow | null {
+  if (!getRun(db, runId)) {
+    json(res, 404, { error: `run ${runId} not found` });
+    return null;
+  }
+  const phase = getPhaseByName(db, runId, phaseName);
+  if (phase === null) {
+    json(res, 404, { error: `phase "${phaseName}" not found in run ${runId}` });
+    return null;
+  }
+  return phase;
 }
 
 /** The reason of the run's last run_status event — what the run is parked on. */

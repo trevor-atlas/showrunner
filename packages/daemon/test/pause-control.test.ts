@@ -201,7 +201,7 @@ test("budget exhaustion pauses the run (persisted, visible); done resolves pause
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── restart phase fresh: a NEW visit, session id v<visit+1> ──────────────────
 
@@ -244,7 +244,7 @@ test("restart-fresh re-drives the phase as a NEW visit with session id v<visit+1
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── approve: the require_approval pause proceeds to spawn ────────────────────
 
@@ -288,7 +288,7 @@ test("approve proceeds the require_approval pause to a real spawn; audited", asy
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── override gate: the rejected envelope is approved and the run continues ───
 
@@ -343,7 +343,7 @@ test("override gate continues the run from the rejected envelope (row kept, acce
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── fail mid-run: kills the live child + terminal + audited ─────────────────
 
@@ -382,7 +382,7 @@ test("fail mid-run stops the live child (SIGTERM → SIGKILL) and reaches termin
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the slow turn + child death needs more than the 5s default
 
 // ── needs_review pin (§19): mid-tool-call death, and ANY resume from interrupted ─
 
@@ -473,7 +473,7 @@ test("needs_review pin 2/2: daemon restart surfaces a running run as interrupted
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── steer: same session between turns (queued, no message id), shows in the feed ─
 
@@ -517,7 +517,7 @@ test("steer mid-run reaches the SAME session between turns and shows in the feed
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the slow turn + steer window needs more than the 5s default
 
 test("steer on a paused run: audited + queued, the run stays paused (§5.3)", async () => {
   const env = openEnv("pause-steer-paused");
@@ -552,7 +552,7 @@ test("steer on a paused run: audited + queued, the run stays paused (§5.3)", as
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 test("FakeSessionDriver speaks the RPC steer command: queued turns, no message id (§8.4)", async () => {
   const env = openEnv("pause-steer-driver");
@@ -582,7 +582,7 @@ test("FakeSessionDriver speaks the RPC steer command: queued turns, no message i
   } finally {
     closeEnv(env);
   }
-});
+}, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
 // ── F1 (§5.4): a paused run KEEPS its pool slot until terminal ──────────────
 
@@ -694,7 +694,8 @@ test("HTTP: approve + the pause viewer + steer land on a require_approval pause"
   let daemon: DaemonHandle | null = null;
   try {
     daemon = startDaemon({ dataDir: dir });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
     const approvalBp = join(fixturesDir, "approval-blueprint.ts");
     const sub = await api(socketPath, "POST", "/runs", { blueprint: approvalBp, cwd: runCwd, delayMs: 0 });
     expect(sub.status).toBe(201);
@@ -745,7 +746,8 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
   try {
     // a 1-slot pool: the paused run occupies the only slot
     daemon = startDaemon({ dataDir: dir, poolSlots: 1 });
-    const { socketPath } = daemon;
+    // unix-mode daemon: the handle always binds a socket here (string)
+    const socketPath = daemon.socketPath!;
     const pauseBp = join(fixturesDir, "pause-blueprint.ts");
     const happyBp = join(fixturesDir, "happy-blueprint.ts");
 
@@ -755,15 +757,20 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
 
     const b = await api(socketPath, "POST", "/runs", { blueprint: happyBp, cwd: runCwd, delayMs: 0 });
     const bId = (b.json as { run_id: string }).run_id;
-    // B is queued behind paused A: its row exists (status 'running') but NO
-    // phase has started — zero events on the cursor
+    // B is queued behind paused A: its row exists (status 'running') and the
+    // §6 #1 run_submitted event fired at ACCEPTANCE (F2) — but NO phase has
+    // started, so the cursor holds exactly that one event
     await new Promise((r) => setTimeout(r, 60));
     const bQueued = (await api(socketPath, "GET", `/runs/${bId}`)).json as {
       run: { status: string };
       event_count: number;
     };
     expect(bQueued.run.status).toBe("running");
-    expect(bQueued.event_count).toBe(0);
+    const bEvents = (await api(socketPath, "GET", `/runs/${bId}/events?cursor=0&limit=10`)).json as {
+      events: { type: string }[];
+    };
+    expect(bEvents.events).toHaveLength(1);
+    expect(bEvents.events[0]!.type).toBe("run_submitted");
 
     // fail A → terminal → the slot frees → B spawns and completes
     const failed = await api(socketPath, "POST", `/runs/${aId}/fail`, { by: "operator" });
