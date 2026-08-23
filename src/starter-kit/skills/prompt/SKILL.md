@@ -1,6 +1,6 @@
 ---
 name: prompt
-description: Send a single prompt to one Showrunner agent of your choosing (edit the blueprint to pick who: planner, builder, scout, reviewer, documenter, or ship). Use for a one-off, one-agent task where a full plan→build→ship chain is overkill.
+description: "Send a single prompt to one Showrunner agent of your choosing (edit the blueprint to pick who: planner, builder, scout, reviewer, documenter, or ship). Use for a one-off, one-agent task where a full plan→build→ship chain is overkill."
 ---
 
 # Showrunner: one agent, one prompt

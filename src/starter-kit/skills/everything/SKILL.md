@@ -1,6 +1,6 @@
 ---
 name: everything
-description: The full Showrunner chain for real work whose shape is not obvious — plan (with human approval before building), build, test, review, ship. Like plan-build-test but heavier: the plan itself is approved by a human first, budgets are larger, and the run pauses before committing. Use when the work is real, the shape is not obvious, and you want every gate plus a human checkpoint before anything ships.
+description: "The full Showrunner chain for real work whose shape is not obvious — plan (with human approval before building), build, test, review, ship. Like plan-build-test but heavier: the plan itself is approved by a human first, budgets are larger, and the run pauses before committing. Use when the work is real, the shape is not obvious, and you want every gate plus a human checkpoint before anything ships."
 ---
 
 # Showrunner: everything

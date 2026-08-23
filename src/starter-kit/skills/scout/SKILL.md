@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Read-only reconnaissance of a codebase by the Showrunner scout agent — what files are involved, what they do, and what a builder or planner should know before touching anything. Use when nothing should change yet: exploring an unfamiliar repo, sizing up a task, or answering "what is here and how does it fit together?".
+description: "Read-only reconnaissance of a codebase by the Showrunner scout agent — what files are involved, what they do, and what a builder or planner should know before touching anything. Use when nothing should change yet: exploring an unfamiliar repo, sizing up a task, or answering \"what is here and how does it fit together?\"."
 ---
 
 # Showrunner: scout (read-only recon)
