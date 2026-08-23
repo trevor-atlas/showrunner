@@ -5,7 +5,7 @@
 
 ## 17 · Test strategy
 
-- **`FakePi`** (`packages/core/test/` — no pi dependency): replays scripted raw-JSONL event streams (retry, gate-fail, blocked, crash scenarios) against the daemon/tracer/gates/DB/resume paths. Deterministic, CI-safe, no tokens. Fixtures are the test surface for the hard parts.
+- **`FakePi`** (`src/core/test/` — no pi dependency): replays scripted raw-JSONL event streams (retry, gate-fail, blocked, crash scenarios) against the daemon/tracer/gates/DB/resume paths. Deterministic, CI-safe, no tokens. Fixtures are the test surface for the hard parts.
 - **Real smokes** (env-gated, opt-in via `SHOWRUNNER_SMOKE=1`): `plan → build` on a tiny repo, proving the pi wiring actually works.
 - **Fixtures vs smokes doctrine** (PLAN §14): fixtures prove *our* machinery; smokes prove *the wiring*. Starter content ships tests as a replaceable surface — "the tests it ships are not your tests."
 
@@ -15,11 +15,11 @@
 
 ## 18 · Implementation order
 
-1. `packages/core` — zod types, run-loop skeleton, `FakePi` + first fixtures. No pi dependency.
-2. `packages/daemon` — schema (§4), spawn/tail (verified §8), tracer folding (§7), envelope/gate runner, corrections, pause menu, resume.
-3. `packages/cli` — submit, watch (cursor poll), steer.
-4. `packages/ui` — remix@next (read guides.remix.run first, §16.2; NOT React): run list → gantt → drill-in → controls.
-5. `packages/starter-kit` — six agents, gates library, polling tool, skill files.
+1. `src/core` — zod types, run-loop skeleton, `FakePi` + first fixtures. No pi dependency.
+2. `src/daemon` — schema (§4), spawn/tail (verified §8), tracer folding (§7), envelope/gate runner, corrections, pause menu, resume.
+3. `src/cli` — submit, watch (cursor poll), steer.
+4. `src/ui` — remix@next (read guides.remix.run first, §16.2; NOT React): run list → gantt → drill-in → controls.
+5. `src/starter-kit` — six agents, gates library, polling tool, skill files.
 6. ADR-0003 candidates (daemon topology; context-as-strings) as decisions harden in code.
 
 **Gate for step 2**: the §8/§7 facts are already verified (Appendix A); if the daemon is built against a different pi version, re-run the Appendix A checks against that version first.

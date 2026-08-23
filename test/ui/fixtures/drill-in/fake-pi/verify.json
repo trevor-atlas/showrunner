@@ -1,0 +1,19 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "v1", "role": "user", "content": [{ "type": "text", "text": "Verify the build." }] } },
+        { "type": "message_end", "message": { "id": "v1", "role": "user", "content": [{ "type": "text", "text": "Verify the build." }] } },
+        { "type": "message_start", "message": { "id": "v2", "role": "assistant", "content": [{ "type": "text", "text": "Verifying quality: 5 (never green)." }] } },
+        { "type": "message_end", "message": { "id": "v2", "role": "assistant", "content": [{ "type": "text", "text": "Verifying quality: 5 (never green)." }], "usage": { "input": 4000, "output": 1000, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 5000 } } },
+        { "type": "turn_end", "message": { "id": "v2", "role": "assistant", "content": [{ "type": "text", "text": "Verifying quality: 5 (never green)." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "verified", "artifacts": [], "notes_for_next_agent": "quality 5", "quality": 5 }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "showrunner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent orchestration tool: runs blueprints, records every event into SQLite, corrects and pauses agents via typed envelopes and gates. One package, one runtime (bun), one cwd.",
+  "scripts": {
+    "test": "bun test test/",
+    "typecheck": "tsc --noEmit",
+    "gen:fixtures": "bun scripts/generate-fake-pi-sessions.ts",
+    "dev": "NODE_ENV=development bun --watch src/ui/server.ts",
+    "hmr": "NODE_ENV=development bun src/ui/hmr.ts",
+    "start": "NODE_ENV=production bun src/ui/server.ts",
+    "smoke": "SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts"
+  },
+  "dependencies": {
+    "remix": "3.0.0-beta.10",
+    "zod": "~3.24.1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^24.0.0",
+    "bun-types": "^1.4.0",
+    "typebox": "*",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

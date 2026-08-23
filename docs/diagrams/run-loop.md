@@ -7,7 +7,7 @@ flowchart TD
     Appr -- "no" --> Mat
     Appr -- "yes" --> WaitAppr["Pause: human approves (dashboard/CLI)"]
     WaitAppr --> Mat
-    Mat["Materialize context_handoff/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
+    Mat["Materialize <run_id>/<phase>/inputs/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
     Vis -- "no" --> Spawn["Spawn: pi --mode rpc --session &lt;id&gt; --approve<br/>prompt = phase prompt + envelope schema + handoff"]
     Vis -- "yes" --> Pause
     Spawn --> Tail["Tail events → SQLite (live dashboard feed)"]

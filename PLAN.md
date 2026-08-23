@@ -25,7 +25,7 @@ Full glossary in `CONTEXT.md`. The load-bearing distinctions:
 - **Correction** — the harness re-prompts the *same* agent session, naming exactly what was wrong. Nothing restarts; a correction costs one message.
 - **Steering** — human intervention in a live agent session (pi rpc `steer`), delivered between the agent's turns.
 - **Visit** — one execution of a phase within a run. Corrections happen inside a visit; the loop guard counts visits, not corrections.
-- **context_handoff** — the filesystem channel between phases: the reference files agents write (outputs) and the inputs the harness materializes for them (the automatic handoff).
+- **Phase workspace** — the filesystem channel between phases: per-phase `inputs/` (what the harness materializes) and `outputs/` (the files agents write), living under the run's record dir (`{data_dir}/runs/<run_id>/<phase>/`) — never the run cwd, so a run cannot dirty the checkout.
 
 ## 3 · Architecture
 
@@ -39,15 +39,15 @@ Full glossary in `CONTEXT.md`. The load-bearing distinctions:
 
 ### 3.2 Repo layout
 
-Single repo, `packages/*` folders. No pnpm/nx/turbo layer; bun workspaces only if `core` ever needs standalone publishing (deferred).
+Single repo — one package, `src/*` directories.folders. No pnpm/nx/turbo layer; bun workspaces only if `core` ever needs standalone publishing (deferred).
 
 ```
-packages/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
+src/core         SDK: blueprint/agent/envelope/gate/run/event types + the run loop.
                       No pi or UI dependencies — the reusable, strongly typed heart.
-packages/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
-packages/cli          submit + watch runs, steer
-packages/ui           Remix@next dashboard
-packages/starter-kit  six agents, skill blueprints, shared gates, the polling tool
+src/daemon       spawns pi (rpc mode), tails events, owns SQLite, serves the API
+src/cli          submit + watch runs, steer
+src/ui           Remix@next dashboard
+src/starter-kit  six agents, skill blueprints, shared gates, the polling tool
 ```
 
 ### 3.3 Data path
@@ -79,7 +79,7 @@ flowchart TD
     Appr -- "no" --> Mat
     Appr -- "yes" --> WaitAppr["Pause: human approves (dashboard/CLI)"]
     WaitAppr --> Mat
-    Mat["Materialize context_handoff/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
+    Mat["Materialize <run_id>/<phase>/inputs/ + rendered predecessor envelope"] --> Vis{"visit_count > max_visits?"}
     Vis -- "no" --> Spawn["Spawn: pi --mode rpc --session <id> --approve<br/>prompt = phase prompt + envelope schema + handoff"]
     Vis -- "yes" --> Pause
     Spawn --> Tail["Tail events → SQLite (live dashboard feed)"]
@@ -115,7 +115,7 @@ Every loop terminates through either a budget (corrections), a guard (`max_visit
 // envelope — the base, extended per phase (ADR-0002)
 export const EnvelopeBase = z.object({
   summary: z.string(),
-  artifacts: z.array(z.string()),          // paths in context_handoff/<phase>/outputs
+  artifacts: z.array(z.string()),          // paths in <run_id>/<phase>/outputs (run record dir, §9.1)
   notes_for_next_agent: z.string(),
   blocked: z.boolean().optional(),         // agent asserts it cannot proceed
   blocked_reason: z.string().optional(),   // shown on the pause screen
@@ -179,7 +179,7 @@ defineBlueprint({
 
 - **The rule**: at spawn, the harness walks each `context` entry — resolve against the run's cwd (fallback: the agent module's dir); if it resolves to a readable file, read and inline its contents; otherwise treat the string as literal content. Exact paths only; no globs.
 - **The automatic handoff**: the predecessor's `envelope.json` and every artifact it listed are always materialized for the next phase. This is "context transfers in code, not in conversation."
-- **Two directions, one channel**: `context_handoff/<phase>/inputs/` (what the harness gives) and `context_handoff/<phase>/outputs/` (what the agent writes and lists in `artifacts`). Outputs become the next phase's inputs.
+- **Two directions, one channel**: `<run_id>/<phase>/inputs/` (what the harness gives) and `<run_id>/<phase>/outputs/` (what the agent writes and lists in `artifacts`), both under the run's record dir. Outputs become the next phase's inputs.
 - **Zero-friction**: the phase prompt explicitly names the handoff and context; the agent never hunts.
 
 ## 9 · Human intervention & trust
@@ -260,11 +260,11 @@ Shared gates library: `testsPass`, `lintClean`, `matchesPlan`, `envelopeShape`, 
 
 ## 17 · Implementation order
 
-1. **`packages/core`** — zod types (`EnvelopeBase`, agent, blueprint, gate, run/event), the run-loop skeleton, `FakePi` test harness + first fixture tests. No pi dependency.
-2. **`packages/daemon`** — SQLite schema (7 tables, cursor query), spawn/tail pi (rpc mode), tracer with tool-call folding, envelope/gate runner, corrections, pause menu, resume.
-3. **`packages/cli`** — submit, watch, steer.
-4. **`packages/ui`** — Remix@next: run list → gantt → phase drill-in → controls.
-5. **`packages/starter-kit`** — six agents, gates library, polling tool, skill files.
+1. **`src/core`** — zod types (`EnvelopeBase`, agent, blueprint, gate, run/event), the run-loop skeleton, `FakePi` test harness + first fixture tests. No pi dependency.
+2. **`src/daemon`** — SQLite schema (7 tables, cursor query), spawn/tail pi (rpc mode), tracer with tool-call folding, envelope/gate runner, corrections, pause menu, resume.
+3. **`src/cli`** — submit, watch, steer.
+4. **`src/ui`** — Remix@next: run list → gantt → phase drill-in → controls.
+5. **`src/starter-kit`** — six agents, gates library, polling tool, skill files.
 6. Update docs (ADR-0003 candidates: daemon topology; context-as-strings) as decisions harden in code.
 
 ## 18 · Edge cases & open questions

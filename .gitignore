@@ -12,10 +12,15 @@ coverage/
 .env.*
 
 # local run data
-runs/
+/runs/
 *.db
 *.db-wal
 *.db-shm
+
+# (the harness writes all run-time inputs/outputs under the DATA directory —
+# ~/.showrunner/runs/<run_id>/<phase>/ — never the checkout; the lines above
+# are belt-and-suspenders for anyone who points --data-dir at the repo, plus
+# residue from pre-workspace runs)
 
 # misc
 .DS_Store

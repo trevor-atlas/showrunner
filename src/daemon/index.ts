@@ -1,0 +1,249 @@
+/**
+ * @showrunner/daemon — the daemon package's public surface.
+ */
+
+// SQLite (§4)
+export {
+  CURSOR_SQL,
+  SCHEMA_VERSION,
+  cursorEvents,
+  deleteProcess,
+  eventCount,
+  getEnvelope,
+  getGateResult,
+  getPhaseById,
+  getRun,
+  insertAgentSession,
+  insertEnvelope,
+  insertEvent,
+  insertGateOverride,
+  insertGateResult,
+  insertPhase,
+  insertProcess,
+  insertRun,
+  listAgentSessions,
+  listEnvelopes,
+  listGateOverrides,
+  listGateResults,
+  listPhases,
+  listProcesses,
+  listRuns,
+  listTables,
+  migrate,
+  openDb,
+  sumEstimatedPhaseSpend,
+  sumRunSpend,
+  updateAgentSession,
+  updateEnvelope,
+  updatePhase,
+  updateRun,
+} from "./db.ts";
+export type {
+  AgentSessionRow,
+  EnvelopeRow,
+  GateOverrideRow,
+  GateOverrideWithGate,
+  GateResultRow,
+  GateResultWithOverride,
+  NewEvent,
+  PhaseRow,
+  ProcessRow,
+  RunRow,
+  RunWithSpend,
+} from "./db.ts";
+
+// Tracer (§7)
+export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "./tracer.ts";
+export type { FoldedEvent, FoldedEventType, TracerOptions, TracerSink } from "./tracer.ts";
+
+// Price roster (§11.1)
+export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, pricesPathFor } from "./roster.ts";
+export type { Roster, RosterEntry } from "./roster.ts";
+
+// Raw records (§10)
+export { RawOutputFile, tailRawFile } from "./rawfile.ts";
+
+// §9 context & handoff filesystem protocol (T05)
+export {
+  inputsDirFor,
+  materializeHandoff,
+  outputsDirFor,
+  phaseDirFor,
+  readAgentMap,
+  readHandoffInputs,
+  recordAcceptedEnvelope,
+  resolveContext,
+  sessionDirNameForCwd,
+  slugFor,
+  writeAgentMap,
+} from "./handoff.ts";
+export type { AgentMapEntry, Handoff } from "./handoff.ts";
+
+// Line framing (§7.1)
+export { LineSplitter } from "./linesplit.ts";
+
+// Event queue
+export { EventSink } from "./queue.ts";
+export type { EventIds } from "./queue.ts";
+
+// Envelope/gate runner (T03 seam)
+export { gateName, isEnvelopeApproved, overrideGateResult, recordEnvelopeAcceptance, runEnvelopeStage } from "./envelope-runner.ts";
+export type {
+  EnvelopeOutcome,
+  EnvelopeStageOptions,
+  GateOverrideResult,
+  GateRun,
+  OverrideGateOptions,
+  RecordEnvelopeAcceptanceOptions,
+} from "./envelope-runner.ts";
+
+// The §5 run loop
+export {
+  DEFAULT_MAX_VISITS,
+  composeContinuePrompt,
+  composePrompt,
+  drivePreparedRun,
+  driveResumedRun,
+  loadBlueprintModule,
+  materializeInputs,
+  prepareBlueprintRun,
+  prepareResume,
+  renderSchema,
+  resolveContextEntries,
+  resolveScriptedSessions,
+  runBlueprint,
+  snapshotBlueprint,
+  submitBlueprintRun,
+} from "./runner.ts";
+export type {
+  BlueprintRun,
+  PreparedResume,
+  PreparedRun,
+  ResumeSpec,
+  RunBlueprintOptions,
+  RunResult,
+  ScriptMap,
+  ScriptedSession,
+  ScriptedTurn,
+} from "./runner.ts";
+
+// §5.4 run pool
+export { RunPool } from "./pool.ts";
+
+// T04 pause & control surface (§5.3 pause menu, §12 resume, F1 slot hold)
+export {
+  RunControl,
+  cleanupProcesses,
+  effectiveMenu,
+  getControl,
+  getControlByLiveSession,
+  isPidAlive,
+  killRunProcesses,
+  reconcileInterruptedRuns,
+  registerControl,
+  resumeInterruptedRun,
+  statelessFailRun,
+  stopRecordedChildren,
+  unregisterControl,
+} from "./pause-control.ts";
+export type {
+  ControlAction,
+  ControlState,
+  LiveSessionRef,
+  PauseInfo,
+  PauseKind,
+  RunControlResult,
+} from "./pause-control.ts";
+
+// Driver (T01a minimal submit)
+export {
+  DEFAULT_FIXTURE_AGENT,
+  DEFAULT_FIXTURE_DELAY_MS,
+  DEFAULT_FIXTURE_MODEL,
+  DEFAULT_FIXTURE_PHASE,
+  MAX_CAPTURED_STDERR,
+  sessionIdFor,
+  submitFixture,
+} from "./driver.ts";
+export type { SubmittedRun, SubmitOptions } from "./driver.ts";
+
+// pi session drivers (T02: real pi spawn behind the §8 seam)
+export {
+  DEFAULT_RPC_TIMEOUT_MS,
+  DEFAULT_STDERR_CAP,
+  FIRST_PROMPT_ACK_TIMEOUT_MS,
+  FakeSessionDriver,
+  PiSession,
+  SESSION_ID_RE,
+  SIGKILL_AFTER_MS,
+  findPiBinary,
+  resolvePiBinary,
+  sessionDriverKind,
+} from "./pi/index.ts";
+export type {
+  FakeSessionDriverOptions,
+  PiSessionOptions,
+  RpcCommand,
+  RpcResponse,
+  SessionDriver,
+  SessionDriverKind,
+} from "./pi/index.ts";
+
+// §12.4 backfill (T07: session-JSONL re-read, deduped against the run's raw file)
+export { backfillMissedEvents } from "./backfill.ts";
+export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
+
+// HTTP API (§13)
+export { createWebServer } from "./web.ts";
+// The api core: exported per-endpoint functions the wire dispatcher and the
+// UI actions (in-process, T4) share. ApiError carries the wire status code.
+export {
+  ApiError,
+  apiApprove,
+  apiEvents,
+  apiFailRun,
+  apiHealth,
+  apiListRuns,
+  apiOverrideGate,
+  apiPause,
+  apiPhaseEnvelopes,
+  apiPhaseGates,
+  apiRaw,
+  apiResume,
+  apiRestartFresh,
+  apiRunDetail,
+  apiSessionSteer,
+  apiSpend,
+  apiStatus,
+  apiSteerRun,
+  apiSubmitRun,
+  handleApiRequest,
+} from "./server.ts";
+export type { ApiState } from "./server.ts";
+
+// The typed §13 client (ships for the CLI and the UI; http-only — the daemon
+// serves the API under /api/* on one TCP listener). Its ApiError lives in
+// client.ts (the server core has its own — same shape, different module).
+export {
+  DaemonClient,
+  isDaemonDown,
+} from "./client.ts";
+export type {
+  DaemonClientOptions,
+  DaemonStatus,
+  EventsPage,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  PhaseSummary,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  SpendBreakdown,
+  SubmitRunBody,
+  SubmitRunResult,
+} from "./client.ts";
+
+// Daemon lifecycle
+export { daemonEntryPath, installSignalHandlers, startDaemon } from "./daemon.ts";
+export type { DaemonHandle } from "./daemon.ts";

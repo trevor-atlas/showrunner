@@ -1,0 +1,49 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_end", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_start", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: forgot the quality field." }] } },
+        { "type": "message_end", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: forgot the quality field." }], "usage": { "input": 100, "output": 20, "cacheRead": 5, "cacheWrite": 2, "totalTokens": 125, "cost": { "total": 0.001 } } } },
+        { "type": "turn_end", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: forgot the quality field." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "built it", "artifacts": [], "notes_for_next_agent": "quality missing" }
+    },
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 2, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "b3", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_end", "message": { "id": "b3", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_start", "message": { "id": "b4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4, still too low." }] } },
+        { "type": "message_end", "message": { "id": "b4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4, still too low." }], "usage": { "input": 250, "output": 60, "cacheRead": 10, "cacheWrite": 5, "totalTokens": 315, "cost": { "total": 0.003 } } } },
+        { "type": "turn_end", "message": { "id": "b4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4, still too low." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "built it", "artifacts": [], "notes_for_next_agent": "quality 4", "quality": 4 }
+    },
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 4, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "b5", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_end", "message": { "id": "b5", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_start", "message": { "id": "b6", "role": "assistant", "content": [{ "type": "text", "text": "Delivering the passing build." }] } },
+        { "type": "message_end", "message": { "id": "b6", "role": "assistant", "content": [{ "type": "text", "text": "Delivering the passing build." }], "usage": { "input": 400, "output": 90, "cacheRead": 15, "cacheWrite": 8, "totalTokens": 505, "cost": { "total": 0.005 } } } },
+        { "type": "turn_end", "message": { "id": "b6", "role": "assistant", "content": [{ "type": "text", "text": "Delivering the passing build." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "built it", "artifacts": [], "notes_for_next_agent": "quality 8", "quality": 8 }
+    }
+  ]
+}

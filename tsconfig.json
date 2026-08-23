@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": ["bun-types", "node", "remix/assets/types/hmr"],
+    "isolatedModules": true
+  },
+  "include": ["src", "test", "scripts"]
+}

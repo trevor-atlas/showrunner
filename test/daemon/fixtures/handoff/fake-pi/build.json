@@ -1,0 +1,27 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_end", "message": { "id": "b1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_start", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Built." }] } },
+        { "type": "message_update", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Built." }] }, "usage": { "input": 300, "output": 60, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 360, "cost": { "total": 0.0006 } } },
+        { "type": "turn_end", "message": { "id": "b2", "role": "assistant", "content": [{ "type": "text", "text": "Built." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "built",
+        "artifacts": ["result.md"],
+        "notes_for_next_agent": "done",
+        "quality": 9
+      },
+      "artifacts": {
+        "result.md": "implemented by builder\n"
+      }
+    }
+  ]
+}
