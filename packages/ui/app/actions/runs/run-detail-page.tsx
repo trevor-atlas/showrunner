@@ -1,11 +1,12 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { RunDetail } from "../../../../daemon/src/client.ts";
+import type { PauseView, RunDetail } from "../../../../daemon/src/client.ts";
 import { routes } from "../../routes.ts";
 import { DaemonDownBanner } from "../../ui/daemon-down-banner.tsx";
 import { fmtMoney, fmtRunId, fmtStartedAt } from "../../ui/format.ts";
 import { NeedsReviewBanner } from "../../ui/needs-review-banner.tsx";
+import { PauseMenu, type ControlError } from "../../ui/pause-menu.tsx";
 import type { FeedEvent } from "../../ui/public/event-feed.tsx";
 import type { LivePhase, RunLiveRegionProps } from "../public/run-live-region.tsx";
 import { RunLiveRegion } from "../public/run-live-region.tsx";
@@ -19,9 +20,11 @@ import { Document } from "../document.tsx";
  * renders its whole history here); the browser then polls the events.json
  * proxy and the hydrated live region re-renders gantt + feed (§16.5).
  *
- * Read-only: the control bar is DISPLAY ONLY (status, cwd, spend, needs
- * review badge) — the fail / resume / pause-menu controls are T10b's ticket,
- * nothing here is clickable for controls.
+ * T10b — the control surface: the control bar mounts the resume HEADER
+ * action (only when the run is `interrupted`, §16.9) and the pause menu
+ * (§16.9) when the run is `paused`. Both post to remix POST routes that call
+ * the §13.2 daemon endpoints server-side; the browser never mutates daemon
+ * state itself (no optimistic mutation, §16.9).
  *
  * A missing run renders the 404 page with a back-link (§16.10); a down
  * daemon renders the shell with the DaemonDownBanner instead of 500ing.
@@ -39,11 +42,28 @@ export interface RunDetailPageProps {
   cursor: number;
   daemonDown: boolean;
   daemonAddress: string;
+  /** the §13 pause viewer — the menu renders from it when the run is paused */
+  pause: PauseView | null;
+  /** the FAILED gate names on the paused phase — the override select options */
+  overrideGates: string[];
+  /** the pending control error (from the last failed control POST), or null */
+  controlError: ControlError | null;
 }
 
 export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
   return () => {
-    const { runId, detail, livePhases, events, cursor, daemonDown, daemonAddress } = handle.props;
+    const {
+      runId,
+      detail,
+      livePhases,
+      events,
+      cursor,
+      daemonDown,
+      daemonAddress,
+      pause,
+      overrideGates,
+      controlError,
+    } = handle.props;
 
     if (detail === null) {
       return (
@@ -67,12 +87,21 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       eventsHref: routes.runs.events.href({ runId }),
     };
 
+    // §16.9: resume is a HEADER action for INTERRUPTED runs only — never part
+    // of the pause menu. A pending resume error keeps the control rendered so
+    // the 409/validation failure stays visible on the form.
+    const showResume = run.status === "interrupted" || controlError?.verb === "resume";
+    // §16.9: the pause menu renders when the run is paused (the pause state +
+    // kind come from the §13 pause viewer).
+    const showMenu = run.status === "paused" && pause !== null && pause.paused;
+
     return (
       <Document title={`Showrunner · ${run.blueprint} · ${fmtRunId(runId)}`}>
         <main mix={pageStyle}>
           <PageHeader runId={runId} blueprint={run.blueprint} status={pillStatus} />
 
-          {/* §16.7 control bar — DISPLAY ONLY until T10b adds the verbs */}
+          {/* §16.7 control bar — status, cwd, started/ended, spend, needs
+          review badge, and the §16.9 resume HEADER action (interrupted runs) */}
           <div data-control-bar mix={controlBarStyle}>
             <span data-meta="status">{pillStatus}</span>
             <span data-meta="cwd" mix={monoStyle}>
@@ -94,9 +123,36 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
                 ⚠ needs review
               </span>
             ) : null}
+            {showResume ? (
+              <span mix={resumeControlStyle}>
+                <form method="post" action={routes.runs.resume.href({ runId })} data-form="resume">
+                  <button type="submit" mix={resumeButtonStyle}>
+                    resume
+                  </button>
+                </form>
+                {controlError?.verb === "resume" ? (
+                  <span mix={resumeErrorStyle} data-form-error data-error-for="resume" role="alert">
+                    {controlError.message}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </div>
 
           {run.needs_review !== 0 ? <NeedsReviewBanner /> : null}
+
+          {showMenu ? (
+            <PauseMenu
+              runId={runId}
+              phase={pause.phase ?? ""}
+              kind={pause.kind ?? "unknown"}
+              reason={pause.reason ?? null}
+              actions={pause.actions ?? []}
+              queuedSteers={pause.queued_steers ?? []}
+              overrideGates={overrideGates}
+              error={controlError}
+            />
+          ) : null}
 
           {daemonDown ? <DaemonDownBanner expectedAt={daemonAddress} /> : null}
 
@@ -220,6 +276,35 @@ const needsReviewBadgeStyle = css({
   padding: "1px 10px",
   fontWeight: 700,
   fontSize: "11px",
+});
+
+const resumeControlStyle = css({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.6rem",
+});
+
+const resumeButtonStyle = css({
+  appearance: "none",
+  font: "inherit",
+  fontSize: "12px",
+  fontWeight: 700,
+  padding: "3px 14px",
+  borderRadius: "999px",
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  cursor: "pointer",
+  "&:hover": {
+    background: "#f3f4f6",
+  },
+});
+
+const resumeErrorStyle = css({
+  fontSize: "11px",
+  color: "#b91c1c",
+  fontWeight: 600,
+  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
 });
 
 const notFoundTextStyle = css({

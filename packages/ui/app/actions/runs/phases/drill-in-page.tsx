@@ -10,7 +10,7 @@ import { fmtRunId } from "../../../ui/format.ts";
 import { ConfigCard } from "../../../ui/phase-drill-in/config-card.tsx";
 import { EnvelopeCard } from "../../../ui/phase-drill-in/envelope-card.tsx";
 import { GatesCard } from "../../../ui/phase-drill-in/gates-card.tsx";
-import { NeedsReviewBanner } from "../../../ui/phase-drill-in/needs-review-banner.tsx";
+import { NeedsReviewBanner } from "../../../ui/needs-review-banner.tsx";
 import { OutputCard } from "../../../ui/phase-drill-in/output-card.tsx";
 import { SpendCard } from "../../../ui/phase-drill-in/spend-card.tsx";
 import { Document } from "../../document.tsx";
@@ -44,6 +44,8 @@ export interface DrillInPageProps {
     cacheWrite: number;
     spendUsd: number;
     estimatedUsd: number;
+    /** true when the spend sweep hit its safety cap — token totals are partial */
+    truncated: boolean;
   };
   raw: RawTail;
   daemonDown: boolean;
@@ -99,6 +101,7 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
                 cacheWrite={spend.cacheWrite}
                 spendUsd={spend.spendUsd}
                 estimatedUsd={spend.estimatedUsd}
+                truncated={spend.truncated}
               />
               <OutputCard raw={raw} />
             </div>

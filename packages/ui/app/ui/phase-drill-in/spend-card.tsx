@@ -23,11 +23,13 @@ export interface SpendCardProps {
   spendUsd: number;
   /** estimated USD for the phase (spend endpoint estimated_spend_usd) */
   estimatedUsd: number;
+  /** true when the spend sweep hit its safety cap — the token totals are partial */
+  truncated?: boolean;
 }
 
 export function SpendCard(handle: Handle<SpendCardProps>) {
   return () => {
-    const { tokensIn, tokensOut, cacheRead, cacheWrite, spendUsd, estimatedUsd } = handle.props;
+    const { tokensIn, tokensOut, cacheRead, cacheWrite, spendUsd, estimatedUsd, truncated = false } = handle.props;
     return (
       <Card
         title="SPEND"
@@ -36,6 +38,11 @@ export function SpendCard(handle: Handle<SpendCardProps>) {
         <div mix={rowStyle}>
           <span mix={mono}>usd {fmtMoney(spendUsd)}</span>
           {estimatedUsd > 0 ? <span mix={estStyle}>incl. est. {fmtMoney(estimatedUsd)} (roster estimate)</span> : null}
+          {truncated ? (
+            <span mix={truncatedStyle} data-spend-truncated>
+              ⚠ older spend omitted (past the sweep cap) — token totals are partial
+            </span>
+          ) : null}
         </div>
       </Card>
     );
@@ -52,5 +59,12 @@ const rowStyle = css({
 const estStyle = css({
   fontSize: "11px",
   color: "#92400e",
+  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+});
+
+const truncatedStyle = css({
+  fontSize: "11px",
+  color: "#b91c1c",
+  fontWeight: 600,
   fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
 });

@@ -15,8 +15,10 @@
 
 import { DaemonClient, isSocketDown, resolveTransport } from "../../../daemon/src/client.ts";
 import type {
+  ControlResult,
   DaemonTransport,
   EventsPage,
+  PauseView,
   PhaseEnvelopes,
   PhaseGates,
   RawTail,
@@ -71,6 +73,67 @@ export async function getRaw(runId: string, opts: { lines?: number } = {}): Prom
 /** GET /runs/:id/events — the §4.3 cursor page (drill-in sums §6 #12 spend). */
 export async function getRunEvents(runId: string, opts: { cursor?: number; limit?: number } = {}): Promise<EventsPage> {
   return fetchDaemon((client) => client.getEvents(runId, opts));
+}
+
+/** GET /runs/:id/pause — the §16.9 pause viewer (kind, phase, actions, queued steers). */
+export async function getPause(runId: string): Promise<PauseView> {
+  return fetchDaemon((client) => client.pause(runId));
+}
+
+// ── §13.2 control verbs (T10b) ───────────────────────────────────────────────
+// Every verb posts to the daemon through the server-side client; on success
+// the daemon has already written the §6 #11 human_action event and the new
+// run state, so the action can re-render/redirect from daemon state. A 409 /
+// 4xx surfaces as an ApiError — the actions translate it onto the form.
+
+/** POST /runs/:id/steer — the pause menu's steer (run-keyed; queues on a paused run). */
+export async function controlSteer(runId: string, message: string): Promise<ControlResult> {
+  return fetchDaemon((client) => client.steerRun(runId, message));
+}
+
+/** POST /runs/:id/resume — continue an interrupted run (§12). */
+export async function controlResume(runId: string): Promise<ControlResult> {
+  return fetchDaemon((client) => client.resume(runId));
+}
+
+/** POST /runs/:id/fail — fail the run and kill its children (§8.3). */
+export async function controlFail(runId: string): Promise<ControlResult> {
+  return fetchDaemon((client) => client.failRun(runId));
+}
+
+/** POST /runs/:id/approve — approve a require_approval pause. */
+export async function controlApprove(runId: string): Promise<ControlResult> {
+  return fetchDaemon((client) => client.approve(runId));
+}
+
+/** POST /runs/:id/phases/:phase/override — override a failed gate (audited). */
+export async function controlOverrideGate(
+  runId: string,
+  phase: string,
+  gate: string,
+  reason: string,
+): Promise<ControlResult> {
+  return fetchDaemon((client) => client.overrideGate(runId, phase, { gate, reason }));
+}
+
+/** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */
+export async function controlRestartFresh(runId: string, phase: string): Promise<ControlResult> {
+  return fetchDaemon((client) => client.restartFresh(runId, phase));
+}
+
+/**
+ * Is the thrown error a §13 client ApiError? The control actions translate
+ * 409/4xx into an inline form error (from ApiError.status/message) instead of
+ * pretending success (§16.9).
+ */
+export function isApiError(err: unknown): err is { status: number; message: string } {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: unknown }).name === "ApiError" &&
+    typeof (err as { status?: unknown }).status === "number" &&
+    typeof (err as { message?: unknown }).message === "string"
+  );
 }
 
 /** Run one daemon call, translating socket-down into DaemonUnreachable. */

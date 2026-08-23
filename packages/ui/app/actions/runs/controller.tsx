@@ -1,27 +1,50 @@
 import { createController } from "remix/router";
+import { redirect } from "remix/response/redirect";
+import { parseSafe } from "remix/data-schema";
 
 import type { EventRow } from "@showrunner/core";
 
 import { readBlueprintSnapshot } from "../../lib/blueprint-snapshot.ts";
-import { daemonAddress, DaemonUnreachable, getRunDetail, getRunEvents } from "../../lib/daemon.ts";
+import {
+  controlApprove,
+  controlFail,
+  controlResume,
+  controlSteer,
+  daemonAddress,
+  DaemonUnreachable,
+  getPhaseGates,
+  getPause,
+  getRunDetail,
+  getRunEvents,
+  isApiError,
+} from "../../lib/daemon.ts";
 import { routes } from "../../routes.ts";
+import type { ControlError } from "../../ui/pause-menu.tsx";
+import { apiControlError, steerFormSchema, validationError } from "./control-forms.ts";
 import type { LivePhase } from "../public/run-live-region.tsx";
 import { NotFoundPage, RunDetailPage } from "./run-detail-page.tsx";
 import { orderPhases } from "./phase-order.ts";
 
 /**
- * Run-detail group (T10a, issue #15): `/runs/:runId` and the events.json
- * cursor proxy `/runs/:runId/events.json` (spec §16.5/§16.7/§16.12).
+ * Run-detail group (T10a + T10b, issues #15/#20): `/runs/:runId`, the
+ * events.json cursor proxy, and the §16.9 control verbs — the pause menu's
+ * steer / approve / fail and the resume HEADER action.
  *
- * `show` fetches the §13 detail endpoint SERVER-SIDE and the FULL event
- * history (the §4.3 cursor query IS the read transport — a paused/completed
- * run renders its whole history; zero server state) and renders the page.
- * The browser then polls the proxy from the hydrated live region.
+ * `show` fetches the §13 detail endpoint SERVER-SIDE, the FULL event history
+ * (the §4.3 cursor query IS the read transport), and — when the run is paused
+ * — the §13 pause viewer (kind/phase/actions/queued steers) + the failed gate
+ * names for the override select. The browser then polls the proxy from the
+ * hydrated live region; it NEVER talks to the daemon.
+ *
+ * The control actions (§16.9): each validates its form with data-schema (no
+ * zod in the UI), posts to the §13.2 daemon endpoint through the server-side
+ * client, then REDIRECTS (303) to the fresh run detail page on success — the
+ * re-render comes from daemon state, never from a client-side flip. A
+ * validation failure or a daemon 409/4xx re-renders the page with the error
+ * on the form that submitted it (no silent drop).
  *
  * `events` is the proxy: GET /runs/:id/events?cursor=N through the typed
- * client, returned as JSON { events, next_cursor } — the same sliding-window
- * query the daemon serves, re-exposed same-origin (the browser never talks
- * to the daemon). Read-only: no mutation endpoints here (T10b owns those).
+ * client, returned as JSON { events, next_cursor }.
  *
  * Missing run → 404 (HTML for the page, JSON for the proxy). Daemon down →
  * page shell with the DaemonDownBanner; the proxy answers 503 so the poll
@@ -30,62 +53,82 @@ import { orderPhases } from "./phase-order.ts";
 export default createController(routes.runs, {
   actions: {
     async show(context) {
-      const runId = context.params.runId;
+      return renderRunDetail(context, context.params.runId);
+    },
 
-      let detail;
+    /** §16.9 steer — POST /runs/:runId/steer → daemon POST /runs/:id/steer. */
+    async steer(context) {
+      const runId = context.params.runId;
+      const formData = await context.request.formData();
+      const parsed = parseSafe(steerFormSchema, formData);
+      if (!parsed.success) {
+        return renderRunDetail(context, runId, validationError("steer", parsed.issues), 400);
+      }
       try {
-        detail = await getRunDetail(runId);
+        await controlSteer(runId, parsed.value.message);
       } catch (err) {
-        if (err instanceof DaemonUnreachable) {
-          return context.render(
-            <RunDetailPage
-              runId={runId}
-              detail={null}
-              livePhases={[]}
-              events={[]}
-              cursor={0}
-              daemonDown={true}
-              daemonAddress={daemonAddress()}
-            />,
-          );
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("steer", err), 400);
         }
-        if (isApi404(err)) {
-          return context.render(<NotFoundPage runId={runId} />, { status: 404 });
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId); // the shell + daemon-down banner
         }
         throw err;
       }
+      // success: the daemon audited + queued the steer; the poll loop resumes
+      // automatically on the re-rendered page (§16.9 — no optimistic mutation)
+      return redirect(routes.runs.show.href({ runId }), 303);
+    },
 
-      // §16.5: the initial load fetches the full history — the clientEntry's
-      // first poll starts from the last rowid and only ever sees what's new.
-      const history = await collectEvents(runId);
+    /** §16.9 resume — POST /runs/:runId/resume → daemon POST /runs/:id/resume. */
+    async resume(context) {
+      const runId = context.params.runId;
+      try {
+        await controlResume(runId);
+      } catch (err) {
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("resume", err), 400);
+        }
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId);
+        }
+        throw err;
+      }
+      return redirect(routes.runs.show.href({ runId }), 303);
+    },
 
-      // §16.7: gantt rows in BLUEPRINT order — the §13.1 phases array is
-      // ordered by started_at (SQLite sorts pending NULLs first), so reorder
-      // from the §13.3 snapshot (or phase_start events when none exists).
-      const snapshot = readBlueprintSnapshot(runId);
-      const blueprintOrder = snapshot.doc?.phases.map((p) => p.name) ?? null;
-      const livePhases: LivePhase[] = orderPhases(detail.phases, history.events, blueprintOrder).map((p) => ({
-        name: p.name,
-        agent: p.agent,
-        status: p.status,
-        corrections: p.corrections,
-        visits: p.visits,
-        spend_usd: p.spend_usd,
-        started_at: p.started_at,
-        ended_at: p.ended_at,
-      }));
+    /** §16.9 fail — POST /runs/:runId/fail → daemon POST /runs/:id/fail. */
+    async fail(context) {
+      const runId = context.params.runId;
+      try {
+        await controlFail(runId);
+      } catch (err) {
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("fail", err), 400);
+        }
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId);
+        }
+        throw err;
+      }
+      return redirect(routes.runs.show.href({ runId }), 303);
+    },
 
-      return context.render(
-        <RunDetailPage
-          runId={runId}
-          detail={detail}
-          livePhases={livePhases}
-          events={history.events}
-          cursor={history.cursor}
-          daemonDown={false}
-          daemonAddress={daemonAddress()}
-        />,
-      );
+    /** §16.9 approve — POST /runs/:runId/approve → daemon POST /runs/:id/approve. */
+    async approve(context) {
+      const runId = context.params.runId;
+      try {
+        await controlApprove(runId);
+      } catch (err) {
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("approve", err), 400);
+        }
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId);
+        }
+        throw err;
+      }
+      return redirect(routes.runs.show.href({ runId }), 303);
     },
 
     async events(context) {
@@ -108,6 +151,115 @@ export default createController(routes.runs, {
     },
   },
 });
+
+// ── the shared page render (show + control-error re-renders) ────────────────
+
+/**
+ * Fetch everything the run detail page needs from the daemon and render it —
+ * the single render path shared by `show` and every control action's error
+ * re-render (a failed control POST re-renders the SAME page with the error on
+ * the form that submitted it — the page state still comes from the daemon).
+ */
+export async function renderRunDetail(
+  context: { params: { runId: string }; render(node: unknown, init?: ResponseInit): Response },
+  runId: string,
+  controlError: ControlError | null = null,
+  status = 200,
+): Promise<Response> {
+  let detail;
+  try {
+    detail = await getRunDetail(runId);
+  } catch (err) {
+    if (err instanceof DaemonUnreachable) {
+      return context.render(
+        <RunDetailPage
+          runId={runId}
+          detail={null}
+          livePhases={[]}
+          events={[]}
+          cursor={0}
+          daemonDown={true}
+          daemonAddress={daemonAddress()}
+          pause={null}
+          overrideGates={[]}
+          controlError={controlError}
+        />,
+      );
+    }
+    if (isApi404(err)) {
+      return context.render(<NotFoundPage runId={runId} />, { status: 404 });
+    }
+    throw err;
+  }
+
+  // §16.5: the initial load fetches the full history — the clientEntry's
+  // first poll starts from the last rowid and only ever sees what's new.
+  const history = await collectEvents(runId);
+
+  // §16.7: gantt rows in BLUEPRINT order — the §13.1 phases array is
+  // ordered by started_at (SQLite sorts pending NULLs first), so reorder
+  // from the §13.3 snapshot (or phase_start events when none exists).
+  const snapshot = readBlueprintSnapshot(runId);
+  const blueprintOrder = snapshot.doc?.phases.map((p) => p.name) ?? null;
+  const livePhases: LivePhase[] = orderPhases(detail.phases, history.events, blueprintOrder).map((p) => ({
+    name: p.name,
+    agent: p.agent,
+    status: p.status,
+    corrections: p.corrections,
+    visits: p.visits,
+    spend_usd: p.spend_usd,
+    started_at: p.started_at,
+    ended_at: p.ended_at,
+  }));
+
+  // §16.9: the pause menu's content comes from the §13 pause viewer; the
+  // override select needs the FAILED gate names on the paused phase (fetched
+  // only when the menu offers override — one cheap local call).
+  let pause = null;
+  let overrideGates: string[] = [];
+  if (detail.run.status === "paused") {
+    pause = await getPause(runId);
+    if (pause.paused && (pause.actions ?? []).includes("override") && pause.phase !== undefined && pause.phase !== null) {
+      try {
+        const gates = await getPhaseGates(runId, pause.phase);
+        overrideGates = failedGateNames(gates.gates);
+      } catch {
+        // a phase that disappeared between the detail fetch and now → the
+        // override form simply has no options; the daemon 409s a bad override
+        overrideGates = [];
+      }
+    }
+  }
+
+  return context.render(
+    <RunDetailPage
+      runId={runId}
+      detail={detail}
+      livePhases={livePhases}
+      events={history.events}
+      cursor={history.cursor}
+      daemonDown={false}
+      daemonAddress={daemonAddress()}
+      pause={pause}
+      overrideGates={overrideGates}
+      controlError={controlError}
+    />,
+    { status },
+  );
+}
+
+/** The failed gate names on a phase (the override select options), deduped. */
+function failedGateNames(gates: readonly { gate: string; pass: number }[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const g of gates) {
+    if (g.pass === 0 && !seen.has(g.gate)) {
+      seen.add(g.gate);
+      names.push(g.gate);
+    }
+  }
+  return names;
+}
 
 /** The proxy page size (the daemon caps the cursor query at 500, §4.3). */
 const EVENTS_PAGE_LIMIT = 500;

@@ -138,6 +138,22 @@ describe("computeGantt (§16.7 fill math)", () => {
     expect(bar.visits).toBe(3);
     expect(bar.spendUsd).toBeCloseTo(0.42, 5);
   });
+
+  it("polish (T10b): a run that completes WHILE the page is open freezes the timeline — the live region feeds ended_at + the terminal status from the run_status event, so the right edge is the end moment and the now-cursor drops", () => {
+    // the run completed at +60s; the live region turned the run_status event
+    // into (ended_at = the event ts, status = "success") — the model must NOT
+    // keep stretching the timeline to "now" (the pre-polish behavior)
+    const model = computeGantt(
+      [phase({ status: "in_progress", started_at: new Date(START + 10_000).toISOString() })],
+      run({ status: "success", ended_at: new Date(START + 60_000).toISOString() }),
+      [phaseStart("build", 10_000)],
+      START + 300_000, // minutes after the end
+    );
+    expect(model.showCursor).toBe(false); // no now-cursor on a terminal run
+    expect(model.runEndMs).toBe(START + 60_000); // timeline ends at the end moment
+    const bar = model.phases[0]!;
+    expect(bar.endF).toBeCloseTo(60_000 / 60_000, 5); // fill frozen at the end, not stretched
+  });
 });
 
 describe("describeToolCall (§6 naming rule — read it aloud)", () => {

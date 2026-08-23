@@ -1,0 +1,34 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "c1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_end", "message": { "id": "c1", "role": "user", "content": [{ "type": "text", "text": "Build the thing." }] } },
+        { "type": "message_start", "message": { "id": "c2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: quality 4, gate fails." }] } },
+        { "type": "message_end", "message": { "id": "c2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: quality 4, gate fails." }], "usage": { "input": 100, "output": 20, "cacheRead": 5, "cacheWrite": 2, "totalTokens": 125, "cost": { "total": 0.001 } } } },
+        { "type": "turn_end", "message": { "id": "c2", "role": "assistant", "content": [{ "type": "text", "text": "First draft: quality 4, gate fails." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "built it", "artifacts": [], "notes_for_next_agent": "quality 4", "quality": 4 }
+    },
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 2, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "c3", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_end", "message": { "id": "c3", "role": "user", "content": [{ "type": "text", "text": "Fix the envelope." }] } },
+        { "type": "message_start", "message": { "id": "c4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4 again, gate fails." }] } },
+        { "type": "message_end", "message": { "id": "c4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4 again, gate fails." }], "usage": { "input": 250, "output": 60, "cacheRead": 10, "cacheWrite": 5, "totalTokens": 315, "cost": { "total": 0.003 } } } },
+        { "type": "turn_end", "message": { "id": "c4", "role": "assistant", "content": [{ "type": "text", "text": "Second draft: quality 4 again, gate fails." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": { "summary": "built it", "artifacts": [], "notes_for_next_agent": "quality 4", "quality": 4 }
+    }
+  ]
+}

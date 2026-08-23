@@ -1,11 +1,15 @@
 import { dirname } from "node:path";
 
 import { createController } from "remix/router";
+import { redirect } from "remix/response/redirect";
+import { parseSafe } from "remix/data-schema";
 
 import type { EventRow } from "@showrunner/core";
 
 import { readBlueprintSnapshot } from "../../../lib/blueprint-snapshot.ts";
 import {
+  controlOverrideGate,
+  controlRestartFresh,
   daemonAddress,
   DaemonUnreachable,
   getPhaseEnvelopes,
@@ -14,8 +18,11 @@ import {
   getRunDetail,
   getRunEvents,
   getSpend,
+  isApiError,
 } from "../../../lib/daemon.ts";
 import { routes } from "../../../routes.ts";
+import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
+import { renderRunDetail } from "../controller.tsx";
 import { DrillInPage, NotFoundPage } from "./drill-in-page.tsx";
 
 /**
@@ -29,6 +36,14 @@ import { DrillInPage, NotFoundPage } from "./drill-in-page.tsx";
  * renders the shell with the DaemonDownBanner instead of 500ing. Read-only
  * page: no mutation controls (the override control is T10b's ticket; the
  * override DATA renders as badges here).
+ *
+ * T10b adds the phase-scoped control VERBS (the pause menu's override gate +
+ * restart-fresh): the forms live on the RUN DETAIL page (§16.9) and post
+ * here. Each validates with data-schema (no zod in the UI), posts to the
+ * §13.2 daemon endpoint server-side, and on success redirects (303) to the
+ * fresh run detail page — the re-render comes from daemon state. A validation
+ * failure or a daemon 409/4xx re-renders run detail with the error on the
+ * form that submitted it (the override/restart forms are run-detail mounts).
  */
 export default createController(routes.runs.phases, {
   actions: {
@@ -84,7 +99,7 @@ export default createController(routes.runs.phases, {
       }
 
       // everything after the 404 checks is independent — fetch in parallel
-      const [envelopes, gates, spend, raw, events, snapshot] = await Promise.all([
+      const [envelopes, gates, spend, raw, spendEvents, snapshot] = await Promise.all([
         getPhaseEnvelopes(runId, phaseName),
         getPhaseGates(runId, phaseName),
         getSpend(runId),
@@ -97,7 +112,7 @@ export default createController(routes.runs.phases, {
       const snapshotModuleDir = snapshot.doc?.module !== null && snapshot.doc?.module !== undefined && snapshot.doc?.module !== "" ? dirname(snapshot.doc.module) : null;
 
       const spendPhase = spend.phases.find((p) => p.id === phase.id);
-      const tokens = sumPhaseSpendTokens(events, phase.id);
+      const tokens = sumPhaseSpendTokens(spendEvents.events, phase.id);
 
       return context.render(
         <DrillInPage
@@ -120,12 +135,53 @@ export default createController(routes.runs.phases, {
             cacheWrite: tokens.cache_write,
             spendUsd: spendPhase?.spend_usd ?? 0,
             estimatedUsd: spendPhase?.estimated_spend_usd ?? 0,
+            truncated: spendEvents.truncated,
           }}
           raw={raw}
           daemonDown={false}
           daemonAddress={daemonAddress()}
         />,
       );
+    },
+    /** §16.9 override — POST .../phases/:phase/override → the daemon §13.2 verb. */
+    async override(context) {
+      const runId = context.params.runId;
+      const phase = context.params.phase;
+      const formData = await context.request.formData();
+      const parsed = parseSafe(overrideFormSchema, formData);
+      if (!parsed.success) {
+        return renderRunDetail(context, runId, validationError("override", parsed.issues), 400);
+      }
+      try {
+        await controlOverrideGate(runId, phase, parsed.value.gate, parsed.value.reason);
+      } catch (err) {
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("override", err), 400);
+        }
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId);
+        }
+        throw err;
+      }
+      return redirect(routes.runs.show.href({ runId }), 303);
+    },
+
+    /** §16.9 restart phase fresh — POST .../phases/:phase/restart-fresh (no data). */
+    async restart(context) {
+      const runId = context.params.runId;
+      const phase = context.params.phase;
+      try {
+        await controlRestartFresh(runId, phase);
+      } catch (err) {
+        if (isApiError(err)) {
+          return renderRunDetail(context, runId, apiControlError("restart", err), 400);
+        }
+        if (err instanceof DaemonUnreachable) {
+          return renderRunDetail(context, runId);
+        }
+        throw err;
+      }
+      return redirect(routes.runs.show.href({ runId }), 303);
     },
   },
 });
@@ -134,25 +190,38 @@ export default createController(routes.runs.phases, {
 const RAW_TAIL_LINES = 100;
 
 /**
- * Collect the run's §6 #12 spend events (all pages of the §4.3 cursor query).
- * Token totals per phase come from these deltas — the spend endpoint only
- * breaks down USD, not tokens (§13.1).
+ * Collect the run's §6 #12 spend events by sweeping the §4.3 cursor query to
+ * the TRUE tail (polish, T10b): the drill-in token totals are honest for very
+ * long runs (>5000 spend events) instead of silently capping at 10×500. A
+ * hard safety cap (200 pages = 100k events) still bounds pathological runs,
+ * and `truncated` reports when that cap was hit so the card can say so.
  */
-async function collectSpendEvents(runId: string): Promise<EventRow[]> {
+async function collectSpendEvents(
+  runId: string,
+): Promise<{ events: EventRow[]; truncated: boolean }> {
   const out: EventRow[] = [];
   let cursor: number | undefined = undefined;
+  let truncated = false;
   for (let page = 0; page < MAX_EVENT_PAGES; page++) {
     const res = await getRunEvents(runId, { cursor, limit: 500 });
     for (const ev of res.events) {
       if (ev.type === "spend") out.push(ev);
     }
-    if (res.events.length < 500) break;
+    if (res.events.length < 500) {
+      // a short page is the true tail — everything collected, nothing dropped
+      break;
+    }
+    if (page === MAX_EVENT_PAGES - 1) {
+      // the final page was FULL — more events may exist past the safety cap
+      truncated = true;
+    }
     cursor = res.next_cursor;
   }
-  return out;
+  return { events: out, truncated };
 }
 
-const MAX_EVENT_PAGES = 10;
+/** Safety cap on the spend sweep: 200 × 500 = 100k events. */
+const MAX_EVENT_PAGES = 200;
 
 /** Sum the spend-event token deltas for one phase (phase_id filter). */
 function sumPhaseSpendTokens(events: readonly EventRow[], phaseId: string): {
@@ -185,8 +254,8 @@ function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-function emptySpend(): { tokensIn: number; tokensOut: number; cacheRead: number; cacheWrite: number; spendUsd: number; estimatedUsd: number } {
-  return { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, spendUsd: 0, estimatedUsd: 0 };
+function emptySpend(): { tokensIn: number; tokensOut: number; cacheRead: number; cacheWrite: number; spendUsd: number; estimatedUsd: number; truncated: boolean } {
+  return { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, spendUsd: 0, estimatedUsd: 0, truncated: false };
 }
 
 /** A §13 client 404 (run/phase missing) — the drill-in's "missing" case. */

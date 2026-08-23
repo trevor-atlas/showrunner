@@ -16,7 +16,16 @@ import { EventFeed } from "../../ui/public/event-feed.tsx";
  * and `handle.update()` re-renders both — the gantt and the feed are always
  * one snapshot.
  *
- * Read-only: this region never POSTs — the control verbs are T10b's ticket.
+ * Terminal transition (polish, T10b): a run that completes while the page is
+ * open (a run_status → success/failed event arrives through the poll) freezes
+ * the timeline — the gantt's right edge becomes the run_status moment and the
+ * now-cursor disappears (computeGantt derives both from ended_at/status) —
+ * and the poll loop stops (a terminal run emits no more events; the feed is
+ * final). Until then the poll keeps running: after any control action
+ * (§16.9) the loop resumes automatically from the same sliding window.
+ *
+ * Read-only: this region never POSTs — the control verbs are T10b's ticket
+ * and live in the run-detail page's server-rendered forms.
  */
 
 /** The poll cadence (§16.5: 1 s per open run detail page). */
@@ -55,10 +64,12 @@ export const RunLiveRegion = clientEntry(
     let events: FeedEvent[] = [...handle.props.events];
     let cursor = handle.props.cursor;
     let status = handle.props.run.status;
+    let endedAt: string | null = handle.props.run.ended_at;
     let autoScroll = true;
     let hoverPaused = false;
     let feedNode: HTMLElement | null = null;
     let polling = false;
+    let terminal = isTerminalStatus(status);
 
     const poll = async (): Promise<void> => {
       if (polling) return; // a slow round-trip must not stack polls
@@ -81,12 +92,21 @@ export const RunLiveRegion = clientEntry(
         } else {
           cursor = page.next_cursor; // idempotent at the tail (§4.3)
         }
-        // keep the run status live from run_status events — the gantt's
-        // paused amber edge + fill edge track it
+        // keep the run status + timeline live from run_status events — the
+        // gantt's paused amber edge + fill edge track the pause; a TERMINAL
+        // transition (success/failed) freezes the timeline at the run_status
+        // moment, drops the now-cursor, and stops the poll (polish, T10b)
         for (const ev of page.events) {
           if (ev.type === "run_status") {
             const to = (ev.data as { to?: unknown }).to;
-            if (typeof to === "string" && (to === "paused" || to === "running")) status = to;
+            if (typeof to === "string" && isTrackedStatus(to)) {
+              status = to;
+              if (to === "success" || to === "failed") {
+                endedAt = ev.ts;
+                terminal = true;
+                stopPolling();
+              }
+            }
           }
         }
         await handle.update();
@@ -110,8 +130,9 @@ export const RunLiveRegion = clientEntry(
     let timer: ReturnType<typeof setInterval> | null = null;
     // Setup ALSO runs server-side during SSR (clientEntry components render
     // like any other component) — the poll loop is browser-only, so only arm
-    // it when window exists. The abort listener mirrors that.
-    if (typeof window !== "undefined") {
+    // it when window exists AND the run is not already terminal. The abort
+    // listener mirrors that.
+    if (typeof window !== "undefined" && !terminal) {
       timer = setInterval(() => void poll(), POLL_MS);
       handle.signal.addEventListener("abort", () => stopPolling());
     }
@@ -119,7 +140,7 @@ export const RunLiveRegion = clientEntry(
     return () => {
       const { runId, run, phases } = handle.props;
       const now = Date.now();
-      const model = computeGantt(phases, { ...run, status }, events, now);
+      const model = computeGantt(phases, { started_at: run.started_at, ended_at: endedAt, status }, events, now);
 
       return (
         <div mix={regionStyle}>
@@ -151,3 +172,13 @@ const regionStyle = css({
   display: "grid",
   gap: "1.25rem",
 });
+
+/** The statuses the live loop tracks from run_status events. */
+function isTrackedStatus(value: string): boolean {
+  return value === "running" || value === "paused" || value === "success" || value === "failed";
+}
+
+/** A terminal status — the gantt freezes + the poll stops. */
+function isTerminalStatus(value: string): boolean {
+  return value === "success" || value === "failed";
+}
