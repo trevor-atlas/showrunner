@@ -1,7 +1,7 @@
 # Showrunner
 
 An agent orchestration tool: blueprints of phases, each running a configured
-agent against a local pi harness — observed live, corrected in place, and paused
+agent — observed live, corrected in place, and paused
 for humans when success cannot be earned.
 
 - **Observable** — every event lands in SQLite mid-flight; runs are watched, not
