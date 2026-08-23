@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+coverage/
+.turbo/
+
+# env & secrets
+.env
+.env.*
+
+# local run data
+runs/
+*.db
+*.db-wal
+*.db-shm
+
+# misc
+.DS_Store
+*.log
