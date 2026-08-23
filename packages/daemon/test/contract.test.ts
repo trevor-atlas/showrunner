@@ -476,6 +476,61 @@ test("§13.2 control surface: approve + audited gate override + restart-fresh + 
   }
 }, { timeout: 60_000 });
 
+// ── override audit: who — the daemon's default vs a named web client ────────
+
+test("override audit: a request WITHOUT by records cli; with by:\"web\" records web on the gate_overrides row", async () => {
+  const dir = tmpDataDir("contract-override-by");
+  const cwd = scratchCwd("contract-override-by-cwd");
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = startDaemon({ dataDir: dir });
+    const socketPath = daemon.socketPath!;
+
+    // run 1: override WITHOUT by → the daemon's default ("cli") is audited
+    const cliRun = await api(socketPath, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
+    const cliId = (cliRun.json as { run_id: string }).run_id;
+    await waitForStatus(socketPath, cliId, "paused");
+    const cliOver = await api(socketPath, "POST", `/runs/${cliId}/phases/build/override`, {
+      gate: "alwaysFail",
+      reason: "cli audit default",
+    });
+    expect(cliOver.status).toBe(200);
+    await waitForStatus(socketPath, cliId, "success");
+    const cliGates = ((await api(socketPath, "GET", `/runs/${cliId}/phases/build/gates`)).json as {
+      gates: { gate: string; overridden: number; override_by: string | null }[];
+    }).gates;
+    expect(cliGates.find((g) => g.overridden === 1)).toMatchObject({ gate: "alwaysFail", override_by: "cli" });
+    const cliEvents = await runEvents(socketPath, cliId);
+    expect(cliEvents.some((e) => e.type === "human_action" && e.data.action === "override_gate" && e.data.by === "cli")).toBe(true);
+
+    // run 2: override WITH by:"web" → the dashboard's identity is audited
+    const webRun = await api(socketPath, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
+    const webId = (webRun.json as { run_id: string }).run_id;
+    await waitForStatus(socketPath, webId, "paused");
+    const webOver = await api(socketPath, "POST", `/runs/${webId}/phases/build/override`, {
+      gate: "alwaysFail",
+      reason: "dashboard override",
+      by: "web",
+    });
+    expect(webOver.status).toBe(200);
+    await waitForStatus(socketPath, webId, "success");
+    const webGates = ((await api(socketPath, "GET", `/runs/${webId}/phases/build/gates`)).json as {
+      gates: { gate: string; overridden: number; override_by: string | null; override_reason: string | null }[];
+    }).gates;
+    expect(webGates.find((g) => g.overridden === 1)).toMatchObject({
+      gate: "alwaysFail",
+      override_by: "web",
+      override_reason: "dashboard override",
+    });
+    const webEvents = await runEvents(socketPath, webId);
+    expect(webEvents.some((e) => e.type === "human_action" && e.data.action === "override_gate" && e.data.by === "web")).toBe(true);
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, { timeout: 60_000 });
+
 // ── §13.2: session steer, resume guardrails, fail guardrails ────────────────
 
 test("§13.2 session steer delivers between turns; resume and fail answer 409 outside their contract", async () => {

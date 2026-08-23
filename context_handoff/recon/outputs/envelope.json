@@ -1,0 +1,12 @@
+{
+  "summary": "Recon done.",
+  "artifacts": [],
+  "notes_for_next_agent": "Starter handoff.",
+  "findings": [
+    "src/index.ts is the entry point",
+    "no tests exist yet"
+  ],
+  "touched": [
+    "src/index.ts"
+  ]
+}

@@ -106,14 +106,17 @@ export async function controlApprove(runId: string): Promise<ControlResult> {
   return fetchDaemon((client) => client.approve(runId));
 }
 
-/** POST /runs/:id/phases/:phase/override — override a failed gate (audited). */
+/** POST /runs/:id/phases/:phase/override — override a failed gate (audited).
+ * The dashboard audits its overrides as "web" (the daemon defaults to "cli"
+ * only for CLI callers that send no by) — §16.8 the who is the point. */
 export async function controlOverrideGate(
   runId: string,
   phase: string,
   gate: string,
   reason: string,
+  by: string = "web",
 ): Promise<ControlResult> {
-  return fetchDaemon((client) => client.overrideGate(runId, phase, { gate, reason }));
+  return fetchDaemon((client) => client.overrideGate(runId, phase, { gate, reason, by }));
 }
 
 /** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */

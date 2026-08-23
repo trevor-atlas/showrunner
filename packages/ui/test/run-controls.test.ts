@@ -174,6 +174,12 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       // the daemon agrees — the audit trail + terminal state are daemon-side
       const detail = await client.getRun(runId);
       expect(detail.run.status).toBe("success");
+      // dashboard-originated overrides are audited as "web" (not the daemon's
+      // "cli" default) — the gate_overrides row + the feed carry the true who
+      const gates = await client.getPhaseGates(runId, "build");
+      const overridden = gates.gates.find((g) => g.overridden === 1);
+      expect(overridden?.override_by).toBe("web");
+      expect(done.html).toContain("by web");
     } finally {
       await daemon?.close();
       restore();

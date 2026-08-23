@@ -1,0 +1,9 @@
+{
+  "summary": "Shipped.",
+  "artifacts": [],
+  "notes_for_next_agent": "Shipped on a feature branch; PR open.",
+  "outcome": "shipped",
+  "commit_sha": "abc123",
+  "pr_url": "https://example.test/pr/1",
+  "ci_status": "passed"
+}
