@@ -1,0 +1,210 @@
+#!/usr/bin/env bun
+import { resolveDataDir, socketPathFor } from "@showrunner/core";
+import { FIXTURE_NAMES } from "@showrunner/core/test/fixtures";
+
+// cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
+import { installSignalHandlers, startDaemon } from "../../daemon/src/daemon.ts";
+import { getJson, isSocketDown, postJson } from "./client.ts";
+import { ensureDaemon, stopDaemon } from "./daemon-lifecycle.ts";
+import { formatEvent } from "./render.ts";
+import { watchRun } from "./watch.ts";
+
+/**
+ * showrunner — the CLI (submit, list, watch).
+ *
+ *   showrunner daemon                  run the daemon in the foreground
+ *   showrunner run <fixture> [opts]    submit a scripted fixture run (T01a minimal submit)
+ *   showrunner runs                    list runs
+ *   showrunner watch <run_id> [--interval N]
+ *   showrunner stop                    SIGTERM the daemon (removes socket + pidfile)
+ *
+ * Global flags: --data-dir <dir> (env SHOWRUNNER_DATA_DIR is honored everywhere).
+ * The CLI talks only to the daemon's HTTP API over the unix socket (§13).
+ */
+
+interface Flags {
+  dataDir: string | undefined;
+  positionals: string[];
+  rest: Record<string, string | undefined>;
+}
+
+function parseArgs(argv: string[]): Flags {
+  const positionals: string[] = [];
+  const rest: Record<string, string | undefined> = {};
+  let dataDir: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--data-dir") {
+      dataDir = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (a.startsWith("--data-dir=")) {
+      dataDir = a.slice("--data-dir=".length);
+      continue;
+    }
+    const m = a.match(/^--([a-z-]+)(?:=(.*))?$/);
+    if (m) {
+      rest[m[1]!] = m[2] ?? argv[i + 1];
+      if (m[2] === undefined) i++;
+      continue;
+    }
+    positionals.push(a);
+  }
+  return { dataDir, positionals, rest };
+}
+
+function usage(): void {
+  console.log(
+    [
+      "showrunner - agent orchestration, observable by construction",
+      "",
+      "usage:",
+      "  showrunner daemon                        run the daemon in the foreground",
+      "  showrunner run <fixture> [--delay N]     submit a scripted run (fixture: " + FIXTURE_NAMES.join("|") + ")",
+      "  showrunner runs                          list runs",
+      "  showrunner watch <run_id> [--interval N] stream a run's folded events",
+      "  showrunner stop                          stop the daemon",
+      "",
+      "flags: --data-dir <dir>   data directory (default ~/.showrunner, env SHOWRUNNER_DATA_DIR)",
+    ].join("\n"),
+  );
+}
+
+async function cmdRun(flags: Flags): Promise<number> {
+  const fixture = flags.positionals[0];
+  if (!fixture) {
+    console.error("usage: showrunner run <fixture> [--delay N]");
+    return 2;
+  }
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  await ensureDaemon(socketPath, dataDir);
+
+  const body: Record<string, unknown> = { fixture };
+  if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
+  if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
+  if (flags.rest.agent !== undefined) body.agent = flags.rest.agent;
+  if (flags.rest.model !== undefined) body.model = flags.rest.model;
+  if (flags.rest.phase !== undefined) body.phase = flags.rest.phase;
+
+  const res = (await postJson(socketPath, "/runs", body)) as {
+    run_id: string;
+    phase_id: string;
+    agent_session_id: string;
+    fixture: string;
+  };
+  console.log(`run submitted: ${res.run_id}`);
+  console.log(`  fixture: ${res.fixture}  phase: ${res.phase_id}  session: ${res.agent_session_id}`);
+  console.log(`watch it with: showrunner watch ${res.run_id}`);
+  return 0;
+}
+
+async function cmdRuns(flags: Flags): Promise<number> {
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  await ensureDaemon(socketPath, dataDir);
+  const { runs } = (await getJson(socketPath, "/runs")) as {
+    runs: { id: string; blueprint: string; status: string; started_at: string; ended_at: string | null; spend_usd: number; needs_review: number }[];
+  };
+  if (runs.length === 0) {
+    console.log("no runs yet - submit one with: showrunner run happy");
+    return 0;
+  }
+  console.log("id                                   blueprint         status       spend      started");
+  for (const r of runs) {
+    const review = r.needs_review ? " (needs review)" : "";
+    console.log(
+      `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}`,
+    );
+  }
+  return 0;
+}
+
+async function cmdWatch(flags: Flags): Promise<number> {
+  const runId = flags.positionals[0];
+  if (!runId) {
+    console.error("usage: showrunner watch <run_id> [--interval N]");
+    return 2;
+  }
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  await ensureDaemon(socketPath, dataDir);
+
+  // fail fast on an unknown run id
+  try {
+    await getJson(socketPath, `/runs/${runId}`);
+  } catch (err) {
+    if (!isSocketDown(err)) {
+      console.error(`run ${runId}: not found`);
+      return 1;
+    }
+    throw err;
+  }
+
+  await watchRun({
+    runId,
+    socketPath,
+    intervalMs: flags.rest.interval !== undefined ? Number(flags.rest.interval) : 500,
+    onEvent: (e) => console.log(formatEvent(e)),
+  });
+  return 0;
+}
+
+async function cmdDaemon(flags: Flags): Promise<number> {
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  try {
+    const handle = startDaemon({ dataDir });
+    installSignalHandlers(handle);
+    console.log(`showrunner daemon listening on ${handle.socketPath} (pid ${process.pid})`);
+    // keep the process alive; SIGINT/SIGTERM handled inside the daemon module
+    await new Promise<never>(() => {});
+  } catch (err) {
+    console.error(`showrunner daemon: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+  return 0;
+}
+
+async function cmdStop(flags: Flags): Promise<number> {
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  try {
+    await stopDaemon(socketPath, dataDir);
+    console.log("daemon stopped");
+    return 0;
+  } catch (err) {
+    console.error(`showrunner stop: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+}
+
+async function main(argv: string[]): Promise<number> {
+  const flags = parseArgs(argv);
+  const cmd = flags.positionals[0];
+  flags.positionals.shift();
+  switch (cmd) {
+    case "run":
+      return cmdRun(flags);
+    case "runs":
+      return cmdRuns(flags);
+    case "watch":
+      return cmdWatch(flags);
+    case "daemon":
+      return cmdDaemon(flags);
+    case "stop":
+      return cmdStop(flags);
+    case "help":
+    case "-h":
+    case "--help":
+    case undefined:
+      usage();
+      return 0;
+    default:
+      console.error(`unknown command: ${cmd}`);
+      usage();
+      return 2;
+  }
+}
+
+process.exitCode = await main(process.argv.slice(2));

@@ -1,0 +1,15 @@
+{
+  "name": "@showrunner/daemon",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Showrunner daemon: owns SQLite (the write path), the tracer, raw record files, and the local HTTP API.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@showrunner/core": "file:../core"
+  }
+}

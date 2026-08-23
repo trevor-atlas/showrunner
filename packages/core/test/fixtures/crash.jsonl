@@ -1,0 +1,12 @@
+{"type":"agent_start","sessionId":"fake_crash","messageCount":0,"model":"fake-pi"}
+{"type":"turn_start","sessionId":"fake_crash"}
+{"type":"message_start","message":{"id":"c1","role":"user","content":[{"type":"text","text":"Investigate the flaky daemon test."}]}}
+{"type":"message_end","message":{"id":"c1","role":"user","content":[{"type":"text","text":"Investigate the flaky daemon test."}]}}
+{"type":"message_start","message":{"id":"c2","role":"assistant","content":[{"type":"text","text":"Let me check git status first."}]}}
+{"type":"message_update","message":{"id":"c2","role":"assistant","content":[{"type":"text","text":"Let me check git status first."}]},"usage":{"input":250,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":280,"cost":{"total":0.00071}}}
+{"type":"tool_execution_start","toolCallId":"call_c1","toolName":"bash","args":"git status"}
+{"type":"tool_execution_update","toolCallId":"call_c1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"M packages/daemon/src/tracer.ts\n"}]}}
+{"type":"message_start","message":{"id":"c3","role":"assistant","content":[{"type":"text","text":"The tracer looks changed; let me open the test file."}]}}
+{"type":"message_update","message":{"id":"c3","role":"assistant","content":[{"type":"text","text":"The tracer looks changed; let me open the test file."}]},"usage":{"input":600,"output":120,"cacheRead":20,"cacheWrite":0,"totalTokens":740,"cost":{"total":0.00162}}}
+{"type":"tool_execution_start","toolCallId":"call_c2","toolName":"edit","args":{"filePath":"packages/daemon/test/tracer.test.ts","oldString":"","newString":"it('flakes', ...)"}}
+{"type":"tool_execution_update","toolCallId":"call_c2","toolName":"edit","partialResult":{"content":[{"type":"text","text":"Wrote packages/daemon/test/tracer.test.ts\n"}]}}
