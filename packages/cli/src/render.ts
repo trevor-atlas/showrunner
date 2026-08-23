@@ -52,8 +52,10 @@ export function formatEvent(e: EventRow): string {
       const snippet = d.result_snippet ? `\n    └ ${truncate(String(d.result_snippet), 120).split("\n").join("\n      ")}` : "";
       return `${ts} [tool] ${truncate(label, 72)} (${flags.join(", ")}) id=${String(d.tool_call_id)}${snippet}`;
     }
-    case "spend":
-      return `${ts} [spend] ${String(d.phase)} in=${String(d.tokens_in)} out=${String(d.tokens_out)} cache_read=${String(d.cache_read)} cache_write=${String(d.cache_write)} usd=${usd(d.usd as number | null)}`;
+    case "spend": {
+      const est = d.estimated === true ? " (estimated)" : "";
+      return `${ts} [spend] ${String(d.phase)} in=${String(d.tokens_in)} out=${String(d.tokens_out)} cache_read=${String(d.cache_read)} cache_write=${String(d.cache_write)} usd=${usd(d.usd as number | null)}${est}`;
+    }
     case "envelope":
       return `${ts} [envelope] ${String(d.phase)} visit=${String(d.visit)} attempt=${String(d.attempt)} valid=${String(d.valid)}`;
     case "gate_result":

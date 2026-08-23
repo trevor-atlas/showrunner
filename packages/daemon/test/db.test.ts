@@ -16,6 +16,7 @@ import {
   listRuns,
   listTables,
   openDb,
+  sumEstimatedPhaseSpend,
   sumRunSpend,
 } from "../src/index.ts";
 
@@ -187,6 +188,33 @@ test("the cursor contract (§4.3): ordered, page-limited, next_cursor semantics"
     // the exact query text from §4.3 is what runs
     expect(CURSOR_SQL).toBe("SELECT * FROM events WHERE run_id = ? AND rowid > ? ORDER BY rowid LIMIT ?");
     expect(eventCount(db, "r1")).toBe(505);
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("sumEstimatedPhaseSpend splits reported vs estimated spend from spend events (§11.1)", () => {
+  const dir = tmpDataDir("estspend");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    insertRun(db, { id: "r1", blueprint: "b", status: "success", cwd: "/", needs_review: 0, started_at: "t", ended_at: "t" });
+    insertPhase(db, { id: "p1", run_id: "r1", name: "plan", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.005, started_at: "t", ended_at: "t" });
+    insertPhase(db, { id: "p2", run_id: "r1", name: "build", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.0, started_at: "t", ended_at: "t" });
+    const spend = (phaseId: string, data: Record<string, unknown>) =>
+      insertEvent(db, { run_id: "r1", phase_id: phaseId, agent_session_id: null, type: "spend", ts: "t", data });
+    // estimated → counts toward the estimated split
+    spend("p1", { phase: "plan", tokens_in: 1000, tokens_out: 200, cache_read: 0, cache_write: 0, usd: 0.004, estimated: true });
+    // reported → NOT in the estimated split
+    spend("p1", { phase: "plan", tokens_in: 100, tokens_out: 20, cache_read: 0, cache_write: 0, usd: 0.001, estimated: false });
+    // usd null + estimated false → never counted
+    spend("p2", { phase: "build", tokens_in: 50, tokens_out: 10, cache_read: 0, cache_write: 0, usd: null, estimated: false });
+
+    const byPhase = sumEstimatedPhaseSpend(db, "r1");
+    expect(byPhase.get("p1")).toBeCloseTo(0.004); // only the estimated event
+    expect(byPhase.has("p2")).toBe(false);
+    // an unknown run yields an empty map
+    expect(sumEstimatedPhaseSpend(db, "ghost").size).toBe(0);
     db.close();
   } finally {
     cleanupDir(dir);

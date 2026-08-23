@@ -31,6 +31,7 @@ export {
   listTables,
   migrate,
   openDb,
+  sumEstimatedPhaseSpend,
   sumRunSpend,
   updateAgentSession,
   updateEnvelope,
@@ -55,8 +56,28 @@ export type {
 export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "./tracer.ts";
 export type { FoldedEvent, FoldedEventType, TracerOptions, TracerSink } from "./tracer.ts";
 
+// Price roster (§11.1)
+export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, pricesPathFor } from "./roster.ts";
+export type { Roster, RosterEntry } from "./roster.ts";
+
 // Raw records (§10)
 export { RawOutputFile, tailRawFile } from "./rawfile.ts";
+
+// §9 context & handoff filesystem protocol (T05)
+export {
+  handoffDirFor,
+  inputsDirFor,
+  materializeHandoff,
+  outputsDirFor,
+  readAgentMap,
+  readHandoffInputs,
+  recordAcceptedEnvelope,
+  resolveContext,
+  sessionDirNameForCwd,
+  slugFor,
+  writeAgentMap,
+} from "./handoff.ts";
+export type { AgentMapEntry, Handoff } from "./handoff.ts";
 
 // Line framing (§7.1)
 export { LineSplitter } from "./linesplit.ts";
@@ -88,7 +109,6 @@ export {
   resolveContextEntries,
   resolveScriptedSessions,
   runBlueprint,
-  slugFor,
   snapshotBlueprint,
   submitBlueprintRun,
 } from "./runner.ts";
@@ -104,6 +124,28 @@ export type {
 
 // §5.4 run pool
 export { RunPool } from "./pool.ts";
+
+// T04 pause & control surface (§5.3 pause menu, §12 resume, F1 slot hold)
+export {
+  RunControl,
+  effectiveMenu,
+  getControl,
+  getControlByLiveSession,
+  killRunProcesses,
+  reconcileInterruptedRuns,
+  registerControl,
+  resumeInterruptedRun,
+  statelessFailRun,
+  unregisterControl,
+} from "./pause-control.ts";
+export type {
+  ControlAction,
+  ControlState,
+  LiveSessionRef,
+  PauseInfo,
+  PauseKind,
+  RunControlResult,
+} from "./pause-control.ts";
 
 // Driver (T01a minimal submit)
 export {

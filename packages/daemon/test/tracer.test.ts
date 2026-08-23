@@ -24,7 +24,7 @@ function runStream(lines: string[], opts: { exitCode?: number; now?: () => numbe
 
 const ofType = (events: FoldedEvent[], type: string) => events.filter((e) => e.type === type);
 const asTool = (e: FoldedEvent) => e.data as { tool: string; tool_call_id: string; args: unknown; ok: boolean; result_snippet: string; duration_ms: number; truncated?: boolean };
-const asSpend = (e: FoldedEvent) => e.data as { phase: string; tokens_in: number; tokens_out: number; cache_read: number; cache_write: number; usd: number | null };
+const asSpend = (e: FoldedEvent) => e.data as { phase: string; tokens_in: number; tokens_out: number; cache_read: number; cache_write: number; usd: number | null; estimated: boolean };
 
 // ── §7.1 raw capture ─────────────────────────────────────────────────────────
 
@@ -185,12 +185,13 @@ test("usage diffs cumulative snapshots into spend deltas per (phase, visit)", ()
   ]);
   const spends = ofType(events, "spend").map(asSpend);
   expect(spends).toHaveLength(3);
-  expect(spends[0]).toEqual({ phase: "build", tokens_in: 500, tokens_out: 42, cache_read: 0, cache_write: 0, usd: 0.00102 });
+  expect(spends[0]).toEqual({ phase: "build", tokens_in: 500, tokens_out: 42, cache_read: 0, cache_write: 0, usd: 0.00102, estimated: false });
   expect(spends[1]!.tokens_in).toBe(400);
   expect(spends[1]!.tokens_out).toBe(218);
   expect(spends[1]!.cache_read).toBe(100);
   expect(spends[1]!.cache_write).toBe(0);
   expect(spends[1]!.usd).toBeCloseTo(0.00189);
+  expect(spends[1]!.estimated).toBe(false); // reported by pi, not estimated
   expect(spends[2]!.tokens_in).toBe(500);
   expect(spends[2]!.tokens_out).toBe(120);
   expect(spends[2]!.cache_read).toBe(0);
@@ -221,6 +222,96 @@ test("usd is null when pi reports no cost (roster fallback, §11.1)", () => {
   const { events } = runStream([messageUpdate(100, 10)]);
   const s = asSpend(ofType(events, "spend")[0]!);
   expect(s.usd).toBeNull();
+  expect(s.estimated).toBe(false);
+  // tokens are still tracked even when usd is null (§11.1)
+  expect(s.tokens_in).toBe(100);
+  expect(s.tokens_out).toBe(10);
+});
+
+// ── §11.1 roster fallback (the estimate path) ───────────────────────────────
+
+function withRoster(roster: Record<string, { in_per_mtok: number; out_per_mtok: number }>, lines: string[]) {
+  const events: FoldedEvent[] = [];
+  const tracer = new Tracer({
+    phase: "build",
+    visit: 1,
+    agent: "builder",
+    piSessionId: "s1",
+    model: "fake-pi",
+    roster,
+    sink: (e) => events.push(e),
+  });
+  for (const line of lines) tracer.onLine(line);
+  tracer.onEnd({ exitCode: 0 });
+  return { events };
+}
+
+test("roster fallback: absent cost → estimate (tokens × per-mtok), flagged estimated", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [messageUpdate(1000, 200)]);
+  const s = asSpend(ofType(events, "spend")[0]!);
+  expect(s.usd).toBeCloseTo(0.006); // (1000×3 + 200×15) / 1e6
+  expect(s.estimated).toBe(true);
+  expect(s.tokens_in).toBe(1000);
+  expect(s.tokens_out).toBe(200);
+});
+
+test("roster fallback: a reported cost of ZERO is treated as absent → estimate", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [messageUpdate(1000, 200, { cost: 0 })]);
+  const s = asSpend(ofType(events, "spend")[0]!);
+  expect(s.usd).toBeCloseTo(0.006);
+  expect(s.estimated).toBe(true);
+});
+
+test("roster fallback: pi's reported cost always wins — the roster never overrides it", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [messageUpdate(1000, 200, { cost: 0.0042 })]);
+  const s = asSpend(ofType(events, "spend")[0]!);
+  expect(s.usd).toBe(0.0042); // pi's number, not the roster's 0.006
+  expect(s.estimated).toBe(false);
+});
+
+test("roster fallback: missing roster entry → usd null, never fabricated, tokens tracked", () => {
+  const { events } = withRoster({ "other-model": { in_per_mtok: 3, out_per_mtok: 15 } }, [messageUpdate(1000, 200)]);
+  const s = asSpend(ofType(events, "spend")[0]!);
+  expect(s.usd).toBeNull();
+  expect(s.estimated).toBe(false);
+  expect(s.tokens_in).toBe(1000);
+  expect(s.tokens_out).toBe(200);
+});
+
+test("roster fallback: zero reported cost with no roster → usd null, not 0", () => {
+  const { events } = runStream([messageUpdate(1000, 200, { cost: 0 })]);
+  const s = asSpend(ofType(events, "spend")[0]!);
+  expect(s.usd).toBeNull();
+  expect(s.estimated).toBe(false);
+});
+
+test("estimates are diffed per delta, not cumulative (§7.3)", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
+    messageUpdate(1000, 200),
+    messageUpdate(2500, 600), // delta: 1500 in, 400 out
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  expect(spends).toHaveLength(2);
+  expect(spends[0]!.usd).toBeCloseTo(0.006); // 1000×3 + 200×15
+  expect(spends[1]!.usd).toBeCloseTo(0.0105); // 1500×3 + 400×15 = 4500+6000
+  expect(spends[1]!.tokens_in).toBe(1500);
+  expect(spends[1]!.tokens_out).toBe(400);
+  expect(spends.every((s) => s.estimated)).toBe(true);
+});
+
+test("edge case (§7.3): cumulative usage stays zero during streaming, real cost at completion", () => {
+  const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
+    messageUpdate(0, 0, { cost: 0 }), // provider reports zero during streaming
+    messageUpdate(0, 0),
+    messageEnd(500, 100, { cost: 0.001 }), // the completion snapshot has the real numbers
+  ]);
+  const spends = ofType(events, "spend").map(asSpend);
+  // no junk zero deltas: exactly one spend, the completion delta, reported (not estimated)
+  expect(spends).toHaveLength(1);
+  expect(spends[0]!.tokens_in).toBe(500);
+  expect(spends[0]!.tokens_out).toBe(100);
+  expect(spends[0]!.usd).toBe(0.001);
+  expect(spends[0]!.estimated).toBe(false);
 });
 
 test("machinery events are recorded raw but never folded (§7.4)", () => {

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolveDataDir, socketPathFor, dbPathFor } from "@showrunner/core";
 
 import { openDb } from "./db.ts";
+import { reconcileInterruptedRuns } from "./pause-control.ts";
 import { createDaemonServer } from "./server.ts";
 
 /**
@@ -28,7 +29,7 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function startDaemon(opts: { dataDir?: string } = {}): DaemonHandle {
+export function startDaemon(opts: { dataDir?: string; poolSlots?: number } = {}): DaemonHandle {
   const dataDir = opts.dataDir ?? resolveDataDir();
   mkdirSync(dataDir, { recursive: true });
 
@@ -42,8 +43,12 @@ export function startDaemon(opts: { dataDir?: string } = {}): DaemonHandle {
   }
 
   const db = openDb(dbPathFor(dataDir));
+  // §12 crash recovery: runs left `running` by a dead daemon surface as
+  // `interrupted` (orphaned children are killed); a human continue comes via
+  // POST /runs/:id/resume (T04's verb — the relaunch continuation is T07)
+  reconcileInterruptedRuns(db);
   const socketPath = socketPathFor(dataDir);
-  const server = createDaemonServer({ db, dataDir });
+  const server = createDaemonServer({ db, dataDir, poolSlots: opts.poolSlots });
 
   try {
     unlinkSync(socketPath); // stale socket from a dead daemon

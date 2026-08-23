@@ -1,0 +1,47 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "p1", "role": "user", "content": [{ "type": "text", "text": "Plan the work." }] } },
+        { "type": "message_end", "message": { "id": "p1", "role": "user", "content": [{ "type": "text", "text": "Plan the work." }] } },
+        { "type": "message_start", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Rough plan." }] } },
+        { "type": "message_update", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Rough plan." }] }, "usage": { "input": 100, "output": 20, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 120, "cost": { "total": 0.0002 } } },
+        { "type": "turn_end", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Rough plan." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "rough plan",
+        "artifacts": [],
+        "notes_for_next_agent": "revise the plan",
+        "quality": 4
+      }
+    },
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 2, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "p3", "role": "user", "content": [{ "type": "text", "text": "Revise the plan." }] } },
+        { "type": "message_end", "message": { "id": "p3", "role": "user", "content": [{ "type": "text", "text": "Revise the plan." }] } },
+        { "type": "message_start", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan complete." }] } },
+        { "type": "message_update", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan complete." }] }, "usage": { "input": 200, "output": 40, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 240, "cost": { "total": 0.0004 } } },
+        { "type": "turn_end", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan complete." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "plan complete",
+        "artifacts": ["plan.md"],
+        "notes_for_next_agent": "build from plan.md",
+        "quality": 8
+      },
+      "artifacts": {
+        "plan.md": "# Plan\n\n1. Scaffold the handoff module.\n2. Ship green.\n"
+      }
+    }
+  ]
+}

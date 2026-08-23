@@ -3,6 +3,8 @@ import {
   RawToolExecutionStart,
   RawToolExecutionUpdate,
 } from "@showrunner/core";
+import { estimateUsd } from "./roster.ts";
+import type { Roster } from "./roster.ts";
 
 /**
  * The tracer (spec §7): folds a raw pi JSONL stream into the three harness
@@ -20,7 +22,9 @@ import {
  *  - calls still open when the stream dies are flushed as ok:false, truncated:true
  *  - usage is snapshotted at message_update / message_end / turn_end and
  *    diffed per (phase, visit) into spend deltas; usd comes from pi's reported
- *    cost when present, else null (§11.1)
+ *    cost when present, else null — the §11.1 roster fallback turns a
+ *    zero/absent reported cost into a flagged estimate (tokens × per-mtok)
+ *    when the agent's model is on the roster, and null is never fabricated
  *  - agent_end fires once, at stream close, with ok = settled && clean exit
  */
 
@@ -38,6 +42,11 @@ export interface TracerOptions {
   visit: number;
   agent: string; // agent name
   piSessionId: string;
+  /** the agent's model — the roster lookup key for the §11.1 estimate path */
+  model?: string;
+  /** the local price roster (§11.1); when pi reports zero/absent cost, `usd`
+   * becomes an estimate from this roster, flagged `estimated: true` */
+  roster?: Roster;
   /** snippet cap in characters (default 4096, §7.2) */
   snippetCap?: number;
   /** injectable wall clock (ms epoch) for deterministic tests */
@@ -83,6 +92,8 @@ export class Tracer {
       visit: opts.visit,
       agent: opts.agent,
       piSessionId: opts.piSessionId,
+      model: opts.model,
+      roster: opts.roster,
       snippetCap: opts.snippetCap ?? DEFAULT_SNIPPET_CAP,
       now: opts.now ?? (() => Date.now()),
       sink: opts.sink,
@@ -250,16 +261,36 @@ export class Tracer {
             : usage.costTotal,
     };
     this.lastUsage = usage;
+    // §11.1 roster fallback: when the PROVIDER reports no cost for this delta
+    // (zero or absent `cost.total`), `usd` becomes an ESTIMATE from the local
+    // prices.json (tokens × per-mtok), flagged `estimated: true`; a missing
+    // roster entry keeps it null — never fabricated, and tokens are tracked
+    // either way. A delta clamped to 0 by a snapshot REGRESSION does not
+    // count: pi reported a cost, so the reported number wins.
+    let usd = delta.usd;
+    let estimated = false;
+    if (usage.costTotal === null || usage.costTotal === 0) {
+      const est = estimateUsd(this.opts.roster ?? {}, this.opts.model ?? "", {
+        tokens_in: delta.tokens_in,
+        tokens_out: delta.tokens_out,
+      });
+      if (est !== null) {
+        usd = est;
+        estimated = true;
+      } else {
+        usd = null; // reported zero/absent and no roster entry: null, not 0
+      }
+    }
     if (
       delta.tokens_in === 0 &&
       delta.tokens_out === 0 &&
       delta.cache_read === 0 &&
       delta.cache_write === 0 &&
-      (delta.usd === null || delta.usd === 0)
+      (usd === null || usd === 0)
     ) {
       return;
     }
-    this.emit("spend", { phase: this.opts.phase, ...delta });
+    this.emit("spend", { phase: this.opts.phase, ...delta, usd, estimated });
   }
 
   private emit(type: FoldedEventType, data: unknown): void {

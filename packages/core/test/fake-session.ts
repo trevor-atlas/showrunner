@@ -25,8 +25,8 @@
  *
  * Env: FAKE_PI_DELAY_MS  pause between lines (default 0)
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
 const sessionFile = args[0];
@@ -46,6 +46,9 @@ const OUTPUT_DIR: string = outputDir;
 interface ScriptedTurn {
   events: Record<string, unknown>[];
   envelope: Record<string, unknown>;
+  /** extra files the agent "writes" to <output>/<path> (path → content); the
+   * paths listed in envelope.artifacts become the next phase's inputs (§9.3) */
+  artifacts?: Record<string, string>;
 }
 interface ScriptedSession {
   turns: ScriptedTurn[];
@@ -70,6 +73,21 @@ const delayMs = Number(process.env.FAKE_PI_DELAY_MS ?? "0") || 0;
 const turns = script.turns;
 const lastTurnIdx = turns.length - 1;
 const unterminatedFinal = script.unterminatedFinalLine === true;
+
+// v3 session-file mimicry (§8.1, verified): real pi writes its session tree at
+// <sessionDir>/--<sanitized-cwd>--/<ts>_<id>.jsonl (sanitized: leading separator
+// stripped, [/\:] → "-"). FakePi mirrors that when PI_CODING_AGENT_SESSION_DIR
+// is set (tests) so the daemon's "don't fight pi's session tree" contract is
+// provable hermetically — env unset = no session file, no ~/.pi pollution.
+const mirrorSessionFile = ((): string | null => {
+  const root = process.env.PI_CODING_AGENT_SESSION_DIR;
+  if (!root) return null;
+  const safe = `--${process.cwd().replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = join(root, safe, `${ts}_${SESSION_ID}.jsonl`);
+  mkdirSync(dirname(path), { recursive: true });
+  return path;
+})();
 
 // One process, one command at a time; commands received while a turn is
 // streaming are queued (pi's FIFO steering queue, §8.4). Each prompt consumes
@@ -97,8 +115,12 @@ function streamTurn(turn: ScriptedTurn, turnIdx: number): Promise<void> {
       const lastOfScript = turnIdx === lastTurnIdx && lastOfTurn;
       // the envelope must be durable before agent_settled is emitted: the
       // daemon reads the file as soon as it sees the settle line
-      if (lastOfTurn) writeEnvelope(turn.envelope);
+      if (lastOfTurn) {
+        writeEnvelope(turn.envelope);
+        writeArtifacts(turn.artifacts);
+      }
       const line = JSON.stringify({ ...evt, sessionId: SESSION_ID }) + (lastOfScript && unterminatedFinal ? "" : "\n");
+      if (mirrorSessionFile !== null) appendFileSync(mirrorSessionFile, line);
       process.stdout.write(line, () => {
         if (delayMs > 0) setTimeout(pump, delayMs);
         else pump();
@@ -110,6 +132,15 @@ function streamTurn(turn: ScriptedTurn, turnIdx: number): Promise<void> {
 
 function writeEnvelope(envelope: Record<string, unknown>): void {
   writeFileSync(join(OUTPUT_DIR, "envelope.json"), JSON.stringify(envelope, null, 2) + "\n");
+}
+
+function writeArtifacts(artifacts: Record<string, string> | undefined): void {
+  if (!artifacts) return;
+  for (const [rel, content] of Object.entries(artifacts)) {
+    const target = join(OUTPUT_DIR, rel);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  }
 }
 
 // ── command dispatch ─────────────────────────────────────────────────────────

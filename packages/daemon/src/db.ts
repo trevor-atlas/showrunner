@@ -319,6 +319,27 @@ export function sumRunSpend(db: Database, runId: string): number {
   return row?.s ?? 0;
 }
 
+/**
+ * Estimated (roster-derived) spend per phase, summed from the §6 #12 spend
+ * events whose `estimated` flag is set (§11.1) — the show drill-in splits
+ * reported vs estimated dollars. Reported spend never lands here: the flag is
+ * set only when usd came from the local prices.json.
+ */
+export function sumEstimatedPhaseSpend(db: Database, runId: string): Map<string, number> {
+  const rows = q<{ phase_id: string | null; s: number | null }>(
+    db,
+    `SELECT phase_id, SUM(CAST(json_extract(data, '$.usd') AS REAL)) AS s
+     FROM events
+     WHERE run_id = ? AND type = 'spend' AND json_extract(data, '$.estimated') = 1
+     GROUP BY phase_id`,
+  ).all(runId);
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (r.phase_id !== null) out.set(r.phase_id, r.s ?? 0);
+  }
+  return out;
+}
+
 // ── events (the cursor contract, §4.3) ───────────────────────────────────────
 
 export interface NewEvent {
@@ -493,6 +514,17 @@ export function deleteProcess(db: Database, id: string): void {
 
 export function listProcesses(db: Database): ProcessRow[] {
   return q<ProcessRow>(db, "SELECT * FROM processes ORDER BY started_at").all();
+}
+
+/** Every live child recorded for one run (agent-session rows plus any run-kind
+ * rows) — the §8.3 kill target set for fail / daemon-restart recovery. */
+export function listRunProcesses(db: Database, runId: string): ProcessRow[] {
+  return q<ProcessRow>(
+    db,
+    `SELECT p.* FROM processes p
+     LEFT JOIN agent_sessions s ON s.id = p.id
+     WHERE p.id = ? OR s.run_id = ?`,
+  ).all(runId, runId);
 }
 
 /** List the seven user tables (test helper; sqlite_* internals excluded). */

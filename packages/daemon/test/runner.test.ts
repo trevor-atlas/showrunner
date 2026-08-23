@@ -18,11 +18,13 @@ import {
   listGateOverrides,
   listGateResults,
   listPhases,
+  listRuns,
   openDb,
   overrideGateResult,
   recordEnvelopeAcceptance,
   runBlueprint,
   snapshotBlueprint,
+  sumRunSpend,
 } from "../src/index.ts";
 import type { ScriptMap, ScriptedTurn } from "../src/index.ts";
 
@@ -74,6 +76,19 @@ function settledTurn(extra: Record<string, unknown> = {}): ScriptedTurn {
   };
 }
 
+/** A settled turn whose usage reports NO cost — the §11.1 roster estimate path. */
+function settledTurnNoCost(extra: Record<string, unknown> = {}): ScriptedTurn {
+  const t = settledTurn(extra);
+  return {
+    ...t,
+    events: t.events.map((e) =>
+      e.type === "message_update"
+        ? { ...e, usage: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120 } }
+        : e,
+    ),
+  };
+}
+
 function session(turns: ScriptedTurn[]): { turns: ScriptedTurn[] } {
   return { turns };
 }
@@ -94,6 +109,92 @@ function closeEnv(env: { dir: string; db: { close(): void }; cwd: string }): voi
 function eventTypes(db: ReturnType<typeof openDb>, runId: string): string[] {
   return cursorEvents(db, runId, 0, 10_000).map((e) => e.type);
 }
+
+// ── §11.1 spend aggregation (roster estimates flow into phase/run totals) ────
+
+test("spend: roster estimates accumulate into phase spend_usd, phase_end, and the run total", async () => {
+  const env = openEnv("runner-spend");
+  try {
+    // the roster lives in the SCRATCH data dir (F3) — the run's estimates read it
+    writeFileSync(join(env.dir, "prices.json"), JSON.stringify({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }));
+    const blueprint = defineBlueprint({
+      name: "spendy",
+      phases: [
+        { name: "plan", agent: agent("planner"), envelope: QualityEnvelope, gates: [], budget: 3 },
+        { name: "build", agent: agent("builder"), envelope: QualityEnvelope, gates: [], budget: 3 },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: {
+        plan: session([settledTurnNoCost({ quality: 7 })]),
+        build: session([settledTurnNoCost({ quality: 8 })]),
+      },
+    });
+    const result = await run.done;
+    expect(result.status).toBe("success");
+
+    // each turn's usage (100 in, 20 out) is estimated: (100×3 + 20×15)/1e6 = $0.0006
+    const perTurn = 0.0006;
+    const phases = listPhases(env.db, run.run_id);
+    expect(phases.map((p) => p.spend_usd)).toEqual([perTurn, perTurn]);
+
+    // run total: sumRunSpend (phases) and the runs-list aggregate agree
+    expect(sumRunSpend(env.db, run.run_id)).toBeCloseTo(2 * perTurn);
+    expect(listRuns(env.db)[0]!.spend_usd).toBeCloseTo(2 * perTurn);
+
+    // the feed carries one spend event per turn, flagged estimated, tokens tracked
+    const spends = cursorEvents(env.db, run.run_id, 0, 10_000).filter((e) => e.type === "spend");
+    expect(spends).toHaveLength(2);
+    for (const s of spends) {
+      expect((s.data as { estimated: boolean }).estimated).toBe(true);
+      expect((s.data as { usd: number | null }).usd).toBeCloseTo(perTurn);
+      expect((s.data as { tokens_in: number }).tokens_in).toBe(100);
+      expect((s.data as { tokens_out: number }).tokens_out).toBe(20);
+    }
+
+    // phase_end carries the accumulated spend_usd per phase (§6 #4)
+    const phaseEnds = cursorEvents(env.db, run.run_id, 0, 10_000).filter((e) => e.type === "phase_end");
+    expect(phaseEnds).toHaveLength(2);
+    for (const pe of phaseEnds) {
+      expect((pe.data as { spend_usd: number }).spend_usd).toBeCloseTo(perTurn);
+    }
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("spend: reported cost still flows through the loop unflagged; the roster never overrides it", async () => {
+  const env = openEnv("runner-spend-report");
+  try {
+    // the roster is present but pi reports cost — pi's number wins (§11.1)
+    writeFileSync(join(env.dir, "prices.json"), JSON.stringify({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }));
+    const blueprint = defineBlueprint({
+      name: "reported",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [], budget: 3 }],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn({ quality: 9 })]) }, // usage carries cost 0.0002
+    });
+    await run.done;
+
+    const spend = cursorEvents(env.db, run.run_id, 0, 10_000).find((e) => e.type === "spend")!.data as {
+      usd: number | null;
+      estimated: boolean;
+    };
+    expect(spend.usd).toBe(0.0002); // reported, not the roster's 0.0006
+    expect(spend.estimated).toBe(false);
+
+    // the show-side split: total is the reported number
+    expect(listPhases(env.db, run.run_id)[0]!.spend_usd).toBeCloseTo(0.0002);
+    expect(sumRunSpend(env.db, run.run_id)).toBeCloseTo(0.0002);
+  } finally {
+    closeEnv(env);
+  }
+});
 
 // ── multi-phase success ──────────────────────────────────────────────────────
 

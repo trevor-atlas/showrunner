@@ -122,6 +122,10 @@ export const SpendData = z.object({
   cache_write: z.number().int().nonnegative(),
   /** dollars from pi's reported cost when present; null otherwise (§11.1) */
   usd: z.number().nullable(),
+  /** true when `usd` is an ESTIMATE from the local price roster (§11.1) — the
+   * numbers are pi's, not ours: the roster only fills gaps, and the UI shows
+   * estimated vs reported spend distinctly. False for reported or null usd. */
+  estimated: z.boolean(),
 });
 
 /** Inferred data payload types, for consumers that carry them around. */

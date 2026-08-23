@@ -27,6 +27,7 @@ import {
 import { LineSplitter } from "./linesplit.ts";
 import { EventSink } from "./queue.ts";
 import { RawOutputFile } from "./rawfile.ts";
+import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 
 /**
@@ -147,6 +148,8 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     phase,
     visit,
     agent,
+    model,
+    roster: loadRoster(dataDir),
     piSessionId,
     sink: (evt) => emit(evt.type as Parameters<EventSink["push"]>[0], evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
     rawAppend: (line, final) => rawFile.append(line, final),

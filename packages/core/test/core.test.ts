@@ -179,7 +179,8 @@ test("parseEventData validates the twelve event shapes against §6", () => {
     ["gate_result", { gate: "testsPass", pass: true, violations: [] }],
     ["correction", { phase: "build", visit: 1, reason: "invalid envelope", message: "return valid JSON" }],
     ["human_action", { action: "steer", detail: "check the tests" }],
-    ["spend", { phase: "build", tokens_in: 100, tokens_out: 20, cache_read: 0, cache_write: 0, usd: 0.002 }],
+    ["spend", { phase: "build", tokens_in: 100, tokens_out: 20, cache_read: 0, cache_write: 0, usd: 0.002, estimated: false }],
+    ["spend", { phase: "build", tokens_in: 100, tokens_out: 20, cache_read: 0, cache_write: 0, usd: 0.0011, estimated: true }],
   ] as const;
   for (const [type, data] of cases) {
     expect(() => parseEventData(type as never, data)).not.toThrow();
@@ -189,6 +190,10 @@ test("parseEventData validates the twelve event shapes against §6", () => {
 test("parseEventData rejects malformed event data", () => {
   expect(() => parseEventData("tool_call", { tool: "bash" })).toThrow();
   expect(() => parseEventData("spend", { phase: "build", usd: "not a number" })).toThrow();
+  // every spend event must state its provenance (§11.1): estimated is required
+  expect(() =>
+    parseEventData("spend", { phase: "build", tokens_in: 1, tokens_out: 1, cache_read: 0, cache_write: 0, usd: null }),
+  ).toThrow();
 });
 
 // ── §4.1 data dir resolution ─────────────────────────────────────────────────

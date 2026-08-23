@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Database } from "bun:sqlite";
@@ -23,7 +23,18 @@ import type {
 import { runDirFor } from "@showrunner/core";
 
 import {
+  materializeHandoff,
+  readHandoffInputs,
+  recordAcceptedEnvelope,
+  resolveContext,
+  slugFor,
+  writeAgentMap,
+} from "./handoff.ts";
+import type { Handoff } from "./handoff.ts";
+
+import {
   deleteProcess,
+  getEnvelope,
   insertAgentSession,
   insertPhase,
   insertProcess,
@@ -33,11 +44,15 @@ import {
   updatePhase,
   updateRun,
 } from "./db.ts";
+import { registerControl, unregisterControl, RunControl } from "./pause-control.ts";
+import type { ControlAction, PauseInfo } from "./pause-control.ts";
 import { MAX_CAPTURED_STDERR, sessionIdFor } from "./driver.ts";
 import { gateName, runEnvelopeStage } from "./envelope-runner.ts";
 import { EventSink } from "./queue.ts";
 import type { EventIds } from "./queue.ts";
 import { RawOutputFile } from "./rawfile.ts";
+import { loadRoster } from "./roster.ts";
+import type { Roster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 import {
   FIRST_PROMPT_ACK_TIMEOUT_MS,
@@ -59,11 +74,11 @@ import type { RpcCommand, RpcResponse, SessionDriver } from "./pi/index.ts";
  * (one message naming exactly what was wrong) against the phase's budget
  * (default 3); exhaustion routes through `on_fail` (new visit) or pauses.
  *
- * The envelope/gate stage lives in envelope-runner.ts (T03's seam). The
- * full §9 context/handoff protocol is T05 — this loop writes only
- * context_handoff/<phase>/inputs/envelope.json (the predecessor's accepted
- * envelope). Hooks (§14) run in-process with a shell() helper. The §5.4 pool
- * is server-side (pool.ts).
+ * The envelope/gate stage lives in envelope-runner.ts (T03's seam); the §9
+ * context/handoff protocol lives in handoff.ts (T05) — this loop calls
+ * materializeHandoff at visit start and recordAcceptedEnvelope on acceptance.
+ * Hooks (§14) run in-process with a shell() helper. The §5.4 pool is
+ * server-side (pool.ts).
  */
 
 export const DEFAULT_MAX_VISITS = 3;
@@ -76,6 +91,9 @@ export interface ScriptedTurn {
   events: Record<string, unknown>[];
   /** the envelope.json the agent "writes" at the end of this turn */
   envelope: Record<string, unknown>;
+  /** extra files the agent "writes" into outputs/ (path → content) — the
+   * paths listed in envelope.artifacts become the next phase's inputs (§9.3) */
+  artifacts?: Record<string, string>;
 }
 
 export interface ScriptedSession {
@@ -97,7 +115,11 @@ export interface RunResult {
 
 export interface BlueprintRun {
   run_id: string;
+  /** resolves at the first stable state — a pause counts (T01b compat) */
   done: Promise<RunResult>;
+  /** resolves only at a TERMINAL state (success|failed) — the F1 slot release
+   * (§5.4: a paused run keeps its pool slot, cheap — no pi process alive) */
+  terminal: Promise<RunResult>;
 }
 
 export interface RunBlueprintOptions {
@@ -122,11 +144,6 @@ export interface PreparedRun {
   moduleDir: string | null;
   maxVisits?: number;
   delayMs?: number;
-}
-
-/** Sanitize a phase name into a URL-safe slug for context_handoff/ (§9.1). */
-export function slugFor(name: string): string {
-  return name.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
 // ── blueprint module loading + validation (§3.5, §13.3) ──────────────────────
@@ -189,7 +206,13 @@ export async function prepareBlueprintRun(
   dataDir: string,
   opts: { modulePath: string; cwd?: string; maxVisits?: number; delayMs?: number },
 ): Promise<PreparedRun> {
-  const modulePath = isAbsolute(opts.modulePath) ? opts.modulePath : join(process.cwd(), opts.modulePath);  const blueprint = await loadBlueprintModule(modulePath);
+  const modulePath = isAbsolute(opts.modulePath) ? opts.modulePath : join(process.cwd(), opts.modulePath);
+  // fail fast on a malformed prices.json (§11.1): a broken roster is a config
+  // error — surface it at submit (a 400), not as a run stuck mid-drive. The
+  // roster itself is re-read once per run in initState (the §13.3 snapshot
+  // doctrine: submit-time values govern the run).
+  loadRoster(dataDir);
+  const blueprint = await loadBlueprintModule(modulePath);
   const moduleDir = dirname(modulePath);
   const scripts = resolveScriptedSessions(blueprint, join(moduleDir, FAKE_SESSION_DIR));
   const cwd = opts.cwd ?? process.cwd();
@@ -223,8 +246,12 @@ interface LoopState extends InitOptions {
   phaseIds: Map<string, string>;
   phaseVisits: Map<string, number>;
   phaseSpend: Map<string, number>;
+  /** the §11.1 price roster from {data_dir}/prices.json — the estimate path */
+  roster: Roster;
   rawFile: RawOutputFile;
   sink: EventSink;
+  /** the pause & control surface (T04) — pauses suspend here, verbs dispatch here */
+  control: RunControl;
   emit: (type: EventType, data: unknown, ids?: EventIds) => void;
 }
 
@@ -282,7 +309,17 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
   }
   const phaseVisits = new Map<string, number>();
   const phaseSpend = new Map<string, number>();
+  // §11.1: the price roster is loaded once per run (a broken prices.json is a
+  // config error and throws here — before any run rows are driven to a state)
+  const roster = loadRoster(dataDir);
   const rawFile = new RawOutputFile(join(runDir, "raw_output.jsonl"));
+  // T04: the pause & control surface — one handle per in-flight run (running
+  // or paused). Its emit forwards to state.emit, set below (call-time lookup).
+  const control = new RunControl({
+    runId,
+    db,
+    emit: (type, data, ids) => state.emit(type, data, ids),
+  });
   const state: LoopState = {
     ...opts,
     db,
@@ -292,8 +329,10 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
     phaseIds,
     phaseVisits,
     phaseSpend,
+    roster,
     rawFile,
     sink,
+    control,
     emit: () => {},
   };
   state.emit = (type: EventType, data: unknown, ids: EventIds = {}): void => {
@@ -308,6 +347,7 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
     }
     sink.push(type, data, ids);
   };
+  registerControl(control);
   return state;
 }
 
@@ -357,7 +397,7 @@ export function snapshotBlueprint(
 
 type VisitOutcome =
   | { kind: "success"; envelope: Envelope; raw: string; corrections: number }
-  | { kind: "failed"; reason: "budget_exhausted"; corrections: number }
+  | { kind: "failed"; reason: "budget_exhausted"; corrections: number; lastEnvelopeId?: string }
   | { kind: "blocked"; reason: string; corrections: number }
   | { kind: "hook_failed"; reason: string; corrections: number }
   | { kind: "crash"; reason: string; corrections: number };
@@ -366,7 +406,7 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
   const bp = state.blueprint;
   const indexByName = new Map(bp.phases.map((p, i) => [p.name, i]));
   let pending: string | null = bp.phases[0]?.name ?? null;
-  let handoff: { envelope: Envelope; raw: string } | null = null;
+  let handoff: Handoff | null = null;
 
   while (pending !== null) {
     const phase = bp.phases.find((p) => p.name === pending);
@@ -374,70 +414,153 @@ async function driveLoop(state: LoopState): Promise<RunResult> {
       return finalizeRun(state, "failed", true, `internal error: unknown phase "${pending}"`);
     }
 
-    // 1. require_approval? (§5.2) — T04 owns the approve action
-    if (phase.require_approval) {
-      return finalizeRun(state, "paused", false, `approval required before phase "${phase.name}"`);
-    }
+    // per-phase visit loop (T04): a human restart-fresh re-enters it with a new visit
+    let phaseApproved = false; // §5.2 step 1 — one approval per phase entry
+    let restarted = false; // a human restart bypasses the visit guard for this phase
 
-    // 2. materialize predecessor handoff (minimal §9: envelope.json only)
-    materializeInputs(state, phase.name, handoff);
-
-    // 3. visit guard (§5.2, §19): visits >= max_visits → pause
-    const currentVisits = state.phaseVisits.get(phase.name) ?? 0;
-    if (currentVisits >= state.maxVisits) {
-      return finalizeRun(
-        state,
-        "paused",
-        false,
-        `max_visits (${state.maxVisits}) reached for phase "${phase.name}"`,
-      );
-    }
-    const visit = currentVisits + 1;
-
-    const result = await driveVisit(state, phase, visit, handoff);
-
-    if (result.kind === "success") {
-      const ended = await endPhase(state, phase, "success", visit, result.corrections);
-      if (ended.hookError) {
-        return finalizeRun(state, "paused", false, `phase hook error in "${phase.name}": ${ended.hookError}`);
+    for (;;) {
+      if (abortCheck(state) === "fail") {
+        // a mid-visit human fail with no pause waiter — not a crash
+        return finalizeRun(state, "failed", false, "failed by human");
       }
-      handoff = { envelope: result.envelope, raw: result.raw };
-      // §10: envelope.json is the last accepted envelope, verbatim
-      writeFileSync(join(state.runDir, "envelope.json"), result.raw);
-      const idx = indexByName.get(phase.name)!;
-      pending = idx + 1 < bp.phases.length ? bp.phases[idx + 1]!.name : null;
-      continue;
-    }
 
-    if (result.kind === "blocked") {
-      // §3.2: never routed through on_fail; the phase stays in_progress on the human
-      return finalizeRun(state, "paused", false, `blocked in phase "${phase.name}": ${result.reason}`);
-    }
+      // 1. require_approval? (§5.2 step 1) — pause before spawn; approve → spawn
+      if (phase.require_approval && !phaseApproved) {
+        const action = await pauseAt(state, {
+          kind: "approval",
+          phase: phase.name,
+          reason: `approval required before phase "${phase.name}"`,
+        });
+        if (action.kind === "fail") {
+          return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+        }
+        // approve or steer: the visit proceeds (a steer was queued on the
+        // control — delivered on the next continuation, T07)
+        resumeFromPause(state, action.kind === "approve" ? "approved" : "steered");
+        phaseApproved = true;
+      }
 
-    if (result.kind === "hook_failed") {
-      const ended = await endPhase(state, phase, "failed", visit, result.corrections);
-      void ended;
-      return finalizeRun(state, "paused", false, `phase hook error in "${phase.name}": ${result.reason}`);
-    }
+      // 2. materialize the predecessor handoff (§9.3: envelope + artifacts)
+      materializeInputs(state, phase.name, handoff);
 
-    if (result.kind === "failed") {
-      // budget exhausted (§5.2): on_fail routes a failed phase, else pause
-      await endPhase(state, phase, "failed", visit, result.corrections);
-      if (phase.on_fail) {
-        pending = phase.on_fail.to;
+      // 3. visit guard (§5.2 step 3, §19): visits >= max_visits → pause
+      const currentVisits = state.phaseVisits.get(phase.name) ?? 0;
+      if (!restarted && currentVisits >= state.maxVisits) {
+        const action = await pauseAt(state, {
+          kind: "guard_exhausted",
+          phase: phase.name,
+          reason: `max_visits (${state.maxVisits}) reached for phase "${phase.name}"`,
+        });
+        const d = menuDirective(state, action);
+        if (d.directive === "fail") {
+          return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+        }
+        restarted = true;
         continue;
       }
-      return finalizeRun(
-        state,
-        "paused",
-        false,
-        `correction budget exhausted in phase "${phase.name}" (${result.corrections}/${phase.budget ?? DEFAULT_BUDGET})`,
-      );
-    }
+      const visit = currentVisits + 1;
 
-    // crash: stream died before agent_settled (§8.3) — needs_review for a human
-    await endPhase(state, phase, "failed", visit, result.corrections);
-    return finalizeRun(state, "failed", true, result.reason);
+      const result = await driveVisit(state, phase, visit, handoff);
+
+      if (result.kind === "success") {
+        const ended = await endPhase(state, phase, "success", visit, result.corrections);
+        if (ended.hookError) {
+          const action = await pauseAt(state, {
+            kind: "hook_failed",
+            phase: phase.name,
+            reason: `phase hook error in "${phase.name}": ${ended.hookError}`,
+          });
+          const d = menuDirective(state, action);
+          if (d.directive === "fail") {
+            return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+          }
+          restarted = true;
+          continue;
+        }
+        handoff = { envelope: result.envelope, raw: result.raw, fromPhase: phase.name };
+        // §10: the accepted envelope lands in the run's raw record, verbatim
+        recordAcceptedEnvelope(state.runDir, result.raw);
+        const idx = indexByName.get(phase.name)!;
+        pending = idx + 1 < bp.phases.length ? bp.phases[idx + 1]!.name : null;
+        break;
+      }
+
+      if (result.kind === "blocked") {
+        // §3.2: never routed through on_fail; the phase stays in_progress on the human
+        const action = await pauseAt(state, {
+          kind: "blocked",
+          phase: phase.name,
+          reason: `blocked in phase "${phase.name}": ${result.reason}`,
+        });
+        const d = menuDirective(state, action);
+        if (d.directive === "fail") {
+          return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+        }
+        restarted = true;
+        continue;
+      }
+
+      if (result.kind === "hook_failed") {
+        await endPhase(state, phase, "failed", visit, result.corrections);
+        const action = await pauseAt(state, {
+          kind: "hook_failed",
+          phase: phase.name,
+          reason: `phase hook error in "${phase.name}": ${result.reason}`,
+        });
+        const d = menuDirective(state, action);
+        if (d.directive === "fail") {
+          return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+        }
+        restarted = true;
+        continue;
+      }
+
+      if (result.kind === "failed") {
+        // budget exhausted (§5.2): on_fail routes a failed phase, else the human menu
+        await endPhase(state, phase, "failed", visit, result.corrections);
+        if (phase.on_fail) {
+          pending = phase.on_fail.to;
+          break;
+        }
+        const action = await pauseAt(state, budgetPauseInfo(state, phase, result));
+        if (action.kind === "fail") {
+          return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+        }
+        if (action.kind === "restart_fresh" || action.kind === "steer") {
+          const d = menuDirective(state, action);
+          void d;
+          restarted = true;
+          continue;
+        }
+        if (action.kind === "override") {
+          // T03's dispatch already overrode the failed gates and recorded the
+          // acceptance (§6 #8) — the envelope becomes the phase's accepted handoff
+          if (!action.envelope || action.raw === null || action.raw === undefined) {
+            return finalizeRun(state, "failed", true, "override continuation lost the envelope", "paused");
+          }
+          resumeFromPause(state, "gate overridden");
+          handoff = { envelope: action.envelope, raw: action.raw, fromPhase: phase.name };
+          recordAcceptedEnvelope(state.runDir, action.raw);
+          markPhaseSuccess(state, phase, visit, result.corrections);
+          const idx = indexByName.get(phase.name)!;
+          pending = idx + 1 < bp.phases.length ? bp.phases[idx + 1]!.name : null;
+          break;
+        }
+      }
+
+      if (result.kind === "crash") {
+        // stream died before agent_settled (§8.3): needs_review for a human
+        await endPhase(state, phase, "failed", visit, result.corrections);
+        if (abortCheck(state) === "fail") {
+          // a mid-visit human fail (the control stopped the driver) — not a crash
+          return finalizeRun(state, "failed", false, "failed by human");
+        }
+        return finalizeRun(state, "failed", true, result.reason);
+      }
+
+      // unreachable for valid outcomes — defensive, never spin the visit loop
+      return finalizeRun(state, "failed", true, "internal error: unhandled visit outcome");
+    }
   }
 
   return finalizeRun(state, "success", false);
@@ -448,7 +571,7 @@ async function driveVisit(
   state: LoopState,
   phase: BlueprintPhase,
   visit: number,
-  handoff: { envelope: Envelope; raw: string } | null,
+  handoff: Handoff | null,
 ): Promise<VisitOutcome> {
   const db = state.db;
   const phaseId = state.phaseIds.get(phase.name)!;
@@ -487,6 +610,8 @@ async function driveVisit(
     phase: phase.name,
     visit,
     agent: phase.agent.name,
+    model: phase.agent.model,
+    roster: state.roster,
     piSessionId,
     sink: (evt) => ctxEmit(state, evt.type, evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
     rawAppend: (line, final) => state.rawFile.append(line, final),
@@ -549,8 +674,11 @@ async function driveVisit(
     ended_at: null,
   });
   insertProcess(db, { id: agentSessionId, pid, kind: "agent", started_at: now() });
-  writeAgentMap(state, phase.name, { pi_session_id: piSessionId, pid, visit, model: phase.agent.model });
+  writeAgentMap(state.runDir, phase.name, { pi_session_id: piSessionId, pid, visit, model: phase.agent.model });
   ctxEmit(state, "agent_start", { agent: phase.agent.name, pi_session_id: piSessionId, pid, model: phase.agent.model }, { phase_id: phaseId, agent_session_id: agentSessionId });
+  // T04: the live session is reachable through the control surface — steer
+  // writes the RPC steer to THIS driver (§8.4), fail stops it (§8.3)
+  state.control.setLiveSession({ driver, piSessionId, agentSessionId });
 
   // stderr is captured per run by the driver (§8.3) and written to stderr.log
   // on visit end — same convention T01a/T01b used, same byte shape downstream.
@@ -612,7 +740,13 @@ async function driveVisit(
       const message =
         stage.kind === "invalid" ? stage.error : `Gate violations: ${stage.violations.join("; ")}`;
       if (corrections >= budget) {
-        outcome = { kind: "failed", reason: "budget_exhausted", corrections };
+        outcome = {
+          kind: "failed",
+          reason: "budget_exhausted",
+          corrections,
+          // a rejected-by-gates last attempt is the override target (§5.3)
+          lastEnvelopeId: stage.kind === "violations" ? stage.envelopeId : undefined,
+        };
         break;
       }
       corrections += 1;
@@ -638,6 +772,7 @@ async function driveVisit(
   tracer.onEnd({ exitCode: driver.exitCode }, { settled: settleCount > 0 });
   updateAgentSession(db, agentSessionId, { ended_at: now() });
   deleteProcess(db, agentSessionId);
+  state.control.setLiveSession(null);
   if (driver.stderr.length > 0) {
     writeFileSync(join(state.runDir, "stderr.log"), driver.stderr, { flag: "a" });
   }
@@ -670,8 +805,14 @@ async function endPhase(
   return { hookError };
 }
 
-async function finalizeRun(state: LoopState, status: RunStatus, needsReview: boolean, reason?: string): Promise<RunResult> {
-  ctxEmit(state, "run_status", { from: "running", to: status, reason }, { phase_id: null, agent_session_id: null });
+async function finalizeRun(
+  state: LoopState,
+  status: RunStatus,
+  needsReview: boolean,
+  reason?: string,
+  from: RunStatus = "running",
+): Promise<RunResult> {
+  ctxEmit(state, "run_status", { from, to: status, reason }, { phase_id: null, agent_session_id: null });
   updateRun(state.db, state.runId, {
     status,
     ended_at: status === "success" || status === "failed" ? state.now() : undefined,
@@ -682,46 +823,100 @@ async function finalizeRun(state: LoopState, status: RunStatus, needsReview: boo
   return { status, needs_review: needsReview };
 }
 
-// ── context & handoff (§9 minimal, §8.2 prompt) ──────────────────────────────
+// ── the pause layer (T04, spec §5.3) ─────────────────────────────────────────
 
-/** Minimal §9 materialization (T05 owns the full protocol): write the
- * predecessor's accepted envelope.json into context_handoff/<phase>/inputs/.
- * The first phase has no predecessor.
- */
-export function materializeInputs(state: LoopState, phaseName: string, handoff: { envelope: Envelope; raw: string } | null): void {
-  if (!handoff) return;
-  const inputsDir = join(state.cwd, "context_handoff", slugFor(phaseName), "inputs");
-  mkdirSync(inputsDir, { recursive: true });
-  writeFileSync(join(inputsDir, "envelope.json"), handoff.raw);
+/** Persist + surface a pause (§5.1): run_status + row, then suspend the loop on
+ * the run's control. `done` resolves here (a paused run is a stable state,
+ * T01b compat); the run KEEPS its pool slot (F1) — the pool releases on
+ * `terminal`, which stays pending until the run reaches a terminal state. */
+async function pauseAt(state: LoopState, pause: PauseInfo): Promise<ControlAction> {
+  state.control.setPause(pause);
+  ctxEmit(state, "run_status", { from: "running", to: "paused", reason: pause.reason }, { phase_id: null, agent_session_id: null });
+  updateRun(state.db, state.runId, { status: "paused" }); // ended_at stays null — resumable
+  await state.sink.flush();
+  state.control.markPaused({ status: "paused", needs_review: false });
+  return state.control.waitForAction();
 }
 
-/** Resolve context entries (§9.2): read files in, else literal. Exact paths only. */
-export function resolveContextEntries(state: LoopState, phase: BlueprintPhase): string[] {
-  const entries = [...phase.agent.context, ...(phase.context ?? [])];
-  const out: string[] = [];
-  for (const entry of entries) {
-    const file = resolveContextFile(state, entry);
-    if (file !== null) out.push(readFileSync(file, "utf8"));
-    else out.push(entry);
-  }
-  return out;
+/** The run leaves a pause: run_status paused → running, the row back to running. */
+function resumeFromPause(state: LoopState, reason: string): void {
+  ctxEmit(state, "run_status", { from: "paused", to: "running", reason }, { phase_id: null, agent_session_id: null });
+  updateRun(state.db, state.runId, { status: "running" });
 }
 
-function resolveContextFile(state: LoopState, entry: string): string | null {
-  const candidates: string[] = [];
-  if (isAbsolute(entry)) candidates.push(entry);
-  else {
-    candidates.push(join(state.cwd, entry));
-    if (state.moduleDir) candidates.push(join(state.moduleDir, entry));
-  }
-  for (const c of candidates) {
-    try {
-      if (existsSync(c) && statSync(c).isFile()) return c;
-    } catch {
-      // keep walking
+/** The shared §5.3 continuation for steer / restart-fresh: re-drive the phase
+ * (steer queues its message on the control — delivered on the next
+ * continuation, T07; restart-fresh makes a NEW visit/session). */
+function menuDirective(state: LoopState, action: ControlAction): { directive: "fail" | "redrive" } {
+  if (action.kind === "fail") return { directive: "fail" };
+  resumeFromPause(state, action.kind === "restart_fresh" ? "phase restarted fresh" : "steered");
+  return { directive: "redrive" };
+}
+
+/** A phase whose rejected envelope was approved by override records success
+ * (the onPhaseEnd hook already ran on the failed end — no second hook). */
+function markPhaseSuccess(state: LoopState, phase: BlueprintPhase, visit: number, corrections: number): void {
+  ctxEmit(state, "phase_end", { phase: phase.name, status: "success", visits: visit, corrections, spend_usd: state.phaseSpend.get(phase.name) ?? 0 }, { phase_id: state.phaseIds.get(phase.name)! });
+  updatePhase(state.db, state.phaseIds.get(phase.name)!, {
+    status: "success",
+    ended_at: state.now(),
+    spend_usd: state.phaseSpend.get(phase.name) ?? 0,
+  });
+}
+
+/** The budget-exhaustion pause info: the last rejected envelope (gate
+ * violations) becomes the override target; an invalid last attempt has no
+ * failed gates, so the menu drops override. */
+function budgetPauseInfo(
+  state: LoopState,
+  phase: BlueprintPhase,
+  result: Extract<VisitOutcome, { kind: "failed" }>,
+): PauseInfo {
+  const info: PauseInfo = {
+    kind: "budget_exhausted",
+    phase: phase.name,
+    reason: `correction budget exhausted in phase "${phase.name}" (${result.corrections}/${phase.budget ?? DEFAULT_BUDGET})`,
+  };
+  if (result.lastEnvelopeId) {
+    const row = getEnvelope(state.db, result.lastEnvelopeId);
+    if (row && row.valid === 1) {
+      info.envelopeId = result.lastEnvelopeId;
+      info.envelopeRaw = row.json;
+      try {
+        info.envelope = JSON.parse(row.json) as Envelope;
+      } catch {
+        // the row parsed at acceptance; a parse failure keeps override off
+      }
+      const failed = state.db
+        .query<{ id: string }, [string]>("SELECT id FROM gate_results WHERE envelope_id = ? AND pass = 0")
+        .all(result.lastEnvelopeId)
+        .map((r) => r.id);
+      if (failed.length > 0) info.gateResultIds = failed;
     }
   }
-  return null;
+  return info;
+}
+
+/** A mid-visit human abort (fail) the loop should honor — checked at visit
+ * boundaries and when a stream dies (the control stopped the driver). */
+function abortCheck(state: LoopState): "fail" | null {
+  return state.control.takeAbort();
+}
+
+// ── context & handoff (§9 full protocol — the implementation lives in handoff.ts) ──
+
+/** §9.3 materialization (handoff.ts): the predecessor's accepted envelope.json
+ * and EVERY file it listed in `artifacts` land in context_handoff/<phase>/inputs/
+ * — the zero-friction handoff. The first phase has no predecessor.
+ */
+export function materializeInputs(state: LoopState, phaseName: string, handoff: Handoff | null): void {
+  materializeHandoff(state.cwd, phaseName, handoff);
+}
+
+/** Resolve context entries (§9.2): walk agent defaults then phase additions;
+ * readable files inline, everything else stays literal (handoff.ts). */
+export function resolveContextEntries(state: LoopState, phase: BlueprintPhase): string[] {
+  return resolveContext(state.cwd, state.moduleDir, [...phase.agent.context, ...(phase.context ?? [])]);
 }
 
 function ctxEmit(state: LoopState, type: EventType, data: unknown, ids?: EventIds): void {
@@ -732,7 +927,7 @@ function ctxEmit(state: LoopState, type: EventType, data: unknown, ids?: EventId
 export function composePrompt(
   state: LoopState,
   phase: BlueprintPhase,
-  handoff: { envelope: Envelope; raw: string } | null,
+  handoff: Handoff | null,
 ): string {
   const context = resolveContextEntries(state, phase);
   const handoffJson = handoff === null ? null : JSON.stringify(handoff.envelope, null, 2);
@@ -742,8 +937,17 @@ export function composePrompt(
     "",
     phase.agent.prompt,
   ];
-  if (context.length > 0) {
-    lines.push("", "[Context]", ...context);
+  // §8.2 [Context] = the §9.2 context entries plus the §9.3 materialized handoff
+  // inputs — each inputs/ path named with its contents inlined, so the agent
+  // never hunts for the predecessor's envelope or artifacts (§9.3).
+  const contextLines: string[] = [...context];
+  if (handoff !== null) {
+    for (const { rel, contents } of readHandoffInputs(state.cwd, phase.name)) {
+      contextLines.push(`context_handoff/${slugFor(phase.name)}/inputs/${rel}:`, contents);
+    }
+  }
+  if (contextLines.length > 0) {
+    lines.push("", "[Context]", ...contextLines);
   }
   lines.push("", "[Handoff from previous phase]", handoffJson ?? "(none — first phase)");
   lines.push(
@@ -774,22 +978,8 @@ async function runShell(cwd: string, cmd: string): Promise<ShellResult> {
 }
 
 // ── agent_map.json (§10) ─────────────────────────────────────────────────────
-
-function writeAgentMap(
-  state: LoopState,
-  phaseName: string,
-  entry: { pi_session_id: string; pid: number; visit: number; model: string },
-): void {
-  let map: Record<string, unknown> = {};
-  const path = join(state.runDir, "agent_map.json");
-  try {
-    map = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-  } catch {
-    // first entry
-  }
-  map[phaseName] = entry;
-  writeFileSync(path, JSON.stringify(map, null, 2) + "\n");
-}
+// writeAgentMap/readAgentMap live in handoff.ts (T05): per-visit overwrite
+// (a revisited phase records its LATEST session), restart-fresh per run dir.
 
 // ── the §3.5 / §8.2 schema rendering (human + snapshot + prompt) ─────────────
 
@@ -926,21 +1116,21 @@ function driveState(
   // §6 #1/#2: run-level events, tagged with NULL phase/session ids
   state.emit("run_submitted", { blueprint: state.blueprint.name, cwd: state.cwd }, { phase_id: null, agent_session_id: null });
   state.emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
-  let resolveDone: (r: RunResult) => void = () => {};
-  const done = new Promise<RunResult>((resolve) => {
-    resolveDone = resolve;
-  });
+  const control = state.control;
   void (async () => {
     try {
-      resolveDone(await driveLoop(state));
+      control.markTerminal(await driveLoop(state));
     } catch (err) {
       // never leave a run stuck in "running" on an internal error
       try {
-        resolveDone(await finalizeRun(state, "failed", true, `internal error: ${messageOf(err)}`));
+        const from = control.paused ? "paused" : "running";
+        control.markTerminal(await finalizeRun(state, "failed", true, `internal error: ${messageOf(err)}`, from));
       } catch {
-        resolveDone({ status: "failed", needs_review: true });
+        control.markTerminal({ status: "failed", needs_review: true });
       }
+    } finally {
+      unregisterControl(state.runId);
     }
   })();
-  return { run_id: opts.runId, done };
+  return { run_id: opts.runId, done: control.stable, terminal: control.terminal };
 }

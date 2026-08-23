@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventRow } from "@showrunner/core";
 import { fixturePath } from "@showrunner/core/test/fixtures";
@@ -25,10 +26,18 @@ function openTmp(label: string) {
   return { dir, db };
 }
 
+/** A scratch run cwd for fixture submissions — the §9 workspace
+ * (context_handoff/) must live in a scratch dir, never the repo root (the
+ * test runner's working directory). Mirrors the server/e2e scratch-cwd pattern. */
+function tmpCwd(label: string): string {
+  return mkdtempSync(join(tmpdir(), `showrunner-driver-cwd-${label}-`));
+}
+
 test("happy fixture: full lifecycle lands as folded events, in order", async () => {
   const { dir, db } = openTmp("driver-happy");
+  const cwd = tmpCwd("happy");
   try {
-    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd: process.cwd() });
+    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd });
     const outcome = await sub.done;
 
     expect(outcome).toEqual({ status: "success", needs_review: false });
@@ -95,13 +104,15 @@ test("happy fixture: full lifecycle lands as folded events, in order", async () 
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("raw_output.jsonl captures the fixture byte-identically (§10)", async () => {
   const { dir, db } = openTmp("driver-raw");
+  const cwd = tmpCwd("raw");
   try {
-    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd: process.cwd() });
+    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd });
     await sub.done;
     const rawPath = join(runDirFor(dir, sub.run_id), "raw_output.jsonl");
     const raw = readFileSync(rawPath, "utf8");
@@ -109,13 +120,15 @@ test("raw_output.jsonl captures the fixture byte-identically (§10)", async () =
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("agent_map.json records phase -> session mapping (§10)", async () => {
   const { dir, db } = openTmp("driver-map");
+  const cwd = tmpCwd("map");
   try {
-    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd: process.cwd(), agent: "scout", model: "gpt-x", phase: "recon" });
+    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd, agent: "scout", model: "gpt-x", phase: "recon" });
     await sub.done;
     const map = JSON.parse(readFileSync(join(runDirFor(dir, sub.run_id), "agent_map.json"), "utf8")) as Record<string, unknown>;
     expect(map["recon"]).toMatchObject({ pi_session_id: `${sub.run_id.slice(0, 8)}_recon_v1`, visit: 1, model: "gpt-x" });
@@ -123,26 +136,30 @@ test("agent_map.json records phase -> session mapping (§10)", async () => {
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("stderr diagnostics are captured per run (§8.3)", async () => {
   const { dir, db } = openTmp("driver-stderr");
+  const cwd = tmpCwd("stderr");
   try {
-    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd: process.cwd(), stderrLine: "fake-pi: warning: model catalog slow" });
+    const sub = submitFixture(db, dir, { fixture: "happy", delayMs: 0, cwd, stderrLine: "fake-pi: warning: model catalog slow" });
     await sub.done;
     const log = readFileSync(join(runDirFor(dir, sub.run_id), "stderr.log"), "utf8");
     expect(log).toContain("fake-pi: warning: model catalog slow");
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("crash fixture: run fails, needs_review set, open tool call flushed truncated (§12.5)", async () => {
   const { dir, db } = openTmp("driver-crash");
+  const cwd = tmpCwd("crash");
   try {
-    const sub = submitFixture(db, dir, { fixture: "crash", delayMs: 0, cwd: process.cwd() });
+    const sub = submitFixture(db, dir, { fixture: "crash", delayMs: 0, cwd });
     const outcome = await sub.done;
     expect(outcome).toEqual({ status: "failed", needs_review: true });
 
@@ -166,13 +183,15 @@ test("crash fixture: run fails, needs_review set, open tool call flushed truncat
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("gate-fail fixture settles cleanly (scenario replay; gates run in T01b)", async () => {
   const { dir, db } = openTmp("driver-gatefail");
+  const cwd = tmpCwd("gatefail");
   try {
-    const sub = submitFixture(db, dir, { fixture: "gate-fail", delayMs: 0, cwd: process.cwd() });
+    const sub = submitFixture(db, dir, { fixture: "gate-fail", delayMs: 0, cwd });
     const outcome = await sub.done;
     expect(outcome.status).toBe("success");
     // 5 tool calls in that fixture
@@ -182,6 +201,7 @@ test("gate-fail fixture settles cleanly (scenario replay; gates run in T01b)", a
   } finally {
     db.close();
     cleanupDir(dir);
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

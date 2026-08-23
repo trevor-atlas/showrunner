@@ -11,10 +11,19 @@ import {
   listAgentSessions,
   listPhases,
   listRuns,
+  sumEstimatedPhaseSpend,
   sumRunSpend,
 } from "./db.ts";
 import { submitFixture } from "./driver.ts";
 import type { SubmitOptions, SubmittedRun } from "./driver.ts";
+import {
+  effectiveMenu,
+  getControl,
+  getControlByLiveSession,
+  resumeInterruptedRun,
+  statelessFailRun,
+} from "./pause-control.ts";
+import type { PauseInfo } from "./pause-control.ts";
 import { RunPool } from "./pool.ts";
 import { tailRawFile } from "./rawfile.ts";
 import { drivePreparedRun, prepareBlueprintRun } from "./runner.ts";
@@ -35,6 +44,8 @@ import { drivePreparedRun, prepareBlueprintRun } from "./runner.ts";
 export interface DaemonDeps {
   db: Database;
   dataDir: string;
+  /** §5.4 pool size override (default: SHOWRUNNER_POOL_SIZE ?? 2) — test seam */
+  poolSlots?: number;
 }
 
 const MAX_EVENTS_LIMIT = 500;
@@ -83,7 +94,7 @@ function intParam(v: string | null, fallback: number, max: number): number {
 
 export function createDaemonServer(deps: DaemonDeps): Server {
   const { db, dataDir } = deps;
-  const pool = new RunPool(POOL_SLOTS);
+  const pool = new RunPool(deps.poolSlots ?? POOL_SLOTS);
 
   return createServer((req, res) => {
     void handleRequest(db, dataDir, pool, req, res).catch((err: unknown) => {
@@ -165,7 +176,9 @@ async function handleRequest(
       pool.enqueue(prepared.runId, () => {
         try {
           const run = drivePreparedRun(db, dataDir, prepared, { delayMs });
-          void run.done.finally(() => pool.release(prepared.runId));
+          // F1 (§5.4): a paused run KEEPS its pool slot (cheap — no pi process
+          // alive while paused); the slot frees only at a TERMINAL state
+          void run.terminal.finally(() => pool.release(prepared.runId));
         } catch (err) {
           // synchronous failure: surface it on the run row, free the slot
           pool.release(prepared.runId);
@@ -187,10 +200,16 @@ async function handleRequest(
       json(res, 404, { error: `run ${runId} not found` });
       return;
     }
+    // §11.1: spend splits reported vs estimated — the estimated half comes
+    // from the §6 #12 spend events' flag, so show can mark it as such
+    const estimatedByPhase = sumEstimatedPhaseSpend(db, runId);
+    let estimatedSpend = 0;
+    for (const s of estimatedByPhase.values()) estimatedSpend += s;
     json(res, 200, {
       run,
       spend_usd: sumRunSpend(db, runId),
-      phases: listPhases(db, runId),
+      estimated_spend_usd: estimatedSpend,
+      phases: listPhases(db, runId).map((p) => ({ ...p, estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0 })),
       sessions: listAgentSessions(db, runId),
       event_count: eventCount(db, runId),
     });
@@ -221,7 +240,221 @@ async function handleRequest(
     return;
   }
 
+  // ── T04 control surface (spec §13.2 + the pause viewer behind the CLI's
+  // `pause` verb). Every control verb writes a §6 #11 human_action event; each
+  // surfaces the resulting run state. The control handle is the daemon's
+  // in-process registry — a paused run after a daemon restart has none, and
+  // those verbs answer 409 (the continuation surface is T07/T08). ───────────
+
+  const pauseMatch = path.match(/^\/runs\/([^/]+)\/pause$/);
+  if (pauseMatch && method === "GET") {
+    const runId = pauseMatch[1]!;
+    const run = getRun(db, runId);
+    if (!run) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const control = getControl(runId);
+    // a paused run without a control handle (daemon restarted) is still PAUSED —
+    // the viewer reports the state, without the in-memory menu (T07/T08's surface)
+    const paused = run.status === "paused";
+    if (paused && control !== null && control.paused) {
+      const info = control.pauseInfo!;
+      json(res, 200, {
+        run_id: runId,
+        paused: true,
+        status: run.status,
+        kind: info.kind,
+        phase: info.phase,
+        reason: info.reason,
+        actions: effectiveMenu(info),
+        queued_steers: control.queuedSteerMessages,
+        live_session_id: control.liveSessionId,
+      });
+      return;
+    }
+    json(res, 200, {
+      run_id: runId,
+      paused,
+      status: run.status,
+      reason: lastRunStatusReason(db, runId),
+      actions: [],
+      ...(paused
+        ? { note: "paused, but the daemon has no control handle for it (restarted?) — the continuation surface is T07" }
+        : {}),
+    });
+    return;
+  }
+
+  const steerMatch = path.match(/^\/runs\/([^/]+)\/steer$/);
+  if (steerMatch && method === "POST") {
+    const runId = steerMatch[1]!;
+    const run = getRun(db, runId);
+    if (!run) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const control = getControl(runId);
+    if (control === null) {
+      json(res, 409, { error: `run ${runId} has no active control handle (status ${run.status}) — steer needs a live daemon` });
+      return;
+    }
+    try {
+      const message = typeof body.message === "string" ? body.message : "";
+      const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+      control.steer(message, by);
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    json(res, 200, {
+      run_id: runId,
+      ok: true,
+      status: getRun(db, runId)!.status,
+      queued_steers: control.queuedSteerCount,
+      message: control.paused
+        ? "steer recorded and queued — the run stays paused until a proceed action (delivery: T07 continuation)"
+        : "steer sent to the live session (queued between turns, §8.4)",
+    });
+    return;
+  }
+
+  const sessionSteerMatch = path.match(/^\/sessions\/([^/]+)\/steer$/);
+  if (sessionSteerMatch && method === "POST") {
+    const piSessionId = sessionSteerMatch[1]!;
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const control = getControlByLiveSession(piSessionId);
+    if (control === null) {
+      json(res, 409, { error: `no live session ${piSessionId} on the daemon (a paused run has no live process)` });
+      return;
+    }
+    try {
+      const message = typeof body.message === "string" ? body.message : "";
+      const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+      control.steer(message, by);
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    json(res, 200, { run_id: control.runId, ok: true, status: "running" });
+    return;
+  }
+
+  const approveMatch = path.match(/^\/runs\/([^/]+)\/approve$/);
+  if (approveMatch && method === "POST") {
+    const runId = approveMatch[1]!;
+    const run = getRun(db, runId);
+    if (!run) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const control = getControl(runId);
+    if (control === null) {
+      json(res, 409, { error: `run ${runId} has no active control handle (status ${run.status})` });
+      return;
+    }
+    try {
+      control.approve(typeof body.by === "string" && body.by !== "" ? body.by : undefined);
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    json(res, 200, { run_id: runId, ok: true, status: getRun(db, runId)!.status });
+    return;
+  }
+
+  const failMatch = path.match(/^\/runs\/([^/]+)\/fail$/);
+  if (failMatch && method === "POST") {
+    const runId = failMatch[1]!;
+    const run = getRun(db, runId);
+    if (!run) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+    const control = getControl(runId);
+    try {
+      if (control !== null) {
+        control.fail(by); // the loop finalizes (kills the live child, §8.3)
+      } else {
+        statelessFailRun(db, runId, by); // interrupted / restarted-daemon runs
+      }
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    json(res, 200, { run_id: runId, ok: true, status: getRun(db, runId)!.status });
+    return;
+  }
+
+  const resumeMatch = path.match(/^\/runs\/([^/]+)\/resume$/);
+  if (resumeMatch && method === "POST") {
+    const runId = resumeMatch[1]!;
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+    try {
+      const out = resumeInterruptedRun(db, runId, by);
+      json(res, 200, { run_id: runId, ok: true, status: out.status, needs_review: out.needs_review });
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    return;
+  }
+
+  const controlPhaseMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/(override|restart-fresh)$/);
+  if (controlPhaseMatch && method === "POST") {
+    const runId = controlPhaseMatch[1]!;
+    const phase = decodeURIComponent(controlPhaseMatch[2]!);
+    const verb = controlPhaseMatch[3]!;
+    const run = getRun(db, runId);
+    if (!run) {
+      json(res, 404, { error: `run ${runId} not found` });
+      return;
+    }
+    const control = getControl(runId);
+    if (control === null || !control.paused) {
+      json(res, 409, { error: `run ${runId} is not paused (status ${run.status}) — ${verb} is a pause-menu verb` });
+      return;
+    }
+    const body = (await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>;
+    const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
+    try {
+      const info: PauseInfo = control.pauseInfo!;
+      if (info.phase !== phase) {
+        json(res, 409, { error: `run ${runId} is paused on phase "${info.phase}", not "${phase}"` });
+        return;
+      }
+      if (verb === "restart-fresh") {
+        control.restartFresh(by);
+      } else {
+        const gate = typeof body.gate === "string" && body.gate !== "" ? body.gate : "";
+        const reason = typeof body.reason === "string" ? body.reason : "";
+        control.overrideGate({ gate, by: by ?? "cli", reason });
+      }
+    } catch (err) {
+      json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    json(res, 200, { run_id: runId, ok: true, verb, status: getRun(db, runId)!.status });
+    return;
+  }
+
   json(res, 404, { error: `no such route: ${method} ${path}` });
+}
+
+/** The reason of the run's last run_status event — what the run is parked on. */
+function lastRunStatusReason(db: Database, runId: string): string | null {
+  const events = cursorEvents(db, runId, 0, 500);
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.type === "run_status") {
+      return (events[i]!.data as { reason?: string }).reason ?? null;
+    }
+  }
+  return null;
 }
 
 function phaseStatusCounts(db: Database, runId: string): Record<string, number> {
