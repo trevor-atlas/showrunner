@@ -54,6 +54,40 @@ export { LineSplitter } from "./linesplit.ts";
 
 // Event queue
 export { EventSink } from "./queue.ts";
+export type { EventIds } from "./queue.ts";
+
+// Envelope/gate runner (T03 seam)
+export { gateName, runEnvelopeStage } from "./envelope-runner.ts";
+export type { EnvelopeOutcome, EnvelopeStageOptions, GateRun } from "./envelope-runner.ts";
+
+// The §5 run loop
+export {
+  DEFAULT_MAX_VISITS,
+  composePrompt,
+  drivePreparedRun,
+  loadBlueprintModule,
+  materializeInputs,
+  prepareBlueprintRun,
+  renderSchema,
+  resolveContextEntries,
+  resolveScriptedSessions,
+  runBlueprint,
+  slugFor,
+  snapshotBlueprint,
+  submitBlueprintRun,
+} from "./runner.ts";
+export type {
+  BlueprintRun,
+  PreparedRun,
+  RunBlueprintOptions,
+  RunResult,
+  ScriptMap,
+  ScriptedSession,
+  ScriptedTurn,
+} from "./runner.ts";
+
+// §5.4 run pool
+export { RunPool } from "./pool.ts";
 
 // Driver (T01a minimal submit)
 export {

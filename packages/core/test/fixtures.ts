@@ -43,6 +43,11 @@ export function fakePiEntryPath(): string {
   return join(HERE, "fake-pi.ts");
 }
 
+/** Absolute path to the FakePi session runner (spawned by the run loop, T01b). */
+export function fakeSessionEntryPath(): string {
+  return join(HERE, "fake-session.ts");
+}
+
 export function isFixtureName(v: unknown): v is FixtureName {
   return typeof v === "string" && (FIXTURE_NAMES as readonly string[]).includes(v);
 }

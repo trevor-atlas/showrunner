@@ -15,12 +15,19 @@ import {
 } from "./db.ts";
 import { submitFixture } from "./driver.ts";
 import type { SubmitOptions, SubmittedRun } from "./driver.ts";
+import { RunPool } from "./pool.ts";
 import { tailRawFile } from "./rawfile.ts";
+import { drivePreparedRun, prepareBlueprintRun } from "./runner.ts";
 
 /**
- * The daemon's local HTTP API (spec §13) - deliberately the minimal slice the
- * CLI needs for T01a: health, submit, runs list, run detail, the events
- * cursor (§4.3), and the raw tail. The full §13 contract is T08's ticket.
+ * The daemon's local HTTP API (spec §13) - the slice the CLI needs: health,
+ * submit (fixture or blueprint module), runs list (with phase counts), run
+ * detail, the events cursor (§4.3), and the raw tail. The full §13 contract
+ * is T08's ticket.
+ *
+ * Blueprint runs go through the §5.4 pool (default 2 slots, configurable via
+ * SHOWRUNNER_POOL_SIZE); fixture submits spawn immediately (observation
+ * fixtures, one child each - not pool-governed).
  *
  * Listens on a unix socket (unix://~/.showrunner/daemon.sock) per §13.
  */
@@ -31,6 +38,7 @@ export interface DaemonDeps {
 }
 
 const MAX_EVENTS_LIMIT = 500;
+const POOL_SLOTS = Number(process.env.SHOWRUNNER_POOL_SIZE ?? "2") || 2;
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -75,9 +83,10 @@ function intParam(v: string | null, fallback: number, max: number): number {
 
 export function createDaemonServer(deps: DaemonDeps): Server {
   const { db, dataDir } = deps;
+  const pool = new RunPool(POOL_SLOTS);
 
   return createServer((req, res) => {
-    void handleRequest(db, dataDir, req, res).catch((err: unknown) => {
+    void handleRequest(db, dataDir, pool, req, res).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       json(res, 500, { error: message });
     });
@@ -87,6 +96,7 @@ export function createDaemonServer(deps: DaemonDeps): Server {
 async function handleRequest(
   db: Database,
   dataDir: string,
+  pool: RunPool,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -100,7 +110,8 @@ async function handleRequest(
   }
 
   if (method === "GET" && path === "/runs") {
-    json(res, 200, { runs: listRuns(db) });
+    const runs = listRuns(db).map((r) => ({ ...r, phase_counts: phaseStatusCounts(db, r.id) }));
+    json(res, 200, { runs });
     return;
   }
 
@@ -114,27 +125,57 @@ async function handleRequest(
       return;
     }
     const fixture = body.fixture;
-    if (!isFixtureName(fixture)) {
-      json(res, 400, {
-        error: `unknown fixture "${String(fixture)}" (expected one of: happy, gate-fail, crash)`,
+    if (isFixtureName(fixture)) {
+      const opts: SubmitOptions = { fixture };
+      if (typeof body.cwd === "string" && body.cwd !== "") opts.cwd = body.cwd;
+      if (typeof body.delayMs === "number" && Number.isFinite(body.delayMs)) {
+        opts.delayMs = Math.max(0, Math.floor(body.delayMs));
+      }
+      if (typeof body.agent === "string" && body.agent !== "") opts.agent = body.agent;
+      if (typeof body.model === "string" && body.model !== "") opts.model = body.model;
+      if (typeof body.phase === "string" && body.phase !== "") opts.phase = body.phase;
+      const sub: SubmittedRun = submitFixture(db, dataDir, opts);
+      json(res, 201, {
+        run_id: sub.run_id,
+        phase_id: sub.phase_id,
+        agent_session_id: sub.agent_session_id,
+        fixture,
       });
       return;
     }
-    const opts: SubmitOptions = { fixture };
-    if (typeof body.cwd === "string" && body.cwd !== "") opts.cwd = body.cwd;
-    if (typeof body.delayMs === "number" && Number.isFinite(body.delayMs)) {
-      opts.delayMs = Math.max(0, Math.floor(body.delayMs));
+
+    // blueprint module (§13.3): import + validate + snapshot at submit, then
+    // drive behind the pool (§5.4)
+    const blueprintPath = body.blueprint;
+    if (typeof blueprintPath === "string" && blueprintPath !== "") {
+      let prepared;
+      try {
+        prepared = await prepareBlueprintRun(db, dataDir, {
+          modulePath: blueprintPath,
+          cwd: typeof body.cwd === "string" && body.cwd !== "" ? body.cwd : undefined,
+        });
+      } catch (err) {
+        json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+      const delayMs =
+        typeof body.delayMs === "number" && Number.isFinite(body.delayMs)
+          ? Math.max(0, Math.floor(body.delayMs))
+          : 0;
+      pool.enqueue(prepared.runId, () => {
+        try {
+          const run = drivePreparedRun(db, dataDir, prepared, { delayMs });
+          void run.done.finally(() => pool.release(prepared.runId));
+        } catch (err) {
+          // synchronous failure: surface it on the run row, free the slot
+          pool.release(prepared.runId);
+        }
+      });
+      json(res, 201, { run_id: prepared.runId, blueprint: prepared.blueprint.name });
+      return;
     }
-    if (typeof body.agent === "string" && body.agent !== "") opts.agent = body.agent;
-    if (typeof body.model === "string" && body.model !== "") opts.model = body.model;
-    if (typeof body.phase === "string" && body.phase !== "") opts.phase = body.phase;
-    const sub: SubmittedRun = submitFixture(db, dataDir, opts);
-    json(res, 201, {
-      run_id: sub.run_id,
-      phase_id: sub.phase_id,
-      agent_session_id: sub.agent_session_id,
-      fixture,
-    });
+
+    json(res, 400, { error: "request body must include a fixture name or a blueprint module path" });
     return;
   }
 
@@ -181,4 +222,18 @@ async function handleRequest(
   }
 
   json(res, 404, { error: `no such route: ${method} ${path}` });
+}
+
+function phaseStatusCounts(db: Database, runId: string): Record<string, number> {
+  const rows = db
+    .query<{ status: string; n: number }, [string]>(
+      "SELECT status, COUNT(*) AS n FROM phases WHERE run_id = ? GROUP BY status",
+    )
+    .all(runId);
+  const counts: Record<string, number> = { total: 0 };
+  for (const row of rows) {
+    counts[row.status] = Number(row.n);
+    counts["total"] = (counts["total"] ?? 0) + Number(row.n);
+  }
+  return counts;
 }

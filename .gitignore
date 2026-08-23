@@ -20,3 +20,6 @@ runs/
 # misc
 .DS_Store
 *.log
+
+# test residue
+context_handoff/

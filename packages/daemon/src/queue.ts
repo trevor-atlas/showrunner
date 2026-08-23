@@ -3,14 +3,30 @@ import type { EventType } from "@showrunner/core";
 import { parseEventData } from "@showrunner/core";
 import { insertEvent } from "./db.ts";
 
+/** Per-event id overrides (§6): run-level events must carry NULL phase/session ids. */
+export interface EventIds {
+  phase_id?: string | null;
+  agent_session_id?: string | null;
+}
+
+interface PendingEvent {
+  type: EventType;
+  data: unknown;
+  ids?: EventIds;
+}
+
 /**
  * Backpressure-safe event sink (spec §7.1): the tracer's stdout read loop must
  * never block on SQLite - the raw file is the safe buffer. The read loop only
  * appends to an in-memory queue here; a drain worker writes batches to the DB
  * on the next event-loop ticks. Order is preserved (FIFO).
+ *
+ * The sink has a default (run-level) id context; `push` accepts per-event
+ * overrides so run-level events can carry NULL phase_id/agent_session_id while
+ * phase/session events carry theirs (§6).
  */
 export class EventSink {
-  private readonly pending: { type: EventType; data: unknown }[] = [];
+  private readonly pending: PendingEvent[] = [];
   private draining = false;
   private drainPromise: Promise<void> | null = null;
   private firstError: Error | null = null;
@@ -26,8 +42,8 @@ export class EventSink {
     this.ctx = ctx;
   }
 
-  push(type: EventType, data: unknown): void {
-    this.pending.push({ type, data });
+  push(type: EventType, data: unknown, ids?: EventIds): void {
+    this.pending.push({ type, data, ids });
     this.schedule();
   }
 
@@ -41,8 +57,9 @@ export class EventSink {
           try {
             insertEvent(this.db, {
               run_id: this.ctx.runId,
-              phase_id: this.ctx.phaseId,
-              agent_session_id: this.ctx.agentSessionId,
+              phase_id: e.ids?.phase_id !== undefined ? e.ids.phase_id : this.ctx.phaseId,
+              agent_session_id:
+                e.ids?.agent_session_id !== undefined ? e.ids.agent_session_id : this.ctx.agentSessionId,
               type: e.type,
               ts: new Date().toISOString(),
               data: parseEventData(e.type, e.data),

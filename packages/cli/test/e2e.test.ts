@@ -2,7 +2,7 @@ import { test, expect, afterAll } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDirFor } from "@showrunner/core";
 import { fixturePath } from "@showrunner/core/test/fixtures";
@@ -14,6 +14,7 @@ import { fixturePath } from "@showrunner/core/test/fixtures";
  */
 
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+const DEMO_BLUEPRINT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "daemon", "test", "fixtures", "demo-blueprint.ts");
 const dataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-"));
 const env = { ...process.env, SHOWRUNNER_DATA_DIR: dataDir };
 
@@ -105,6 +106,38 @@ test("a crash run surfaces as failed with a truncated tool call and needs_review
   const list = cli(["runs"]);
   expect(list.stdout).toContain("failed");
   expect(list.stdout).toContain("(needs review)");
+});
+
+test("a blueprint run shows the full §5 loop in watch: correction, envelope, gates, phases", () => {
+  const submitted = cli(["run", DEMO_BLUEPRINT, "--delay", "2"]);
+  expect(submitted.status).toBe(0);
+  const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
+  expect(runId).toBeDefined();
+
+  const out = cli(["watch", runId!, "--interval", "50"], 30_000);
+  expect(out.status).toBe(0);
+  const lines = out.stdout;
+  // the demo plan phase fails its gate once, is corrected, then passes
+  expect(lines).toContain("[run] submitted");
+  expect(lines).toContain("[phase] start plan");
+  expect(lines).toContain("[gate] qualityGate fail: quality 4 is below the required 7");
+  expect(lines).toContain("[correction] plan visit=1 reason=gate_violations");
+  expect(lines).toContain("[envelope] plan visit=1 attempt=1 valid=true");
+  expect(lines).toContain("[phase] end plan status=success visits=1 corrections=1");
+  expect(lines).toContain("[phase] start build");
+  expect(lines).toContain("[phase] end build status=success");
+  expect(lines).toContain("[run] running → success");
+
+  // run detail shows both phases with visits/corrections
+  const show = cli(["show", runId!]);
+  expect(show.status).toBe(0);
+  expect(show.stdout).toContain("status: success");
+  expect(show.stdout).toMatch(/plan\s+success\s+visits=1 corrections=1/);
+  expect(show.stdout).toMatch(/build\s+success\s+visits=1 corrections=0/);
+
+  // the runs list shows the phase counts
+  const list = cli(["runs"]);
+  expect(list.stdout).toContain("2/2");
 });
 
 test("stop terminates the daemon and removes the socket", async () => {

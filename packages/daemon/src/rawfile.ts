@@ -16,9 +16,13 @@ export class RawOutputFile {
     this.fd = openSync(path, "a");
   }
 
-  /** Append one raw line verbatim (the caller adds the trailing newline). */
-  append(text: string): void {
-    writeSync(this.fd, text + "\n");
+  /**
+   * Append one raw line verbatim. Callers pass newline-terminated lines; the
+   * FINAL line of a stream may be unterminated and must be appended
+   * byte-identically (`final: true` — no invented trailing newline).
+   */
+  append(text: string, final = false): void {
+    writeSync(this.fd, text + (final ? "" : "\n"));
   }
 
   close(): void {

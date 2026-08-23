@@ -1,8 +1,9 @@
 import { test, expect } from "bun:test";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
+import { fileURLToPath } from "node:url";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import { startDaemon } from "../src/index.ts";
@@ -123,6 +124,64 @@ test("the daemon API serves health, submit, runs, detail, events cursor, raw (§
     expect(ghost.status).toBe(404);
     const nope = await api(socketPath, "GET", "/nothing");
     expect(nope.status).toBe(404);
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+  }
+});
+
+test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)", async () => {
+  const dir = tmpDataDir("server-blueprint");
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = startDaemon({ dataDir: dir });
+    const { socketPath } = daemon;
+
+    const demo = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "demo-blueprint.ts");
+    const submitted = await api(socketPath, "POST", "/runs", { blueprint: demo, delayMs: 0 });
+    expect(submitted.status).toBe(201);
+    const { run_id, blueprint } = submitted.json as { run_id: string; blueprint: string };
+    expect(run_id).toBeTypeOf("string");
+    expect(blueprint).toBe("demo");
+
+    await waitForDone(dir, run_id, socketPath);
+
+    // run detail: phases with status/visits/corrections/spend
+    const detail = await api(socketPath, "GET", `/runs/${run_id}`);
+    const body = detail.json as {
+      run: { status: string };
+      phases: { name: string; status: string; visits: number; corrections: number }[];
+      event_count: number;
+    };
+    expect(body.run.status).toBe("success");
+    expect(body.phases.map((p) => [p.name, p.status, p.corrections])).toEqual([
+      ["plan", "success", 1], // one correction (gate fail → revise)
+      ["build", "success", 0],
+    ]);
+    expect(body.event_count).toBeGreaterThan(10);
+
+    // the runs list carries phase counts
+    const runs = await api(socketPath, "GET", "/runs");
+    const list = (runs.json as { runs: { phase_counts: Record<string, number> }[] }).runs;
+    expect(list[0]!.phase_counts).toMatchObject({ total: 2, success: 2 });
+
+    // the §13.3 snapshot is on disk
+    expect(existsSync(join(dir, "runs", run_id, "blueprint.json"))).toBe(true);
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+  }
+});
+
+test("POST /runs rejects a blueprint path without scripted sessions", async () => {
+  const dir = tmpDataDir("server-noscript");
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = startDaemon({ dataDir: dir });
+    const { socketPath } = daemon;
+    const submitted = await api(socketPath, "POST", "/runs", { blueprint: "/nonexistent/blueprint.ts" });
+    expect(submitted.status).toBe(400);
+    expect(String((submitted.json as { error: string }).error)).toMatch(/blueprint/);
   } finally {
     await daemon?.close();
     cleanupDir(dir);

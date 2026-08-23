@@ -43,8 +43,12 @@ export interface TracerOptions {
   /** injectable wall clock (ms epoch) for deterministic tests */
   now?: () => number;
   sink: TracerSink;
-  /** append a raw line verbatim, BEFORE parsing (spec §10) */
-  rawAppend?: (line: string) => void;
+  /**
+   * Append a raw line verbatim, BEFORE parsing (spec §10). `final` marks the
+   * last line of the stream: an unterminated final line must be appended
+   * byte-identically (no invented trailing newline).
+   */
+  rawAppend?: (line: string, final?: boolean) => void;
 }
 
 export const DEFAULT_SNIPPET_CAP = 4096;
@@ -96,8 +100,8 @@ export class Tracer {
   }
 
   /** Handle one raw JSONL line (already split on `\n`, no trailing newline). */
-  onLine(raw: string): void {
-    this.opts.rawAppend?.(raw);
+  onLine(raw: string, opts: { final?: boolean } = {}): void {
+    this.opts.rawAppend?.(raw, opts.final === true);
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -133,14 +137,19 @@ export class Tracer {
   /**
    * The stream ended (process closed). Flush any open tool calls (mid-tool-call
    * death) and emit agent_end with the real exit code.
+   *
+   * `settled` overrides the latched settle flag: the run loop re-prompts the
+   * same session across turns, so a visit's agent_end must reflect whether the
+   * LAST turn settled — not any earlier one.
    */
-  onEnd(info: { exitCode: number | null }): void {
+  onEnd(info: { exitCode: number | null }, opts: { settled?: boolean } = {}): void {
     const nowTs = this.opts.now();
     for (const call of this.calls.values()) {
       this.emitToolCall(call, { ok: false, truncated: true, resultSnippet: call.snippet, endTs: nowTs });
     }
     this.calls.clear();
-    const ok = this.settled && info.exitCode === 0;
+    const settled = opts.settled ?? this.settled;
+    const ok = settled && info.exitCode === 0;
     this.emit("agent_end", {
       agent: this.opts.agent,
       pi_session_id: this.opts.piSessionId,

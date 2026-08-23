@@ -127,18 +127,20 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     ended_at: null,
   });
 
-  const sink = new EventSink(db, { runId, phaseId, agentSessionId });
+  const sink = new EventSink(db, { runId, phaseId: null, agentSessionId: null });
   let spendTotal = 0;
-  const emit = (type: Parameters<EventSink["push"]>[0], data: unknown): void => {
+  // reviewer nit (T01b): run-level events carry NULL phase/session ids (§6);
+  // phase/session events carry theirs. `emit` takes per-event overrides.
+  const emit = (type: Parameters<EventSink["push"]>[0], data: unknown, ids?: { phase_id?: string | null; agent_session_id?: string | null }): void => {
     if (type === "spend") {
       spendTotal += (data as Spend).usd ?? 0;
     }
-    sink.push(type, data);
+    sink.push(type, data, ids);
   };
 
-  emit("run_submitted", { blueprint: `fixture:${opts.fixture}`, cwd });
-  emit("run_status", { from: "submitted", to: "running" });
-  emit("phase_start", { phase, agent, visit, budget });
+  emit("run_submitted", { blueprint: `fixture:${opts.fixture}`, cwd }, { phase_id: null, agent_session_id: null });
+  emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
+  emit("phase_start", { phase, agent, visit, budget }, { phase_id: phaseId });
 
   const rawFile = new RawOutputFile(join(runDir, "raw_output.jsonl"));
   const tracer = new Tracer({
@@ -146,8 +148,8 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     visit,
     agent,
     piSessionId,
-    sink: (evt) => emit(evt.type as Parameters<EventSink["push"]>[0], evt.data),
-    rawAppend: (line) => rawFile.append(line),
+    sink: (evt) => emit(evt.type as Parameters<EventSink["push"]>[0], evt.data, { phase_id: phaseId, agent_session_id: agentSessionId }),
+    rawAppend: (line, final) => rawFile.append(line, final),
   });
 
   const fixture = opts.fixture;
@@ -173,7 +175,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     },
   });
 
-  emit("agent_start", { agent, pi_session_id: piSessionId, pid: child.pid ?? 0, model });
+  emit("agent_start", { agent, pi_session_id: piSessionId, pid: child.pid ?? 0, model }, { phase_id: phaseId, agent_session_id: agentSessionId });
   insertProcess(db, { id: agentSessionId, pid: child.pid ?? 0, kind: "agent", started_at: nowIso() });
   writeFileSync(
     join(runDir, "agent_map.json"),
@@ -194,8 +196,8 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
   // drains on later ticks.
   const decoder = new StringDecoder("utf8");
   const splitter = new LineSplitter();
-  const feedLines = (text: string): void => {
-    for (const line of splitter.push(text)) tracer.onLine(line);
+  const feedLines = (text: string, final = false): void => {
+    for (const line of splitter.push(text)) tracer.onLine(line, { final });
   };
   child.stdout.on("data", (chunk: Buffer) => feedLines(decoder.write(chunk)));
 
@@ -217,9 +219,9 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
         : settled
           ? `agent exited after agent_settled with code ${exitCode}`
           : "agent stream ended before agent_settled");
-    emit("phase_end", { phase, status, visits: 1, corrections: 0, spend_usd: spendTotal });
+    emit("phase_end", { phase, status, visits: 1, corrections: 0, spend_usd: spendTotal }, { phase_id: phaseId });
     updatePhase(db, phaseId, { status, ended_at: nowIso(), spend_usd: spendTotal });
-    emit("run_status", { from: "running", to: status, reason });
+    emit("run_status", { from: "running", to: status, reason }, { phase_id: null, agent_session_id: null });
     updateRun(db, runId, { status, ended_at: nowIso(), needs_review: needsReview });
     sink
       .flush()
@@ -237,9 +239,9 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
   child.on("close", (code: number | null) => {
     if (finalized) return;
     finalized = true;
-    // flush any partial final line, then close the stream
+    // flush any partial final line (unterminated: no invented trailing \n), then close the stream
     feedLines(decoder.end());
-    for (const line of splitter.flush()) tracer.onLine(line);
+    for (const line of splitter.flush()) tracer.onLine(line, { final: true });
     tracer.onEnd({ exitCode: code });
     finish(code, null);
   });

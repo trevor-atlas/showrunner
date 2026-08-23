@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
+import { resolve } from "node:path";
 import { resolveDataDir, socketPathFor } from "@showrunner/core";
-import { FIXTURE_NAMES } from "@showrunner/core/test/fixtures";
+import { FIXTURE_NAMES, isFixtureName } from "@showrunner/core/test/fixtures";
 
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../../daemon/src/daemon.ts";
@@ -10,11 +11,13 @@ import { formatEvent } from "./render.ts";
 import { watchRun } from "./watch.ts";
 
 /**
- * showrunner — the CLI (submit, list, watch).
+ * showrunner — the CLI (submit, list, watch, detail).
  *
  *   showrunner daemon                  run the daemon in the foreground
- *   showrunner run <fixture> [opts]    submit a scripted fixture run (T01a minimal submit)
- *   showrunner runs                    list runs
+ *   showrunner run <fixture>           submit a scripted fixture run (T01a observation path)
+ *   showrunner run <blueprint.ts>      submit a blueprint run (T01b §5 loop; FakePi sessions)
+ *   showrunner runs                    list runs with status + phase counts
+ *   showrunner show <run_id>           run detail: phases with status/visits/corrections/spend
  *   showrunner watch <run_id> [--interval N]
  *   showrunner stop                    SIGTERM the daemon (removes socket + pidfile)
  *
@@ -61,8 +64,10 @@ function usage(): void {
       "",
       "usage:",
       "  showrunner daemon                        run the daemon in the foreground",
-      "  showrunner run <fixture> [--delay N]     submit a scripted run (fixture: " + FIXTURE_NAMES.join("|") + ")",
-      "  showrunner runs                          list runs",
+      "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
+      "  showrunner run <blueprint.ts> [--delay] submit a blueprint run (driven by FakePi sessions)",
+      "  showrunner runs                          list runs with status + phase counts",
+      "  showrunner show <run_id>                run detail: phases, visits, corrections, spend",
       "  showrunner watch <run_id> [--interval N] stream a run's folded events",
       "  showrunner stop                          stop the daemon",
       "",
@@ -72,32 +77,62 @@ function usage(): void {
 }
 
 async function cmdRun(flags: Flags): Promise<number> {
-  const fixture = flags.positionals[0];
-  if (!fixture) {
-    console.error("usage: showrunner run <fixture> [--delay N]");
+  const arg = flags.positionals[0];
+  if (!arg) {
+    console.error("usage: showrunner run <fixture> | <blueprint.ts>");
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
 
-  const body: Record<string, unknown> = { fixture };
-  if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
-  if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
-  if (flags.rest.agent !== undefined) body.agent = flags.rest.agent;
-  if (flags.rest.model !== undefined) body.model = flags.rest.model;
-  if (flags.rest.phase !== undefined) body.phase = flags.rest.phase;
-
-  const res = (await postJson(socketPath, "/runs", body)) as {
-    run_id: string;
-    phase_id: string;
-    agent_session_id: string;
-    fixture: string;
+  const submit = async (body: Record<string, unknown>): Promise<unknown> => {
+    try {
+      return await postJson(socketPath, "/runs", body);
+    } catch (err) {
+      if (isSocketDown(err)) throw err;
+      // the daemon rejected the submit (bad blueprint, missing scripts, ...)
+      console.error(`run rejected: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
   };
-  console.log(`run submitted: ${res.run_id}`);
-  console.log(`  fixture: ${res.fixture}  phase: ${res.phase_id}  session: ${res.agent_session_id}`);
-  console.log(`watch it with: showrunner watch ${res.run_id}`);
-  return 0;
+
+  if (isFixtureName(arg)) {
+    const body: Record<string, unknown> = { fixture: arg };
+    if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
+    if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
+    if (flags.rest.agent !== undefined) body.agent = flags.rest.agent;
+    if (flags.rest.model !== undefined) body.model = flags.rest.model;
+    if (flags.rest.phase !== undefined) body.phase = flags.rest.phase;
+
+    const res = (await submit(body)) as {
+      run_id: string;
+      phase_id: string;
+      agent_session_id: string;
+      fixture: string;
+    } | null;
+    if (res === null) return 1;
+    console.log(`run submitted: ${res.run_id}`);
+    console.log(`  fixture: ${res.fixture}  phase: ${res.phase_id}  session: ${res.agent_session_id}`);
+    console.log(`watch it with: showrunner watch ${res.run_id}`);
+    return 0;
+  }
+
+  if (arg.endsWith(".ts")) {
+    const body: Record<string, unknown> = { blueprint: resolve(arg) };
+    if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
+    if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
+    const res = (await submit(body)) as { run_id: string; blueprint: string } | null;
+    if (res === null) return 1;
+    console.log(`run submitted: ${res.run_id}`);
+    console.log(`  blueprint: ${res.blueprint}`);
+    console.log(`watch it with: showrunner watch ${res.run_id}`);
+    console.log(`detail with:  showrunner show ${res.run_id}`);
+    return 0;
+  }
+
+  console.error(`unknown fixture or blueprint: ${arg} (fixtures: ${FIXTURE_NAMES.join("|")}; blueprints: a path to a .ts module)`);
+  return 2;
 }
 
 async function cmdRuns(flags: Flags): Promise<number> {
@@ -105,17 +140,70 @@ async function cmdRuns(flags: Flags): Promise<number> {
   const socketPath = socketPathFor(dataDir);
   await ensureDaemon(socketPath, dataDir);
   const { runs } = (await getJson(socketPath, "/runs")) as {
-    runs: { id: string; blueprint: string; status: string; started_at: string; ended_at: string | null; spend_usd: number; needs_review: number }[];
+    runs: {
+      id: string;
+      blueprint: string;
+      status: string;
+      started_at: string;
+      ended_at: string | null;
+      spend_usd: number;
+      needs_review: number;
+      phase_counts: Record<string, number>;
+    }[];
   };
   if (runs.length === 0) {
     console.log("no runs yet - submit one with: showrunner run happy");
     return 0;
   }
-  console.log("id                                   blueprint         status       spend      started");
+  console.log("id                                   blueprint         status       phases       spend      started");
   for (const r of runs) {
     const review = r.needs_review ? " (needs review)" : "";
+    const phases = `${r.phase_counts.success ?? 0}/${r.phase_counts.total ?? 0}`;
     console.log(
-      `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}`,
+      `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} ${phases.padStart(9)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}`,
+    );
+  }
+  return 0;
+}
+
+async function cmdShow(flags: Flags): Promise<number> {
+  const runId = flags.positionals[0];
+  if (!runId) {
+    console.error("usage: showrunner show <run_id>");
+    return 2;
+  }
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const socketPath = socketPathFor(dataDir);
+  await ensureDaemon(socketPath, dataDir);
+
+  let detail: {
+    run: { id: string; blueprint: string; status: string; cwd: string; started_at: string; ended_at: string | null; needs_review: number };
+    spend_usd: number;
+    event_count: number;
+    phases: { name: string; status: string; visits: number; corrections: number; budget: number; spend_usd: number }[];
+  };
+  try {
+    detail = (await getJson(socketPath, `/runs/${runId}`)) as typeof detail;
+  } catch (err) {
+    if (!isSocketDown(err)) {
+      console.error(`run ${runId}: not found`);
+      return 1;
+    }
+    throw err;
+  }
+
+  const { run } = detail;
+  console.log(`run ${run.id}`);
+  console.log(`  blueprint: ${run.blueprint}`);
+  console.log(`  status: ${run.status}${run.needs_review ? " (needs review)" : ""}`);
+  console.log(`  cwd: ${run.cwd}`);
+  console.log(`  started: ${run.started_at}`);
+  if (run.ended_at) console.log(`  ended: ${run.ended_at}`);
+  console.log(`  spend: $${detail.spend_usd.toFixed(4)}  events: ${detail.event_count}`);
+  console.log("phases:");
+  for (const p of detail.phases) {
+    console.log(
+      `  ${p.name.padEnd(16)} ${p.status.padEnd(12)} visits=${p.visits} corrections=${p.corrections} budget=${p.budget} spend=$${p.spend_usd.toFixed(4)}`,
     );
   }
   return 0;
@@ -188,6 +276,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdRun(flags);
     case "runs":
       return cmdRuns(flags);
+    case "show":
+      return cmdShow(flags);
     case "watch":
       return cmdWatch(flags);
     case "daemon":

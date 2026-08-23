@@ -1,0 +1,49 @@
+{
+  "turns": [
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 0, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "p1", "role": "user", "content": [{ "type": "text", "text": "Plan the work." }] } },
+        { "type": "message_end", "message": { "id": "p1", "role": "user", "content": [{ "type": "text", "text": "Plan the work." }] } },
+        { "type": "message_start", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] } },
+        { "type": "message_update", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] }, "usage": { "input": 200, "output": 40, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 240, "cost": { "total": 0.0004 } } },
+        { "type": "tool_execution_start", "toolCallId": "plan_1", "toolName": "bash", "args": "ls context_handoff/plan/inputs" },
+        { "type": "tool_execution_update", "toolCallId": "plan_1", "toolName": "bash", "partialResult": { "content": [{ "type": "text", "text": "envelope.json\n" }] } },
+        { "type": "tool_execution_end", "toolCallId": "plan_1", "toolName": "bash", "result": { "content": [{ "type": "text", "text": "envelope.json\n" }] }, "isError": false },
+        { "type": "message_end", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] } },
+        { "type": "turn_end", "message": { "id": "p2", "role": "assistant", "content": [{ "type": "text", "text": "Drafting the plan." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "Drafted a rough plan of attack.",
+        "artifacts": [],
+        "notes_for_next_agent": "Proceed to build from this plan.",
+        "quality": 4
+      }
+    },
+    {
+      "events": [
+        { "type": "agent_start", "messageCount": 2, "model": "fake-pi" },
+        { "type": "queue_update", "queued": 0 },
+        { "type": "turn_start" },
+        { "type": "message_start", "message": { "id": "p3", "role": "user", "content": [{ "type": "text", "text": "Revise the plan." }] } },
+        { "type": "message_end", "message": { "id": "p3", "role": "user", "content": [{ "type": "text", "text": "Revise the plan." }] } },
+        { "type": "message_start", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan revised to be complete." }] } },
+        { "type": "message_update", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan revised to be complete." }] }, "usage": { "input": 400, "output": 90, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 490, "cost": { "total": 0.0009 } } },
+        { "type": "message_end", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan revised to be complete." }] } },
+        { "type": "turn_end", "message": { "id": "p4", "role": "assistant", "content": [{ "type": "text", "text": "Plan revised to be complete." }] } },
+        { "type": "agent_end", "messages": [], "willRetry": false },
+        { "type": "agent_settled" }
+      ],
+      "envelope": {
+        "summary": "Plan complete and reviewed.",
+        "artifacts": [],
+        "notes_for_next_agent": "The plan is solid; proceed to build.",
+        "quality": 8
+      }
+    }
+  ]
+}
