@@ -77,12 +77,10 @@ fixture builders:
 bun --cwd packages/starter-kit gen:fixtures      # scripts/generate-fake-pi-sessions.ts
 ```
 
-**A note on `--prompt`**: the spec's skill files pass the user's goal as
-`showrunner run <blueprint> --prompt "<args>"`. The current CLI parses
-`--prompt` but does not forward it to the daemon yet — the phase goal lives in
-the blueprint (or you steer the run). That wiring is an open question for the
-CLI/daemon owner; the skills keep the spec form so the goal lands the day it
-ships.
+**`--prompt` is wired**: the spec's skill files pass the user's goal as
+`showrunner run <blueprint> --prompt "<args>"`; the CLI forwards it through the
+POST /runs body and the daemon renders it as a `[User request]` section at the
+top of the composed first prompt (the agent's actual goal). It works today.
 
 Real-pi runs (env-gated smokes) are the T13 capstone — no token spend in this
 package.
