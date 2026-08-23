@@ -12,6 +12,7 @@ An agent orchestration tool: blueprints of phases, each running a configured age
 
 - [PLAN.md](./PLAN.md) — the settled design
 - [CONTEXT.md](./CONTEXT.md) — glossary / ubiquitous language
+- [docs/spec](./docs/spec/) — the implementation contract, split by subsystem (index: [README.md](./docs/spec/README.md); **the UI is remix@next, NOT React** — see §16)
 - [docs/adr](./docs/adr/) — architecture decisions
 - [docs/diagrams/run-loop.md](./docs/diagrams/run-loop.md) — the run lifecycle
 
