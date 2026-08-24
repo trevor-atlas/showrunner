@@ -65,7 +65,7 @@ const pillStyle = css({
   gap: "0.3rem",
   whiteSpace: "nowrap",
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   fontWeight: 700,
   padding: "2px 8px",
   borderRadius: "999px",
@@ -74,8 +74,8 @@ const pillStyle = css({
 
 const STATUS_STYLES: Record<RunStatus, ReturnType<typeof css>> = {
   running: css({
-    color: "#3573f6",
-    background: "rgba(53, 115, 246, 0.1)",
+    color: "var(--status-running)",
+    background: "var(--status-running-soft)",
     "@keyframes showrunner-running-pulse": {
       "0%": { opacity: 1 },
       "50%": { opacity: 0.35 },
@@ -84,24 +84,24 @@ const STATUS_STYLES: Record<RunStatus, ReturnType<typeof css>> = {
     animation: "showrunner-running-pulse 1.4s ease-in-out infinite",
   }),
   paused: css({
-    color: "#b45309",
-    background: "rgba(180, 83, 9, 0.12)",
+    color: "var(--status-interrupted)",
+    background: "var(--status-interrupted-soft)",
   }),
   success: css({
-    color: "#15803d",
-    background: "rgba(21, 128, 61, 0.12)",
+    color: "var(--status-success)",
+    background: "var(--status-success-soft)",
   }),
   failed: css({
-    color: "#b91c1c",
-    background: "rgba(185, 28, 28, 0.12)",
+    color: "var(--status-failed)",
+    background: "var(--status-failed-soft)",
   }),
   interrupted: css({
-    color: "#6b7280",
-    background: "rgba(107, 114, 128, 0.12)",
+    color: "var(--status-muted)",
+    background: "var(--status-muted-soft)",
   }),
   queued: css({
-    color: "#9ca3af",
-    background: "rgba(156, 163, 175, 0.1)",
+    color: "var(--status-queued)",
+    background: "var(--status-queued-soft)",
     opacity: 0.75,
   }),
 };

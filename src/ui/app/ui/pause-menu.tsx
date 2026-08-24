@@ -267,9 +267,9 @@ const menuStyle = css({
   display: "grid",
   gap: "0.6rem",
   padding: "0.9rem 1rem",
-  border: "1px solid #f3c14a",
+  border: "1px solid var(--amber-border)",
   borderRadius: "10px",
-  background: "rgba(243, 193, 74, 0.07)",
+  background: "var(--amber-soft-faintest)",
 });
 
 const menuHeaderStyle = css({
@@ -280,41 +280,41 @@ const menuHeaderStyle = css({
 });
 
 const pauseGlyphStyle = css({
-  color: "#b45309",
+  color: "var(--status-interrupted)",
   fontWeight: 800,
-  fontSize: "13px",
+  fontSize: "var(--font-size-md)",
 });
 
 const menuTitleStyle = css({
   fontWeight: 700,
-  fontSize: "13px",
-  color: "#111827",
+  fontSize: "var(--font-size-md)",
+  color: "var(--foreground)",
 });
 
 const mutedStyle = css({
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
   fontWeight: 500,
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
 });
 
 const reasonStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#78350f",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--amber-ink)",
+  fontFamily: "var(--font-mono)",
 });
 
 const queuedStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#6d28d9",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--accent-violet)",
+  fontFamily: "var(--font-mono)",
 });
 
 const noteStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#92400e",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--status-paused)",
 });
 
 const formsStyle = css({
@@ -326,9 +326,9 @@ const formStyle = css({
   display: "grid",
   gap: "0.35rem",
   padding: "0.55rem 0.7rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "8px",
-  background: "#ffffff",
+  background: "var(--card)",
 });
 
 const formLabelStyle = css({
@@ -337,22 +337,22 @@ const formLabelStyle = css({
 });
 
 const verbStyle = css({
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 800,
   textTransform: "lowercase",
   letterSpacing: "0.06em",
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
 });
 
 const textareaStyle = css({
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   padding: "0.4rem 0.5rem",
-  border: "1px solid #d1d5db",
+  border: "1px solid var(--input)",
   borderRadius: "6px",
   resize: "vertical",
   minHeight: "2.6rem",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontFamily: "var(--font-mono)",
 });
 
 const rowActionsStyle = css({
@@ -371,23 +371,23 @@ const overrideRowStyle = css({
 
 const selectStyle = css({
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   padding: "3px 6px",
   borderRadius: "6px",
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#111827",
+  border: "1px solid var(--input)",
+  background: "var(--card)",
+  color: "var(--foreground)",
 });
 
 const reasonInputStyle = css({
   flex: "1 1 10rem",
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   padding: "3px 8px",
   borderRadius: "6px",
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#111827",
+  border: "1px solid var(--input)",
+  background: "var(--card)",
+  color: "var(--foreground)",
 });
 
 const fieldErrorsRowStyle = css({
@@ -397,44 +397,44 @@ const fieldErrorsRowStyle = css({
 });
 
 const fieldErrorStyle = css({
-  fontSize: "11px",
-  color: "#b91c1c",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--status-failed)",
   fontWeight: 600,
 });
 
 const buttonStyle = css({
   appearance: "none",
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   fontWeight: 700,
   padding: "3px 12px",
   borderRadius: "999px",
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#111827",
+  border: "1px solid var(--input)",
+  background: "var(--card)",
+  color: "var(--foreground)",
   cursor: "pointer",
   "&:hover": {
-    background: "#f3f4f6",
+    background: "var(--secondary)",
   },
 });
 
 const dangerButtonStyle = css({
-  color: "#b91c1c",
-  borderColor: "#fecaca",
+  color: "var(--status-failed)",
+  borderColor: "var(--danger-border)",
   "&:hover": {
-    background: "rgba(185, 28, 28, 0.06)",
+    background: "var(--status-failed-soft-hover)",
   },
 });
 
 const hintStyle = css({
-  fontSize: "11px",
-  color: "#9ca3af",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
 });
 
 const formErrorStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#b91c1c",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--status-failed)",
   fontWeight: 600,
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontFamily: "var(--font-mono)",
 });

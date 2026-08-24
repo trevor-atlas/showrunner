@@ -242,18 +242,18 @@ const breadcrumbStyle = css({
   alignItems: "center",
   gap: "0.5rem",
   flexWrap: "wrap",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
 });
 
 const crumbLinkStyle = css({
-  color: "#3573f6",
+  color: "var(--status-running)",
   textDecoration: "none",
   "&:hover": { textDecoration: "underline" },
 });
 
 const titleStyle = css({
   margin: 0,
-  fontSize: "18px",
+  fontSize: "var(--font-size-title)",
   fontWeight: 800,
   letterSpacing: "-0.02em",
   display: "flex",
@@ -263,10 +263,10 @@ const titleStyle = css({
 });
 
 const runIdStyle = css({
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 500,
-  color: "#9ca3af",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
 });
 
 const controlBarStyle = css({
@@ -275,26 +275,26 @@ const controlBarStyle = css({
   gap: "1rem",
   flexWrap: "wrap",
   padding: "0.5rem 0.75rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "8px",
-  background: "#f9fafb",
-  fontSize: "12px",
-  color: "#374151",
+  background: "var(--muted)",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--foreground)",
 });
 
 const monoStyle = css({
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "12px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-sm)",
 });
 
 const needsReviewBadgeStyle = css({
-  color: "#92400e",
-  background: "rgba(243, 193, 74, 0.2)",
-  border: "1px solid #f3c14a",
+  color: "var(--status-paused)",
+  background: "var(--amber-soft-strong)",
+  border: "1px solid var(--amber-border)",
   borderRadius: "999px",
   padding: "1px 10px",
   fontWeight: 700,
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
 });
 
 const resumeControlStyle = css({
@@ -306,29 +306,29 @@ const resumeControlStyle = css({
 const resumeButtonStyle = css({
   appearance: "none",
   font: "inherit",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
   fontWeight: 700,
   padding: "3px 14px",
   borderRadius: "999px",
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#111827",
+  border: "1px solid var(--input)",
+  background: "var(--card)",
+  color: "var(--foreground)",
   cursor: "pointer",
   "&:hover": {
-    background: "#f3f4f6",
+    background: "var(--secondary)",
   },
 });
 
 const resumeErrorStyle = css({
-  fontSize: "11px",
-  color: "#b91c1c",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--status-failed)",
   fontWeight: 600,
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontFamily: "var(--font-mono)",
 });
 
 const notFoundTextStyle = css({
   margin: 0,
-  color: "#6b7280",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "13px",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-md)",
 });

@@ -112,7 +112,7 @@ const headerStyle = css({
 
 const titleStyle = css({
   margin: 0,
-  fontSize: "18px",
+  fontSize: "var(--font-size-title)",
   fontWeight: 800,
   letterSpacing: "-0.02em",
 });
@@ -124,33 +124,33 @@ const tableStyle = css({
   "& th, & td": {
     textAlign: "left",
     padding: "0.5rem 0.75rem",
-    borderBottom: "1px solid #e5e7eb",
-    fontSize: "13px",
+    borderBottom: "1px solid var(--border)",
+    fontSize: "var(--font-size-md)",
   },
   "& th": {
-    fontSize: "11px",
+    fontSize: "var(--font-size-xs)",
     textTransform: "lowercase",
     letterSpacing: "0.06em",
-    color: "#6b7280",
+    color: "var(--muted-foreground)",
     fontWeight: 700,
   },
   "& tbody tr:hover": {
-    background: "#f9fafb",
+    background: "var(--muted)",
   },
 });
 
 const runLinkStyle = css({
   color: "inherit",
   textDecoration: "none",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "13px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-md)",
   "&:hover": {
     textDecoration: "underline",
-    color: "#3573f6",
+    color: "var(--status-running)",
   },
 });
 
 const monoStyle = css({
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "13px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-md)",
 });

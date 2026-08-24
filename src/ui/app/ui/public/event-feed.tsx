@@ -327,35 +327,35 @@ const feedHeaderStyle = css({
 
 const feedTitleStyle = css({
   margin: 0,
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   textTransform: "lowercase",
   letterSpacing: "0.06em",
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
   fontWeight: 700,
 });
 
 const toggleStyle = css({
   appearance: "none",
   font: "inherit",
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   padding: "2px 10px",
   borderRadius: "999px",
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#374151",
+  border: "1px solid var(--input)",
+  background: "var(--card)",
+  color: "var(--foreground)",
   cursor: "pointer",
   "&:hover": {
-    background: "#f3f4f6",
+    background: "var(--secondary)",
   },
 });
 
 const scrollStyle = css({
   maxHeight: "20rem",
   overflowY: "auto",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "8px",
-  background: "#fcfcfd",
+  background: "var(--card)",
   padding: "0.5rem 0.75rem",
   display: "grid",
   gap: "0.15rem",
@@ -365,9 +365,9 @@ const emptyFeedStyle = css({
   margin: 0,
   padding: "1rem 0",
   textAlign: "center",
-  color: "#9ca3af",
-  fontSize: "12px",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-sm)",
+  fontFamily: "var(--font-mono)",
 });
 
 const rowStyle = css({
@@ -375,61 +375,61 @@ const rowStyle = css({
   alignItems: "baseline",
   gap: "0.5rem",
   padding: "0.2rem 0",
-  fontSize: "12px",
-  borderBottom: "1px solid #f3f4f6",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "var(--font-size-sm)",
+  borderBottom: "1px solid var(--secondary)",
+  fontFamily: "var(--font-mono)",
 });
 
 const timeStyle = css({
-  color: "#9ca3af",
-  fontSize: "11px",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-xs)",
   whiteSpace: "nowrap",
 });
 
 const mutedStyle = css({
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
 });
 
 const toolGlyphStyle = css({
-  color: "#3573f6",
+  color: "var(--status-running)",
   fontWeight: 700,
 });
 
 const toolNameStyle = css({
-  color: "#111827",
+  color: "var(--foreground)",
   fontWeight: 600,
 });
 
-const toolOkStyle = css({ color: "#15803d" });
+const toolOkStyle = css({ color: "var(--status-success)" });
 
-const toolFailStyle = css({ color: "#b91c1c" });
+const toolFailStyle = css({ color: "var(--status-failed)" });
 
 const corrGlyphStyle = css({
-  color: "#b45309",
+  color: "var(--status-interrupted)",
   fontWeight: 700,
 });
 
-const gateFailGlyphStyle = css({ color: "#b91c1c", fontWeight: 700 });
+const gateFailGlyphStyle = css({ color: "var(--status-failed)", fontWeight: 700 });
 
-const gatePassGlyphStyle = css({ color: "#15803d", fontWeight: 700 });
+const gatePassGlyphStyle = css({ color: "var(--status-success)", fontWeight: 700 });
 
 const humanGlyphStyle = css({
-  color: "#6d28d9",
+  color: "var(--accent-violet)",
   fontWeight: 700,
 });
 
 const spendGlyphStyle = css({
-  color: "#0f766e",
+  color: "var(--accent-teal)",
   fontWeight: 700,
 });
 
 const lifecycleGlyphStyle = css({
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
   fontWeight: 700,
 });
 
 const envelopeGlyphStyle = css({
-  color: "#0369a1",
+  color: "var(--accent-sky)",
   fontWeight: 700,
 });
 
@@ -439,18 +439,18 @@ const detailsStyle = css({
 
 const summaryStyle = css({
   cursor: "pointer",
-  color: "#6b7280",
-  fontSize: "11px",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-xs)",
   userSelect: "none",
 });
 
 const snippetStyle = css({
   margin: "0.3rem 0 0.4rem 1.25rem",
   padding: "0.4rem 0.5rem",
-  background: "#f3f4f6",
-  border: "1px solid #e5e7eb",
+  background: "var(--secondary)",
+  border: "1px solid var(--border)",
   borderRadius: "6px",
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   whiteSpace: "pre-wrap",
   maxHeight: "10rem",
   overflowY: "auto",

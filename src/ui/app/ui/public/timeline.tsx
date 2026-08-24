@@ -265,34 +265,34 @@ function rowY(rowIndex: number): number {
  * muted grey (R4 bubble anatomy). */
 const BUBBLE_COLORS: Record<string, ReturnType<typeof css>> = {
   in_progress: css({
-    background: "#3573f6",
-    borderColor: "#1d4ed8",
+    background: "var(--status-running)",
+    borderColor: "var(--status-running-strong)",
   }),
   success: css({
-    background: "#15803d",
-    borderColor: "#166534",
+    background: "var(--status-success)",
+    borderColor: "var(--status-success-strong)",
   }),
   failed: css({
-    background: "#b91c1c",
-    borderColor: "#991b1b",
+    background: "var(--status-failed)",
+    borderColor: "var(--status-failed-strong)",
   }),
   interrupted: css({
-    background: "#b45309",
-    borderColor: "#92400e",
+    background: "var(--status-interrupted)",
+    borderColor: "var(--status-paused)",
   }),
   skipped: css({
-    background: "#9ca3af",
-    borderColor: "#6b7280",
+    background: "var(--status-queued)",
+    borderColor: "var(--status-muted)",
   }),
 };
 
 const chartStyle = css({
   display: "grid",
   gap: "0.15rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "10px",
   padding: "0.6rem 0.75rem 0.75rem",
-  background: "#fdfdfd",
+  background: "var(--card)",
   userSelect: "none",
 });
 
@@ -316,9 +316,9 @@ const tickStyle = css({
   position: "absolute",
   top: 0,
   transform: "translateX(-50%)",
-  fontSize: "10px",
-  color: "#9ca3af",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
   whiteSpace: "nowrap",
 });
 
@@ -357,7 +357,7 @@ const labelCellMutedStyle = css({
 });
 
 const labelCellSelectedStyle = css({
-  background: "rgba(53, 115, 246, 0.08)",
+  background: "var(--status-running-selected)",
 });
 
 const phaseNameButtonStyle = css({
@@ -369,32 +369,32 @@ const phaseNameButtonStyle = css({
   padding: 0,
   margin: 0,
   cursor: "pointer",
-  color: "#111827",
+  color: "var(--foreground)",
   fontWeight: 600,
-  fontSize: "13px",
+  fontSize: "var(--font-size-md)",
   lineHeight: 1.2,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
   "&:hover": {
-    color: "#3573f6",
+    color: "var(--status-running)",
     textDecoration: "underline",
   },
   "&:focus-visible": {
-    outline: "2px solid #3573f6",
+    outline: "2px solid var(--status-running)",
     outlineOffset: "1px",
     borderRadius: "3px",
   },
 });
 
 const phaseNameSelectedStyle = css({
-  color: "#3573f6",
+  color: "var(--status-running)",
 });
 
 const agentStyle = css({
-  fontSize: "11px",
-  color: "#6b7280",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -404,24 +404,24 @@ const agentStyle = css({
 });
 
 const skippedTagStyle = css({
-  fontSize: "9px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   textTransform: "uppercase",
   letterSpacing: "0.05em",
-  color: "#6b7280",
-  border: "1px solid #d1d5db",
+  color: "var(--muted-foreground)",
+  border: "1px solid var(--input)",
   borderRadius: "999px",
   padding: "0 5px",
   lineHeight: "13px",
 });
 
 const pendingTagStyle = css({
-  fontSize: "9px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   textTransform: "uppercase",
   letterSpacing: "0.05em",
-  color: "#9ca3af",
-  border: "1px dashed #d1d5db",
+  color: "var(--muted-foreground)",
+  border: "1px dashed var(--input)",
   borderRadius: "999px",
   padding: "0 5px",
   lineHeight: "13px",
@@ -436,27 +436,27 @@ const bubbleStyle = css({
   border: "1px solid",
   cursor: "pointer",
   "&:hover": {
-    boxShadow: "0 0 0 2px rgba(0,0,0,0.12)",
+    boxShadow: "0 0 0 2px var(--shadow-hover)",
   },
   "&:focus-visible": {
-    outline: "2px solid #111827",
+    outline: "2px solid var(--foreground)",
     outlineOffset: "1px",
   },
 });
 
 const selectedBubbleStyle = css({
-  boxShadow: "0 0 0 2px #111827",
+  boxShadow: "0 0 0 2px var(--foreground)",
 });
 
 const corrBadgeStyle = css({
   position: "absolute",
   right: "-0.35rem",
   top: "-0.6rem",
-  fontSize: "10px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
-  color: "#b45309",
-  background: "#fff7ed",
-  border: "1px solid #fcd34d",
+  color: "var(--status-interrupted)",
+  background: "var(--amber-surface)",
+  border: "1px solid var(--amber-border-soft)",
   borderRadius: "999px",
   padding: "0 4px",
   lineHeight: "14px",
@@ -473,7 +473,7 @@ const pausedStripeStyle = css({
   inset: 0,
   borderRadius: "999px",
   backgroundImage:
-    "repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.4) 0 5px, rgba(255, 255, 255, 0) 5px 10px)",
+    "repeating-linear-gradient(-45deg, var(--stripe-highlight) 0 5px, var(--stripe-highlight-clear) 5px 10px)",
   pointerEvents: "none",
 });
 
@@ -482,7 +482,7 @@ const nowCursorStyle = css({
   top: 0,
   bottom: 0,
   width: "0",
-  borderLeft: "2px solid #111827",
+  borderLeft: "2px solid var(--foreground)",
   pointerEvents: "none",
 });
 
@@ -492,14 +492,14 @@ const arrowOverlayStyle = css({
   width: "100%",
   height: "100%",
   pointerEvents: "none",
-  color: "#9ca3af",
+  color: "var(--muted-foreground)",
 });
 
 const arrowGroupStyle = css({
   pointerEvents: "auto",
   cursor: "default",
   "& path:hover": {
-    stroke: "#3573f6",
+    stroke: "var(--status-running)",
     strokeWidth: 2.5,
   },
 });

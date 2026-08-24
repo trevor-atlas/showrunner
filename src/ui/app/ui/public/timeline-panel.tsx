@@ -144,11 +144,11 @@ function PhaseChip(handle: Handle<{ status: string }>) {
 }
 
 const CHIP_TONES: Record<string, ReturnType<typeof css>> = {
-  in_progress: css({ color: "#3573f6", background: "rgba(53, 115, 246, 0.1)" }),
-  success: css({ color: "#15803d", background: "rgba(21, 128, 61, 0.12)" }),
-  failed: css({ color: "#b91c1c", background: "rgba(185, 28, 28, 0.12)" }),
-  skipped: css({ color: "#6b7280", background: "rgba(107, 114, 128, 0.12)" }),
-  pending: css({ color: "#9ca3af", background: "rgba(156, 163, 175, 0.1)" }),
+  in_progress: css({ color: "var(--status-running)", background: "var(--status-running-soft)" }),
+  success: css({ color: "var(--status-success)", background: "var(--status-success-soft)" }),
+  failed: css({ color: "var(--status-failed)", background: "var(--status-failed-soft)" }),
+  skipped: css({ color: "var(--status-muted)", background: "var(--status-muted-soft)" }),
+  pending: css({ color: "var(--status-queued)", background: "var(--status-queued-soft)" }),
 };
 
 // ── 2. visit history ────────────────────────────────────────────────────────
@@ -403,24 +403,24 @@ const panelStyle = css({
 const pausedBannerStyle = css({
   margin: 0,
   padding: "0.4rem 0.7rem",
-  border: "1px solid #f3c14a",
+  border: "1px solid var(--amber-border)",
   borderRadius: "8px",
-  background: "rgba(243, 193, 74, 0.1)",
-  color: "#78350f",
-  fontSize: "12px",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  background: "var(--amber-soft-faint)",
+  color: "var(--amber-ink)",
+  fontSize: "var(--font-size-sm)",
+  fontFamily: "var(--font-mono)",
 });
 
 const emptyStyle = css({
   margin: 0,
-  color: "#6b7280",
-  fontSize: "12px",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-sm)",
 });
 
 const errorStyle = css({
   margin: 0,
-  color: "#b91c1c",
-  fontSize: "12px",
+  color: "var(--status-failed)",
+  fontSize: "var(--font-size-sm)",
   fontWeight: 600,
 });
 
@@ -428,23 +428,23 @@ const cardSectionStyle = css({
   display: "grid",
   gap: "0.5rem",
   padding: "0.9rem 1.1rem 1.1rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "10px",
-  background: "#fdfdfd",
+  background: "var(--card)",
 });
 
 const sectionTitleStyle = css({
   margin: 0,
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 800,
   letterSpacing: "0.09em",
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
 });
 
 const monoStyle = css({
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "12px",
-  color: "#374151",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--foreground)",
 });
 
 const headerRowStyle = css({
@@ -455,13 +455,13 @@ const headerRowStyle = css({
 });
 
 const phaseTitleStyle = css({
-  fontSize: "16px",
+  fontSize: "var(--font-size-title)",
   fontWeight: 800,
-  color: "#111827",
+  color: "var(--foreground)",
   textDecoration: "none",
   letterSpacing: "-0.02em",
   "&:hover": {
-    color: "#3573f6",
+    color: "var(--status-running)",
     textDecoration: "underline",
   },
 });
@@ -471,14 +471,14 @@ const metaRowStyle = css({
   alignItems: "baseline",
   gap: "0.75rem 1.25rem",
   flexWrap: "wrap",
-  fontSize: "12px",
-  color: "#374151",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--foreground)",
 });
 
 const estStyle = css({
-  color: "#92400e",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "11px",
+  color: "var(--status-paused)",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-xs)",
 });
 
 const chipStyle = css({
@@ -486,7 +486,7 @@ const chipStyle = css({
   alignItems: "center",
   gap: "0.3rem",
   whiteSpace: "nowrap",
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   padding: "2px 8px",
   borderRadius: "999px",
@@ -500,7 +500,7 @@ const chipDotStyle = css({
   background: "currentColor",
 });
 
-const chipDim = css({ color: "#9ca3af", background: "rgba(156, 163, 175, 0.1)" });
+const chipDim = css({ color: "var(--status-queued)", background: "var(--status-queued-soft)" });
 
 const visitListStyle = css({
   listStyle: "none",
@@ -514,8 +514,8 @@ const visitBlockStyle = css({
   display: "grid",
   gap: "0.25rem",
   padding: "0.45rem 0.6rem",
-  borderLeft: "3px solid #e5e7eb",
-  background: "#f9fafb",
+  borderLeft: "3px solid var(--border)",
+  background: "var(--muted)",
 });
 
 const visitRowStyle = css({
@@ -523,23 +523,23 @@ const visitRowStyle = css({
   alignItems: "baseline",
   gap: "0.75rem",
   flexWrap: "wrap",
-  fontSize: "12px",
+  fontSize: "var(--font-size-sm)",
 });
 
 const OUTCOME_TEXT_TONES: Record<string, ReturnType<typeof css>> = {
-  in_progress: css({ color: "#3573f6", fontWeight: 600 }),
-  success: css({ color: "#15803d", fontWeight: 600 }),
-  failed: css({ color: "#b91c1c", fontWeight: 600 }),
-  interrupted: css({ color: "#b45309", fontWeight: 600 }),
-  skipped: css({ color: "#6b7280", fontWeight: 600 }),
+  in_progress: css({ color: "var(--status-running)", fontWeight: 600 }),
+  success: css({ color: "var(--status-success)", fontWeight: 600 }),
+  failed: css({ color: "var(--status-failed)", fontWeight: 600 }),
+  interrupted: css({ color: "var(--status-interrupted)", fontWeight: 600 }),
+  skipped: css({ color: "var(--status-muted)", fontWeight: 600 }),
 };
 
 const correctionsBadgeStyle = css({
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
-  color: "#b45309",
-  background: "#fff7ed",
-  border: "1px solid #fcd34d",
+  color: "var(--status-interrupted)",
+  background: "var(--amber-surface)",
+  border: "1px solid var(--amber-border-soft)",
   borderRadius: "999px",
   padding: "0 6px",
   lineHeight: "16px",
@@ -548,26 +548,26 @@ const correctionsBadgeStyle = css({
 
 const causeStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#111827",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--foreground)",
 });
 
 const causeBannerStyle = css({
   margin: 0,
-  fontSize: "12px",
-  color: "#92400e",
-  background: "rgba(243, 193, 74, 0.12)",
-  border: "1px solid #f3c14a",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--status-paused)",
+  background: "var(--amber-soft)",
+  border: "1px solid var(--amber-border)",
   borderRadius: "6px",
   padding: "0.3rem 0.5rem",
 });
 
 const causeLinkStyle = css({
-  color: "#92400e",
+  color: "var(--status-paused)",
   fontWeight: 700,
   textDecoration: "underline",
   "&:hover": {
-    color: "#b45309",
+    color: "var(--status-interrupted)",
   },
 });
 
@@ -583,37 +583,37 @@ const attemptRowStyle = css({
   display: "grid",
   gap: "0.15rem",
   padding: "0.4rem 0.6rem",
-  borderLeft: "3px solid #e5e7eb",
-  background: "#f9fafb",
+  borderLeft: "3px solid var(--border)",
+  background: "var(--muted)",
 });
 
 const violationsStyle = css({
-  color: "#b91c1c",
-  fontSize: "12px",
+  color: "var(--status-failed)",
+  fontSize: "var(--font-size-sm)",
 });
 
 const correctionStyle = css({
-  fontSize: "12px",
-  color: "#111827",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--foreground)",
 });
 
 const correctedLabel = css({
-  color: "#92400e",
+  color: "var(--status-paused)",
   fontWeight: 700,
 });
 
 const noCorrectionStyle = css({
-  color: "#9ca3af",
+  color: "var(--muted-foreground)",
 });
 
 const surfaceStyle = css({
   display: "grid",
   gap: "0.3rem",
   padding: "0.4rem 0.5rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "8px",
-  background: "#ffffff",
-  fontSize: "12px",
+  background: "var(--card)",
+  fontSize: "var(--font-size-sm)",
 });
 
 const rowStyle = css({
@@ -624,10 +624,10 @@ const rowStyle = css({
 });
 
 const labelStyle = css({
-  fontSize: "10px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 800,
   letterSpacing: "0.06em",
-  color: "#6b7280",
+  color: "var(--muted-foreground)",
   textTransform: "uppercase",
 });
 
@@ -651,8 +651,8 @@ const gateRowStyle = css({
   display: "grid",
   gap: "0.15rem",
   padding: "0.4rem 0.6rem",
-  borderLeft: "3px solid #e5e7eb",
-  background: "#f9fafb",
+  borderLeft: "3px solid var(--border)",
+  background: "var(--muted)",
 });
 
 const overrideStyle = css({
@@ -660,15 +660,15 @@ const overrideStyle = css({
   alignItems: "center",
   gap: "0.5rem",
   flexWrap: "wrap",
-  fontSize: "12px",
-  color: "#92400e",
+  fontSize: "var(--font-size-sm)",
+  color: "var(--status-paused)",
 });
 
 const overrideBadgeStyle = css({
   display: "inline-flex",
   alignItems: "center",
   whiteSpace: "nowrap",
-  fontSize: "11px",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   padding: "1px 7px",
   borderRadius: "999px",
@@ -677,16 +677,16 @@ const overrideBadgeStyle = css({
 
 const detailsStyle = css({
   padding: "0.6rem 0.75rem",
-  border: "1px solid #e5e7eb",
+  border: "1px solid var(--border)",
   borderRadius: "10px",
-  background: "#fdfdfd",
-  fontSize: "13px",
+  background: "var(--card)",
+  fontSize: "var(--font-size-md)",
 });
 
 const summaryStyle = css({
   cursor: "pointer",
-  color: "#6b7280",
-  fontSize: "11px",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-xs)",
   fontWeight: 800,
   letterSpacing: "0.09em",
   userSelect: "none",
@@ -706,8 +706,8 @@ const sessionRowStyle = css({
   gap: "0.75rem",
   flexWrap: "wrap",
   padding: "0.35rem 0.5rem",
-  borderLeft: "3px solid #e5e7eb",
-  background: "#f9fafb",
+  borderLeft: "3px solid var(--border)",
+  background: "var(--muted)",
 });
 
 const okGlyph = "✓";

@@ -17,13 +17,13 @@ export function NeedsReviewBanner() {
 
 const bannerStyle = css({
   padding: "0.6rem 1rem",
-  border: "1px solid #f3c14a",
+  border: "1px solid var(--amber-border)",
   borderRadius: "8px",
-  background: "rgba(243, 193, 74, 0.12)",
-  color: "#92400e",
+  background: "var(--amber-soft)",
+  color: "var(--status-paused)",
 });
 
 const bannerTextStyle = css({
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "12px",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-sm)",
 });

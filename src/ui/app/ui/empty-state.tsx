@@ -21,7 +21,7 @@ const emptyStyle = css({
 
 const emptyTextStyle = css({
   margin: 0,
-  color: "#6b7280",
-  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  fontSize: "13px",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-md)",
 });
