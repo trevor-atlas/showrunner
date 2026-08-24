@@ -64,6 +64,7 @@ import {
   FIRST_PROMPT_ACK_TIMEOUT_MS,
   FakeSessionDriver,
   PiSession,
+  isSettledLine,
   sessionDriverKind,
 } from "./pi/index.ts";
 import type { RpcCommand, RpcResponse, SessionDriver } from "./pi/index.ts";
@@ -760,14 +761,6 @@ async function driveVisit(
   });
 
   let settleCount = 0;
-  const isSettledLine = (line: string): boolean => {
-    try {
-      const o = JSON.parse(line) as { type?: unknown };
-      return o.type === "agent_settled";
-    } catch {
-      return false;
-    }
-  };
   // every raw line is handed to the tracer verbatim (append-before-parse, §10);
   // the driver watches the same lines for agent_settled (§8.3)
   const feedLine = (line: string, final = false): void => {

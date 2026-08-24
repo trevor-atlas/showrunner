@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { LineSplitter } from "../linesplit.ts";
+import { classifyLine, SETTLED_KIND } from "./raw-lines.ts";
 import { DEFAULT_STDERR_CAP, SESSION_ID_RE } from "./session-driver.ts";
 import type { SessionDriver } from "./session-driver.ts";
 import type { RpcCommand, RpcResponse } from "./rpc-types.ts";
@@ -256,17 +257,10 @@ export class PiSession implements SessionDriver {
   private handleLine(line: string, final: boolean): void {
     // every raw line goes to the tracer first (append-before-parse, §10)
     this.onLine(line, final);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return; // non-JSON line: recorded verbatim, skipped (§7.1)
-    }
-    if (typeof parsed !== "object" || parsed === null) return;
-    const evt = parsed as Record<string, unknown>;
-    if (evt.type === "response") {
-      this.handleResponse(evt);
-    } else if (evt.type === "agent_settled") {
+    const c = classifyLine(line);
+    if (c.kind === "response") {
+      this.handleResponse(c.evt!);
+    } else if (c.kind === SETTLED_KIND) {
       // §8.3: agent_settled is authoritative — fires only when no automatic
       // retry/compaction/continuation remains. Latch FIRST (G1): a settle
       // with no waiter registered is remembered, not dropped.

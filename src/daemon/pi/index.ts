@@ -26,3 +26,5 @@ export {
 } from "./session-driver.ts";
 export type { SessionDriver, SessionDriverKind } from "./session-driver.ts";
 export type { RpcCommand, RpcResponse } from "./rpc-types.ts";
+export { classifyLine, isSettledLine, SETTLED_KIND } from "./raw-lines.ts";
+export type { ClassifiedLine, RawLineKind } from "./raw-lines.ts";
