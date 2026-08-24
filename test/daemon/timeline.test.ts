@@ -19,12 +19,13 @@ import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
 import type { EventType } from "../../src/core/index.ts";
-import { insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
+import { cursorEvents, getRun, insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
 import type { PhaseRow, RunRow } from "../../src/daemon/db.ts";
 import { RunPool } from "../../src/daemon/pool.ts";
 import { ApiError, apiTimeline, handleApiRequest } from "../../src/daemon/server.ts";
 import type { ApiState } from "../../src/daemon/server.ts";
 import type { TimelineView } from "../../src/daemon/contract.ts";
+import { countEnvelopeAttempts, foldPhaseSegments } from "../../src/daemon/timeline.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
@@ -578,6 +579,121 @@ test("a missing run 404s from the core function (ApiError with status 404)", () 
     expect(caught).toBeInstanceOf(ApiError);
     expect((caught as ApiError).status).toBe(404);
     expect((caught as ApiError).message).toBe("run ghost not found");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── the module boundary: the fold's own signature (src/daemon/timeline.ts) ──
+// The endpoint tests above drive apiTimeline + handleApiRequest (the wire
+// route stays pinned); these call the derivation functions directly at the
+// module boundary — the same helpers, the same seeded SQLite.
+
+function foldedSegments(state: ApiState, runId: string) {
+  const run = getRun(state.db, runId)!;
+  const events = cursorEvents(state.db, runId, 0, 10_000);
+  return foldPhaseSegments(run, events, countEnvelopeAttempts(state.db, runId));
+}
+
+test("the fold: an unexpected phase_end status reads failed (terminal but not a pass)", () => {
+  const env = makeEnv("timeline-fold-failed");
+  try {
+    const runId = "fold-fail";
+    seedRun(env.state, runId);
+    seedPhase(env.state, runId, phaseId(runId, "build"), "build", {});
+    startPhase(env.state, runId, phaseId(runId, "build"), "build", 1, ts(10), { kind: "flow" });
+    endPhase(env.state, runId, phaseId(runId, "build"), "build", 1, ts(11), "unexpected-status");
+
+    const segs = foldedSegments(env.state, runId).get(phaseId(runId, "build"))!;
+    expect(segs).toHaveLength(1);
+    expect(segs[0]!.ended_at).toBe(ts(11)); // the end still closes the segment
+    expect(segs[0]!.outcome).toBe("failed");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("the fold: a dangling phase_end with no open segment produces nothing", () => {
+  const env = makeEnv("timeline-fold-dangling");
+  try {
+    const runId = "fold-dangle";
+    seedRun(env.state, runId);
+    seedPhase(env.state, runId, phaseId(runId, "build"), "build", {});
+    // the dangling end pairs with nothing (rule 1: starts pair with ends,
+    // never ends alone) — no phantom segment
+    endPhase(env.state, runId, phaseId(runId, "build"), "build", 1, ts(5));
+    // a real pair after it still folds normally
+    startPhase(env.state, runId, phaseId(runId, "build"), "build", 1, ts(10), { kind: "flow" });
+    endPhase(env.state, runId, phaseId(runId, "build"), "build", 1, ts(11));
+
+    const segs = foldedSegments(env.state, runId).get(phaseId(runId, "build"))!;
+    expect(segs).toHaveLength(1);
+    expect(segs[0]!.started_at).toBe(ts(10));
+    expect(segs[0]!.outcome).toBe("success");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("countEnvelopeAttempts: per-(phase, visit) attempt counts from the envelopes table, empty for a run with none", () => {
+  const env = makeEnv("timeline-fold-attempts");
+  try {
+    const runId = "fold-attempts";
+    seedRun(env.state, runId);
+    // no envelope rows yet → the empty map
+    expect(countEnvelopeAttempts(env.state.db, runId).size).toBe(0);
+
+    // the envelopes table FKs to phases — the phases must exist to hold rows
+    seedPhase(env.state, runId, phaseId(runId, "plan"), "plan", {});
+    seedPhase(env.state, runId, phaseId(runId, "review"), "review", {});
+
+    envelopeRow(env.state, runId, phaseId(runId, "plan"), 1, 0, ts(10));
+    envelopeRow(env.state, runId, phaseId(runId, "plan"), 1, 1, ts(11));
+    envelopeRow(env.state, runId, phaseId(runId, "plan"), 2, 0, ts(20));
+    envelopeRow(env.state, runId, phaseId(runId, "review"), 1, 0, ts(30));
+
+    const counts = countEnvelopeAttempts(env.state.db, runId);
+    expect(counts.size).toBe(2); // plan + review only
+    expect([...counts.keys()].sort()).toEqual([phaseId(runId, "plan"), phaseId(runId, "review")].sort());
+    expect(counts.get(phaseId(runId, "plan"))!.get(1)).toBe(2); // plan v1: attempts 0 + 1
+    expect(counts.get(phaseId(runId, "plan"))!.get(2)).toBe(1); // plan v2: one row
+    expect(counts.get(phaseId(runId, "review"))!.get(1)).toBe(1);
+    expect(counts.get(phaseId(runId, "package"))).toBeUndefined(); // no rows for it
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("the fold's own signature: per-visit pairing and the resume collapse", () => {
+  const env = makeEnv("timeline-fold-signature");
+  try {
+    const runId = "fold-sig";
+    seedRun(env.state, runId);
+    seedPhase(env.state, runId, phaseId(runId, "impl"), "impl", { status: "success", visits: 2 });
+
+    // visit 1 pairs with its end; then the resume fold: TWO same-visit
+    // starts collapse into ONE segment (original started_at + first cause)
+    startPhase(env.state, runId, phaseId(runId, "impl"), "impl", 1, ts(10), { kind: "flow" });
+    endPhase(env.state, runId, phaseId(runId, "impl"), "impl", 1, ts(20));
+    startPhase(env.state, runId, phaseId(runId, "impl"), "impl", 2, ts(30), { kind: "flow" });
+    startPhase(env.state, runId, phaseId(runId, "impl"), "impl", 2, ts(40), {
+      kind: "human",
+      action: "resume",
+      by: "operator",
+    });
+    endPhase(env.state, runId, phaseId(runId, "impl"), "impl", 2, ts(50));
+
+    const segs = foldedSegments(env.state, runId).get(phaseId(runId, "impl"))!;
+    expect(segs).toHaveLength(2); // one per VISIT — no phantom open segment
+    expect(segs[0]!.visit).toBe(1);
+    expect(segs[0]!.started_at).toBe(ts(10));
+    expect(segs[0]!.ended_at).toBe(ts(20));
+    expect(segs[0]!.outcome).toBe("success");
+    expect(segs[1]!.visit).toBe(2);
+    expect(segs[1]!.started_at).toBe(ts(30)); // the ORIGINAL start
+    expect(segs[1]!.ended_at).toBe(ts(50));
+    expect(segs[1]!.outcome).toBe("success");
+    expect(segs[1]!.cause).toEqual({ kind: "flow" }); // the FIRST start's cause
   } finally {
     closeEnv(env);
   }

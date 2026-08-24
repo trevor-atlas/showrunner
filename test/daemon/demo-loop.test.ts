@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { dbPathFor, PhaseStartData, runDirFor } from "../../src/core/index.ts";
-import type { TimelineView } from "../../src/daemon/client.ts";
+import type { TimelineView } from "../../src/daemon/contract.ts";
 import {
   cleanupDir,
   tmpDataDir,

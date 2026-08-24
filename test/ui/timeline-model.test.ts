@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { TimelinePhase, TimelineView } from "../../src/daemon/client.ts";
+import type { TimelinePhase, TimelineView } from "../../src/daemon/contract.ts";
 import {
   autoSelectPhase,
   computeTimelineLayout,
@@ -15,6 +15,7 @@ import {
   outcomeLabel,
   resolveInitialSelection,
   rowKindFor,
+  segmentDurationMs,
   timelineTicks,
 } from "../../src/ui/app/ui/public/timeline-model.ts";
 
@@ -369,5 +370,26 @@ describe("phase helpers", () => {
     expect(outcomeLabel("failed")).toBe("failed");
     expect(outcomeLabel("skipped")).toBe("skipped");
     expect(outcomeLabel("interrupted")).toBe("interrupted");
+  });
+});
+
+describe("segmentDurationMs (the one Date.parse site the chart + panel share)", () => {
+  it("measures a closed segment start→end", () => {
+    expect(segmentDurationMs(seg({ started_at: iso(10_000), ended_at: iso(60_000) }))).toBe(50_000);
+  });
+
+  it("measures an open segment to the fallback edge (the panel's 'now' semantics — Date.now() when omitted)", () => {
+    const open = seg({ started_at: iso(10_000), ended_at: null, outcome: "in_progress" });
+    expect(segmentDurationMs(open, START + 60_000)).toBe(50_000);
+    // the default parameter IS Date.now(): an open segment can never be
+    // negative even against a clock that just moved
+    expect(segmentDurationMs(open)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clamps to 0 when the fallback edge precedes the start (now < start)", () => {
+    const open = seg({ started_at: iso(10_000), ended_at: null, outcome: "in_progress" });
+    expect(segmentDurationMs(open, START)).toBe(0);
+    // a closed segment whose end precedes its start also clamps (defensive)
+    expect(segmentDurationMs(seg({ started_at: iso(60_000), ended_at: iso(10_000) }))).toBe(0);
   });
 });

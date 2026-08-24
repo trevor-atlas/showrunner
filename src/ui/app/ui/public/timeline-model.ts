@@ -133,6 +133,18 @@ export interface TimelineLayout {
   segmentCount: number;
 }
 
+/** The elapsed duration of one segment in ms: closed segments measure
+ * start→end; open segments (ended_at null) measure to `endFallbackMs` — the
+ * ONE Date.parse site the chart and the panel share. The chart pins open
+ * segments to the timeline edge (runEndMs) while the panel uses "now"
+ * (Date.now()) — a deliberate, documented seam: both semantics flow through
+ * the same helper instead of re-deriving.
+ */
+export function segmentDurationMs(segment: TimelineSegment, endFallbackMs = Date.now()): number {
+  const endMs = segment.ended_at !== null ? Date.parse(segment.ended_at) : endFallbackMs;
+  return Math.max(0, endMs - Date.parse(segment.started_at));
+}
+
 /** Build the chart model for one render (server load or every poll). */
 export function computeTimelineLayout(timeline: TimelineView, now = Date.now()): TimelineLayout {
   const runStartMs = Date.parse(timeline.started_at);
@@ -153,7 +165,9 @@ export function computeTimelineLayout(timeline: TimelineView, now = Date.now()):
       const endMs = segment.ended_at !== null ? Date.parse(segment.ended_at) : runEndMs;
       const startF = frac(startMs);
       const endF = frac(endMs);
-      const durationMs = Math.max(0, endMs - startMs);
+      // chart edge semantics preserved: the duration uses the same endMs as
+      // the geometry (segmentDurationMs with runEndMs as the open-segment edge)
+      const durationMs = segmentDurationMs(segment, runEndMs);
       const visitLabel = `visit ${segment.visit} of ${visitCount}`;
       const range = `${fmtTime(segment.started_at)} to ${segment.ended_at !== null ? fmtTime(segment.ended_at) : "now"}`;
       return {

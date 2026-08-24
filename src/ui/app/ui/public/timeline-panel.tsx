@@ -5,7 +5,7 @@ import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../..
 import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../daemon/contract.ts";
 import { routes } from "../../routes.ts";
 import { fmtDuration, fmtMoney, fmtTime } from "./format.ts";
-import { lifetime, outcomeLabel } from "./timeline-model.ts";
+import { lifetime, outcomeLabel, segmentDurationMs } from "./timeline-model.ts";
 import { parseEnvelope, parseViolations, type ParsedEnvelope } from "./envelope-parse.ts";
 
 /**
@@ -177,8 +177,7 @@ function VisitHistory(handle: Handle<{ phase: TimelinePhase }>) {
 function VisitBlock(handle: Handle<{ phase: TimelinePhase; segment: TimelineSegment }>) {
   return () => {
     const { phase, segment } = handle.props;
-    const endMs = segment.ended_at !== null ? Date.parse(segment.ended_at) : Date.now();
-    const durationMs = Math.max(0, endMs - Date.parse(segment.started_at));
+    const durationMs = segmentDurationMs(segment);
     const cause = segment.cause;
     return (
       <li data-visit-block data-visit={segment.visit} data-visit-outcome={segment.outcome} mix={visitBlockStyle}>
