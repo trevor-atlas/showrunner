@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isFixtureName } from "../../test/core/fixtures.ts";
+import { isFixtureName } from "./pi/harness/fixtures.ts";
 
 import {
   runDirFor,

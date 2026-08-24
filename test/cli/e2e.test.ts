@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../src/core/index.ts";
-import { fixturePath } from "../core/fixtures.ts";
+import { fixturePath } from "../../src/daemon/pi/harness/fixtures.ts";
 
 /**
  * End-to-end: the real CLI against a real (detached) daemon over HTTP (the

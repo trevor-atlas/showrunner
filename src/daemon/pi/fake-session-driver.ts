@@ -3,7 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { fakeSessionEntryPath } from "../../../test/core/fixtures.ts";
+import { fakeSessionEntryPath } from "./harness/fixtures.ts";
 import { LineSplitter } from "../linesplit.ts";
 import { DEFAULT_STDERR_CAP } from "./session-driver.ts";
 import type { SessionDriver } from "./session-driver.ts";
@@ -36,7 +36,7 @@ export interface FakeSessionDriverOptions {
 /**
  * The scripted FakePi session driver (spec §17, T01b) — the deterministic,
  * no-pi, no-token stand-in behind the same SessionDriver seam. It spawns
- * packages/core/test/fake-session.ts (the exact process T01b's loop spawned)
+ * src/daemon/pi/harness/fake-session.ts (the exact process T01b's loop spawned)
  * with the exact same arguments and env, so downstream behavior is
  * byte-compatible: prompt commands advance the script one turn, agent_settled
  * ends the turn, stdin EOF exits 0.

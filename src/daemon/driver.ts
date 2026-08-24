@@ -11,8 +11,8 @@ import {
   fakePiEntryPath,
   fixturePath,
   isFixtureName,
-} from "../../test/core/fixtures.ts";
-import type { FixtureName } from "../../test/core/fixtures.ts";
+} from "./pi/harness/fixtures.ts";
+import type { FixtureName } from "./pi/harness/fixtures.ts";
 
 import {
   deleteProcess,

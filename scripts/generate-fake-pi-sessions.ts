@@ -1,6 +1,6 @@
 /**
  * Generate the on-disk FakePi sessions under src/blueprints/fake-pi/ from the
- * same builders the fixtures use (test/session-builder.ts) — the CLI path
+ * same builders the harness uses (src/daemon/pi/harness/session-builder.ts) — the CLI path
  * (`showrunner run <path-to-blueprint>.ts`) resolves each phase's scripted
  * session from <moduleDir>/fake-pi/<phase-slug>.json (daemon §13.3).
  *
@@ -23,7 +23,7 @@ import {
   reviewTurn,
   session,
   shipTurn,
-} from "../test/starter-kit/session-builder.ts";
+} from "../src/daemon/pi/harness/session-builder.ts";
 
 const OUT = join(import.meta.dir, "..", "src", "starter-kit", "blueprints", "fake-pi");
 
