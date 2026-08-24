@@ -99,7 +99,10 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       events,
       cursor,
       eventsHref: routes.runs.events.href({ runId }),
-      // R6: the live region refetches the timeline each poll tick through the
+      // the run-scoped SSE change stream the live region subscribes to — each
+      // change wake-up drives one events.json + timeline.json refetch
+      liveHref: routes.runs.live.href({ runId }),
+      // R6: the live region refetches the timeline on each change through the
       // timeline.json proxy (new segments + open bubbles growing to now)
       timelineHref: routes.runs.timeline.href({ runId }),
       // R6 pause surfacing: the pause viewer's reason (fetched above when
