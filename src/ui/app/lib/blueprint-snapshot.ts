@@ -1,12 +1,12 @@
 /**
- * The §13.3 blueprint snapshot — the run's CONFIG source of truth for the
- * phase drill-in (§16.8: "from the run's blueprint snapshot, not the live
+ * The blueprint snapshot — the run's CONFIG source of truth for the
+ * phase drill-in ("from the run's blueprint snapshot, not the live
  * blueprint — what actually ran").
  *
  * The daemon snapshots the RENDERED configuration at submit time into
  * `{data_dir}/runs/<run_id>/blueprint.json` (packages/daemon runner.ts
- * `snapshotBlueprint`, §10 record files). There is NO daemon HTTP endpoint for
- * it (the §13.1 table stops at /raw) — the drill-in reads the file the same
+ * `snapshotBlueprint`, record files). There is NO daemon HTTP endpoint for
+ * it (the table stops at /raw) — the drill-in reads the file the same
  * way the daemon's own resume path does (runner.ts `prepareResume`), from the
  * data dir resolved by the same @showrunner/core helper the daemon client
  * uses. Later edits to the live blueprint module never reach this file.
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 
 import { resolveDataDir, runDirFor } from "../../../core/index.ts";
 
-/** The rendered agent configuration — exactly the §13.3 snapshot shape. */
+/** The rendered agent configuration — exactly the snapshot shape. */
 export interface SnapshotAgent {
   name: string;
   model: string;
@@ -26,7 +26,7 @@ export interface SnapshotAgent {
   context: string[];
 }
 
-/** One phase of the §13.3 snapshot. */
+/** One phase of the snapshot. */
 export interface SnapshotPhase {
   name: string;
   agent: SnapshotAgent;
@@ -38,7 +38,7 @@ export interface SnapshotPhase {
   envelope: unknown;
 }
 
-/** The §13.3 blueprint.json document, as written by snapshotBlueprint(). */
+/** The blueprint.json document, as written by snapshotBlueprint(). */
 export interface BlueprintSnapshotDoc {
   name: string;
   /** the blueprint module path (null for non-module runs, e.g. fixtures) */
@@ -55,7 +55,7 @@ export interface SnapshotReadResult {
 }
 
 /**
- * Read a run's §13.3 blueprint snapshot from disk. Returns null when the file
+ * Read a run's blueprint snapshot from disk. Returns null when the file
  * is missing or unreadable (fixture/observation runs never write one) — the
  * CONFIG card then renders a "no snapshot" note instead of fabricating data.
  */

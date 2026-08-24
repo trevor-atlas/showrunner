@@ -1,10 +1,10 @@
 /**
- * Scripted FakePi session builders (spec §17) — the deterministic, no-pi,
+ * Scripted FakePi session builders — the deterministic, no-pi,
  * no-token stand-ins the starter-kit fixtures drive blueprints with. The same
  * builders generate the on-disk sessions under src/starter-kit/blueprints/fake-pi/ (the
  * CLI path) via scripts/generate-fake-pi-sessions.ts, so the two stay in sync.
  *
- * These are STARTER fixtures (the replace-this doctrine, spec §17): they are
+ * These are STARTER fixtures (the replace-this doctrine, spec): they are
  * the tests the kit ships, not the user's tests.
  */
 import type { ScriptedSession, ScriptedTurn } from "../../../daemon/runner.ts";
@@ -16,7 +16,7 @@ export interface TurnOptions {
   usage?: { input?: number; output?: number; cost?: number };
 }
 
-/** Base envelope fields every starter envelope extends (spec §3.2). */
+/** Base envelope fields every starter envelope extends. */
 export function baseEnvelope(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     summary: "Starter turn summary.",
@@ -29,7 +29,7 @@ export function baseEnvelope(extra: Record<string, unknown> = {}): Record<string
 /**
  * One scripted turn: a full event stream ending in agent_settled, plus the
  * envelope the fake "writes" to envelope.json. Mirrors the raw event shapes
- * the daemon's own fixtures use (verified §7.1 shapes).
+ * the daemon's own fixtures use (verified shapes).
  */
 export function turn(envelope: Record<string, unknown>, opts: TurnOptions = {}): ScriptedTurn {
   const model = opts.model ?? "fake-pi";
@@ -73,7 +73,7 @@ export function session(turns: ScriptedTurn[]): ScriptedSession {
   return { turns };
 }
 
-// ── per-agent envelopes (the starter schemas, §15) ───────────────────────────
+// ── per-agent envelopes (the starter schemas) ───────────────────────────
 
 /** prompt blueprint — EnvelopeBase, nothing extra. */
 export function promptTurn(): ScriptedTurn {

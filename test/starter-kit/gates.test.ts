@@ -8,7 +8,7 @@ import { envelopeShape, filesExist, lintClean, matchesPlan, reviewApproved, test
 import { failingWorkspace, passingWorkspace, rmDir, tmpDir, writeWorkspace } from "./helpers.ts";
 
 /**
- * Gate unit tests (spec §17) — the shared gates library proven against real
+ * Gate unit tests — the shared gates library proven against real
  * commands in scratch workspaces and pure envelope inputs. STARTER tests:
  * replaceable by design (the fixtures-vs-smokes doctrine).
  */

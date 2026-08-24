@@ -1,7 +1,7 @@
 import type { Envelope } from "./envelope.ts";
 import type { RunContext, ShellResult } from "./run.ts";
 
-/** Gate context (spec §3.7): the workspace, the phase, and the visit number. */
+/** Gate context: the workspace, the phase, and the visit number. */
 export interface GateContext extends RunContext {
   phase: string;
   visit: number;
@@ -21,7 +21,7 @@ export interface GateContext extends RunContext {
    */
   outputs_dir?: string;
   /**
-   * The §3.7 escape hatch to the host shell. Hooks always get one; v1 daemons
+   * The escape hatch to the host shell. Hooks always get one; v1 daemons
    * may not provide it to gates yet — gates can fall back to `createShell`
    * from this package when absent.
    */

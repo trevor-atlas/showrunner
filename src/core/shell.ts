@@ -10,18 +10,18 @@ export interface CreateShellOptions {
 }
 
 /**
- * The standard subprocess escape hatch (spec §3.7) — a `shell(cmd)` that
+ * The standard subprocess escape hatch — a `shell(cmd)` that
  * gates and hooks can use when the runtime does not provide `ctx.shell`.
  * Mirrors the daemon's hook shell exactly: `/bin/sh -c`, bounded by a
  * timeout, returns the full `{ code, stdout, stderr }` result.
  *
  * The execution is TRULY async (child_process.spawn, promisified) — a shell
  * command running inside a gate must never block the daemon's event loop
- * (§19 "Backpressure": the tracer read loop, the live feed, and every HTTP
+ * ("Backpressure": the tracer read loop, the live feed, and every HTTP
  * response keep flowing while a gate command runs). A command that exceeds
  * the timeout cap is SIGTERM'd (SIGKILL after 1s) and reports `code: -1`
  * — a crashing/timing-out gate is a failed result for the gate to turn into
- * a violation (§5.5), never a hang. stdout/stderr are captured up to
+ * a violation, never a hang. stdout/stderr are captured up to
  * `maxBuffer` each and still drained past the cap (the child never stalls
  * on a full pipe; spawnSync's overflow-kill is deliberately not mirrored).
  */
@@ -79,7 +79,7 @@ function runShellCommand(cmd: string, opts: RunOptions): Promise<ShellResult> {
     child.on("close", (code: number | null) => finish(code));
 
     const timer = setTimeout(() => {
-      // the cap: SIGTERM, then SIGKILL after 1s (the §8.3 fail-run semantics)
+      // the cap: SIGTERM, then SIGKILL after 1s (the fail-run semantics)
       timedOut = true;
       try {
         child.kill("SIGTERM");

@@ -4,7 +4,7 @@ import { modelFor } from "../models.ts";
 /**
  * builder — implements a plan. Runs after a plan phase (or a reviewer's
  * revisions); the plan and the predecessor envelope arrive in the phase's
- * inputs dir (materialized under the run record dir, §9.1).
+ * inputs dir (materialized under the run record dir).
  *
  * Replace-this: the prompt describes the demo job. Rewrite it for your domain;
  * the model and tools are the replaceable defaults from the roster.

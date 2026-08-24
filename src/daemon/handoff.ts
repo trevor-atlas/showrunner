@@ -11,35 +11,35 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import type { Envelope } from "../core/index.ts";
 
 /**
- * The §9 context & handoff filesystem protocol (T05) — everything the harness
+ * The context & handoff filesystem protocol (T05) — everything the harness
  * writes and reads under the run's raw record directory ({data_dir}/runs/<run_id>)
  * and under the run's cwd (the project the agent works on). Owned here so the
  * run loop only calls into one module.
  *
- * Run workspace layout (§9.1), all under the run's record dir — the harness
+ * Run workspace layout, all under the run's record dir — the harness
  * NEVER writes into the run's cwd, so a run can never dirty the checkout:
  *   <run_id>/<phase-slug>/inputs/   envelope.json + predecessor artifacts
  *   <run_id>/<phase-slug>/outputs/  envelope.json + artifacts (the AGENT's)
  *
- * Context resolution (§9.2): the prompt composer walks each `context` entry
+ * Context resolution: the prompt composer walks each `context` entry
  * (agent defaults, then phase additions); an entry that resolves to a readable
  * FILE (against the run's cwd, then the agent module's dir) is inlined into
  * the prompt's [Context] section, anything else is literal content. Exact paths
- * only, no globs. Collision rule (§19): a literal string that happens to match
+ * only, no globs. Collision rule: a literal string that happens to match
  * a real filepath is read as a file — there is no escape syntax.
  *
- * Zero-friction handoff (§9.3): the predecessor's accepted envelope.json and
+ * Zero-friction handoff: the predecessor's accepted envelope.json and
  * EVERY file it listed in `artifacts` are materialized into the next phase's
  * inputs/ automatically — no declaration required. Outputs of phase N become
  * inputs of phase N+1 by construction (materialized when phase N+1 starts, so
  * on_fail routing and pauses always hand the last ACCEPTED envelope).
  *
- * Raw record (§10) writes also live here: runDir/envelope.json (the last
+ * Raw record files also live here: runDir/envelope.json (the last
  * accepted envelope, verbatim) and runDir/agent_map.json
  * ({ phase → { pi_session_id, pid, visit, model } }).
  */
 
-/** §10 agent_map.json entry: enough to rebuild one session's DB row. */
+/** agent_map.json entry: enough to rebuild one session's DB row. */
 export interface AgentMapEntry {
   pi_session_id: string;
   pid: number;
@@ -47,22 +47,22 @@ export interface AgentMapEntry {
   model: string;
 }
 
-/** The accepted handoff carried from one phase to the next (§9.3). */
+/** The accepted handoff carried from one phase to the next. */
 export interface Handoff {
   /** the accepted envelope, parsed */
   envelope: Envelope;
-  /** the accepted envelope's raw text, verbatim (§10) */
+  /** the accepted envelope's raw text, verbatim */
   raw: string;
   /** the phase that produced the accepted envelope — its outputs/ holds the artifacts */
   fromPhase: string;
 }
 
-/** Sanitize a phase name into a URL-safe slug for the run workspace (§9.1). */
+/** Sanitize a phase name into a URL-safe slug for the run workspace. */
 export function slugFor(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
-// ── §9.1 run workspace layout (under {data_dir}/runs/<run_id>) ──────────────
+// ── run workspace layout (under {data_dir}/runs/<run_id>) ──────────────
 
 export function phaseDirFor(runDir: string, phaseName: string): string {
   return join(runDir, slugFor(phaseName));
@@ -77,7 +77,7 @@ export function outputsDirFor(runDir: string, phaseName: string): string {
 }
 
 /**
- * The pi session-directory name for a cwd (v3 layout, §8.1 — verified against
+ * The pi session-directory name for a cwd (v3 layout, — verified against
  * pi 0.84.2): `--<cwd with the leading separator stripped and [/\\:] → - >--`.
  * Real pi writes its session files to <sessionDir>/<this>/<ts>_<id>.jsonl.
  */
@@ -85,7 +85,7 @@ export function sessionDirNameForCwd(cwd: string): string {
   return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
-// ── §9.3 materialization (envelope + artifacts, zero-friction) ───────────────
+// ── materialization (envelope + artifacts, zero-friction) ───────────────
 
 /** Materialize the predecessor handoff into <runDir>/<phase>/inputs/:
  * the accepted envelope.json (always present for phases > 0) plus every file
@@ -119,7 +119,7 @@ function isWithin(dir: string, p: string): boolean {
 }
 
 /**
- * §8.2 prompt inlining: read the materialized §9.3 inputs back — each file's
+ * prompt inlining: read the materialized inputs back — each file's
  * path relative to <runDir>/<phase>/inputs/ plus its contents, so the composed
  * prompt can name the inputs path(s) and inline what was materialized.
  * Sorted and deterministic; [] when the inputs dir was never materialized
@@ -154,13 +154,13 @@ export function readHandoffInputs(
   return out;
 }
 
-// ── §9.2 context resolution ──────────────────────────────────────────────────
+// ── context resolution ──────────────────────────────────────────────────
 
 /**
- * Resolve context entries (§9.2): walk each entry (agent defaults, then phase
+ * Resolve context entries: walk each entry (agent defaults, then phase
  * additions); a readable file (exact path, no globs — resolved against the
  * run's cwd, then the agent module's dir) is inlined; anything else is literal
- * content. §19 collision: a literal that matches a real filepath is read as a
+ * content. collision: a literal that matches a real filepath is read as a
  * file — there is no escape syntax.
  */
 export function resolveContext(
@@ -203,10 +203,10 @@ function resolveContextFile(cwd: string, moduleDir: string | null, entry: string
   return null;
 }
 
-// ── §10 raw record ───────────────────────────────────────────────────────────
+// ── raw record ───────────────────────────────────────────────────────────
 
 /**
- * §10: the run's raw record keeps the last accepted envelope, verbatim. Called
+ * the run's raw record keeps the last accepted envelope, verbatim. Called
  * right after acceptance (valid + gates passed) — the same file T04's resume
  * path updates after a gate override records acceptance (recordEnvelopeAcceptance).
  */
@@ -215,7 +215,7 @@ export function recordAcceptedEnvelope(runDir: string, raw: string): void {
   writeFileSync(join(runDir, "envelope.json"), raw);
 }
 
-/** §10: read agent_map.json; {} when absent or unparseable (per-run fresh). */
+/** read agent_map.json; {} when absent or unparseable (per-run fresh). */
 export function readAgentMap(runDir: string): Record<string, AgentMapEntry> {
   try {
     const parsed = JSON.parse(readFileSync(join(runDir, "agent_map.json"), "utf8")) as unknown;
@@ -227,7 +227,7 @@ export function readAgentMap(runDir: string): Record<string, AgentMapEntry> {
   }
 }
 
-/** §10: agent_map.json — { phase → { pi_session_id, pid, visit, model } }. The
+/** agent_map.json — { phase → { pi_session_id, pid, visit, model } }. The
  * map is keyed by phase and per-visit entries overwrite, so a revisited phase
  * records its LATEST session; each run dir starts fresh. */
 export function writeAgentMap(runDir: string, phaseName: string, entry: AgentMapEntry): void {

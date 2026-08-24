@@ -7,10 +7,10 @@ import { Badge, badGlyph, Card, mono, okGlyph } from "./card.tsx";
 import { parseViolations } from "../public/envelope-parse.ts";
 
 /**
- * GATES card (§16.8) — per gate: pass/fail, the violations list, and the
- * §5.3 override badge (who + why + when — the audit trail is the point). The
+ * GATES card — per gate: pass/fail, the violations list, and the
+ * override badge (who + why + when — the audit trail is the point). The
  * original gate_results row is KEPT when overridden (pass stays 0); the
- * override is a separate marker the §13.1 gates endpoint joins in.
+ * override is a separate marker the gates endpoint joins in.
  *
  * Rendered data ONLY — no override button here (the override control is
  * T10b's ticket; this page is read-only).

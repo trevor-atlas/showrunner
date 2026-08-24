@@ -1,6 +1,5 @@
 /**
- * Run/phase/session domain types and the contexts passed to hooks and gates
- * (spec §3.6, §3.7).
+ * Run/phase/session domain types and the contexts passed to hooks and gates.
  */
 
 export type RunStatus =
@@ -18,7 +17,7 @@ export interface RunRecord {
   ended_at: string | null;
   cwd: string; // the run's working directory
   pool_id: string | null; // which daemon pool slot owns it
-  needs_review: boolean; // set when resumed after mid-tool-call death (§12)
+  needs_review: boolean; // set when resumed after mid-tool-call death
 }
 
 export type PhaseStatus = "pending" | "in_progress" | "success" | "failed" | "skipped";
@@ -48,7 +47,7 @@ export interface AgentSessionRecord {
   ended_at: string | null;
 }
 
-/** RunContext (spec §3.7). */
+/** RunContext. */
 export interface RunContext {
   run_id: string;
   cwd: string;
@@ -60,7 +59,7 @@ export interface ShellResult {
   stderr: string;
 }
 
-/** PhaseHookContext (spec §3.7): hooks get ctx.shell() for subprocess one-liners. */
+/** PhaseHookContext: hooks get ctx.shell() for subprocess one-liners. */
 export interface PhaseHookContext extends RunContext {
   phase: string;
   shell(cmd: string): Promise<ShellResult>;

@@ -38,10 +38,10 @@ import { tailRawFile } from "./rawfile.ts";
 import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "./runner.ts";
 
 /**
- * The daemon's local HTTP API (spec §13) — the slice the CLI needs: health,
+ * The daemon's local HTTP API — the slice the CLI needs: health,
  * submit (fixture or blueprint module), runs list (with phase counts), run
- * detail, the events cursor (§4.3), and the raw tail, plus the T04 control
- * surface (§13.2: steer / pause-view / approve / fail / resume / override /
+ * detail, the events cursor, and the raw tail, plus the T04 control
+ * surface (steer / pause-view / approve / fail / resume / override /
  * restart-fresh).
  *
  * The merged web server (src/daemon/web.ts) dispatches every `/api/*` request
@@ -57,7 +57,7 @@ import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume }
 export interface ApiState {
   db: Database;
   dataDir: string;
-  /** §5.4 pool — owned by the caller (hoisted out of the server) */
+  /** pool — owned by the caller (hoisted out of the server) */
   pool: RunPool;
   startedAt: number;
 }
@@ -65,7 +65,7 @@ export interface ApiState {
 const MAX_EVENTS_LIMIT = 500;
 
 /**
- * Server-side §13 error: carries the HTTP status code the client sees.
+ * Server-side error: carries the HTTP status code the client sees.
  * Keeps the same `{ name: "ApiError", status, message }` shape as the typed
  * client's ApiError (src/daemon/client.ts) so UI actions and tests can
  * detect it by name — the server core must NOT import client.ts (wrong
@@ -125,7 +125,7 @@ export function apiHealth(_state: ApiState): { ok: true } {
 }
 
 export function apiStatus(state: ApiState): Record<string, unknown> {
-  // §13 status verb (T07): health + pool utilization + run status counts
+  // status verb (T07): health + pool utilization + run status counts
   const runs = listRuns(state.db);
   const byStatus: Record<string, number> = { total: runs.length };
   for (const r of runs) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
@@ -143,7 +143,7 @@ export function apiListRuns(state: ApiState): { runs: unknown[] } {
   const runs = listRuns(state.db).map((r) => ({
     ...r,
     phase_counts: phaseStatusCounts(state.db, r.id),
-    // §13.1 queue position (F2 from the T01b review): 1-based spawn-queue
+    // queue position (F2 from the T01b review): 1-based spawn-queue
     // position for pool-queued runs, null when not queued
     queue_position: state.pool.position(r.id),
   }));
@@ -179,12 +179,12 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
     };
   }
 
-  // blueprint module (§13.3): import + validate + snapshot at submit, then
-  // drive behind the pool (§5.4)
+  // blueprint module: import + validate + snapshot at submit, then
+  // drive behind the pool
   const blueprintPath = body.blueprint;
   if (typeof blueprintPath === "string" && blueprintPath !== "") {
-    // §13.2/§13.3 `args?`: opaque per-submit arguments, recorded in the
-    // §13.3 snapshot (the run record is the snapshot — later edits to the
+    // `args?`: opaque per-submit arguments, recorded in the
+    // snapshot (the run record is the snapshot — later edits to the
     // blueprint do not change an in-flight run)
     const args = body.args;
     if (args !== undefined && (!Array.isArray(args) || args.some((a) => typeof a !== "string"))) {
@@ -207,7 +207,7 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
     state.pool.enqueue(prepared.runId, () => {
       try {
         const run = drivePreparedRun(state.db, state.dataDir, prepared, { delayMs });
-        // F1 (§5.4): a paused run KEEPS its pool slot (cheap — no pi process
+        // F1: a paused run KEEPS its pool slot (cheap — no pi process
         // alive while paused); the slot frees only at a TERMINAL state
         void run.terminal.finally(() => state.pool.release(prepared.runId));
       } catch {
@@ -215,7 +215,7 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
         state.pool.release(prepared.runId);
       }
     });
-    // §13.1 queue position in the submit response: null when a free slot
+    // queue position in the submit response: null when a free slot
     // already started it, else its 1-based place in line
     return {
       run_id: prepared.runId,
@@ -230,8 +230,8 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
 export function apiRunDetail(state: ApiState, runId: string): Record<string, unknown> {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
-  // §11.1: spend splits reported vs estimated — the estimated half comes
-  // from the §6 #12 spend events' flag, so show can mark it as such
+  // spend splits reported vs estimated — the estimated half comes
+  // from the spend events' flag, so show can mark it as such
   const estimatedByPhase = sumEstimatedPhaseSpend(state.db, runId);
   let estimatedSpend = 0;
   for (const s of estimatedByPhase.values()) estimatedSpend += s;
@@ -239,7 +239,7 @@ export function apiRunDetail(state: ApiState, runId: string): Record<string, unk
     run,
     spend_usd: sumRunSpend(state.db, runId),
     estimated_spend_usd: estimatedSpend,
-    // §13.1: envelope count (accepted/attempt rows for the run)
+    // envelope count (accepted/attempt rows for the run)
     envelope_count: envelopeCount(state.db, runId),
     phases: listPhases(state.db, runId).map((p) => ({ ...p, estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0 })),
     sessions: listAgentSessions(state.db, runId),
@@ -247,7 +247,7 @@ export function apiRunDetail(state: ApiState, runId: string): Record<string, unk
   };
 }
 
-// §13.1 per-phase spend breakdown (+ estimated markers per §11.1).
+// per-phase spend breakdown (+ estimated markers).
 export function apiSpend(state: ApiState, runId: string): Record<string, unknown> {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const estimatedByPhase = sumEstimatedPhaseSpend(state.db, runId);
@@ -317,7 +317,7 @@ export function apiTimeline(state: ApiState, runId: string): Record<string, unkn
   if (!run) throw new ApiError(404, `run ${runId} not found`);
 
   const events = collectTimelineEvents(state.db, runId);
-  // R7 (envelope_attempts): §6 #8's `envelope` EVENT fires only on ACCEPTANCE
+  // R7 (envelope_attempts): the `envelope` EVENT fires only on ACCEPTANCE
   // — a gate-rejected visit emits none, so event-counting would report 0 for
   // a visit that really attempted. The per-attempt record is the `envelopes`
   // TABLE (one row per attempt, valid or rejected — the same source the phase
@@ -352,7 +352,7 @@ export function apiTimeline(state: ApiState, runId: string): Record<string, unkn
   };
 }
 
-/** Sweep the §4.3 cursor query from the start — the full event history, in
+/** Sweep the cursor query from the start — the full event history, in
  * rowid order, batched 500 at a time (the one indexed read transport). */
 function collectTimelineEvents(db: Database, runId: string): EventRow[] {
   const all: EventRow[] = [];
@@ -369,7 +369,7 @@ function collectTimelineEvents(db: Database, runId: string): EventRow[] {
 /** Per-(phase_id, visit) attempt counts from the `envelopes` table — one row
  * per attempt (valid=1 parsed-and-processed, valid=0 zod-rejected or
  * unreadable), in visit → attempt order (listEnvelopes). The timeline's
- * envelope_attempts counts these ROWS, not §6 #8 `envelope` events (which
+ * envelope_attempts counts these ROWS, not `envelope` events (which
  * fire only on acceptance) — a gate-rejected visit still reports its
  * attempts (R7). */
 function countEnvelopeAttempts(db: Database, runId: string): Map<string, Map<number, number>> {
@@ -395,7 +395,7 @@ function countEnvelopeAttempts(db: Database, runId: string): Map<string, Map<num
  * NO phase_end for the blocked one — the blocked visit stays an open segment
  * (rule 2) exactly as the start/end pairing prescribes.
  *
- * The §12 resume fold: a run resumed from `interrupted` re-visits the
+ * The resume fold: a run resumed from `interrupted` re-visits the
  * RECORDED visit number, so the log can hold TWO phase_start events with the
  * same visit (the crashed visit's start, then the resumed visit's start) and
  * ONE phase_end. A naive "each start pairs with the next end" would render a
@@ -408,7 +408,7 @@ function countEnvelopeAttempts(db: Database, runId: string): Map<string, Map<num
  * Rules 3/4 — correction EVENTS are attributed to the segment whose VISIT
  * matches (phase_id from the event row, visit from the payload); the
  * segment's envelope_attempts is NOT event-derived — it counts the
- * `envelopes` TABLE rows for that (phase_id, visit) (the §6 #8 envelope
+ * `envelopes` TABLE rows for that (phase_id, visit) (the envelope
  * event fires only on acceptance, so event-counting would miss rejected
  * visits — R7). `cause` is copied verbatim from the phase_start payload
  * (null when absent — pre-R2 rows are never reconstructed heuristically).
@@ -469,7 +469,7 @@ function foldPhaseSegments(
 
   // R7 (envelope_attempts): fold the envelopes-table counts into the segments
   // per (phase_id, visit) — rows exist for EVERY attempt (valid or rejected),
-  // where the §6 #8 `envelope` event exists only on acceptance. Corrections
+  // where the `envelope` event exists only on acceptance. Corrections
   // stay event-derived above (correction events fire per correction).
   for (const [phaseId, segs] of segments) {
     const byVisit = envelopeAttempts.get(phaseId);
@@ -516,7 +516,7 @@ function phaseEndOutcome(status: string | undefined): TimelineSegmentOutcome {
  * itself, like the UI's orderPhases but without importing UI code).
  *
  * Preference order, mirroring orderPhases:
- *  1. the §13.3 blueprint snapshot's phases (exact blueprint order); unknown
+ *  1. the blueprint snapshot's phases (exact blueprint order); unknown
  *     detail phases append defensively in phases-row order;
  *  2. fallback (no snapshot — fixture/observation runs): phases that started,
  *     in FIRST phase_start event order, then the row's started_at, then the
@@ -580,7 +580,7 @@ function rowStartTs(phase: PhaseRow): number {
   return Number.isFinite(t) ? t : Infinity;
 }
 
-/** The §13.3 snapshot's phase names, in blueprint order, or null when the run
+/** The snapshot's phase names, in blueprint order, or null when the run
  * has no readable snapshot (fixture/observation runs, missing/corrupt file). */
 function readBlueprintPhaseNames(dataDir: string, runId: string): string[] | null {
   let text: string;
@@ -607,7 +607,7 @@ function readBlueprintPhaseNames(dataDir: string, runId: string): string[] | nul
 }
 
 /** Resolve a run's phase by name; 404 when the run or the phase does not
- * exist — the phase-scoped §13 read endpoints rely on these semantics. */
+ * exist — the phase-scoped read endpoints rely on these semantics. */
 function requirePhaseOrThrow(state: ApiState, runId: string, phaseName: string): import("./db.ts").PhaseRow {
   if (!getRun(state.db, runId)) {
     throw new ApiError(404, `run ${runId} not found`);
@@ -619,11 +619,11 @@ function requirePhaseOrThrow(state: ApiState, runId: string, phaseName: string):
   return phase;
 }
 
-// ── §13.1 phase-scoped read endpoints (envelope history, gate results). ──────
+// ── phase-scoped read endpoints (envelope history, gate results). ──────
 
 export function apiPhaseEnvelopes(state: ApiState, runId: string, phaseName: string): Record<string, unknown> {
   const phase = requirePhaseOrThrow(state, runId, phaseName);
-  // §13.1 envelope history for a phase: ALL attempts (valid and rejected,
+  // envelope history for a phase: ALL attempts (valid and rejected,
   // per T03's model), ordered visit → attempt
   return {
     run_id: runId,
@@ -635,7 +635,7 @@ export function apiPhaseEnvelopes(state: ApiState, runId: string, phaseName: str
 
 export function apiPhaseGates(state: ApiState, runId: string, phaseName: string): Record<string, unknown> {
   const phase = requirePhaseOrThrow(state, runId, phaseName);
-  // §13.1 gate results incl. overridden: each row carries the §5.3 override
+  // gate results incl. overridden: each row carries the override
   // badge (who + why + when) when the original row was overridden — the
   // original pass stays 0, the audit trail is the point
   return {
@@ -657,9 +657,9 @@ export function apiEvents(state: ApiState, runId: string, query: URLSearchParams
 
 export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): Record<string, unknown> {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
-  // §13.1 tail semantics: ?lines=N (alias: ?n=) returns the LAST N raw
+  // tail semantics: ?lines=N (alias: ?n=) returns the LAST N raw
   // output lines (default 200, capped 5000) — the drill-in feed into the
-  // byte-identical raw record (§10). line_count is the FULL line count;
+  // byte-identical raw record. line_count is the FULL line count;
   // truncated reports whether the tail dropped earlier lines.
   const linesParam = query.get("lines") ?? query.get("n");
   const n = intParam(linesParam, 200, 5000);
@@ -667,8 +667,8 @@ export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): 
   return { ...tail, run_id: runId };
 }
 
-// ── T04 control surface (spec §13.2 + the pause viewer behind the CLI's
-// `pause` verb). Every control verb writes a §6 #11 human_action event; each
+// ── T04 control surface (the pause viewer behind the CLI's
+// `pause` verb). Every control verb writes a human_action event; each
 // surfaces the resulting run state. The control handle is the daemon's
 // in-process registry — a paused run after a daemon restart has none, and
 // those verbs answer 409 (the continuation surface is T07/T08). ───────────────
@@ -730,7 +730,7 @@ export function apiSteerRun(state: ApiState, runId: string, body: Record<string,
     queued_steers: control.queuedSteerCount,
     message: control.paused
       ? "steer recorded and queued — the run stays paused until a proceed action (delivery: T07 continuation)"
-      : "steer sent to the live session (queued between turns, §8.4)",
+      : "steer sent to the live session (queued between turns)",
   };
 }
 
@@ -771,7 +771,7 @@ export function apiFailRun(state: ApiState, runId: string, body: Record<string, 
   const control = getControl(runId);
   try {
     if (control !== null) {
-      control.fail(by); // the loop finalizes (kills the live child, §8.3)
+      control.fail(by); // the loop finalizes (kills the live child)
     } else {
       statelessFailRun(state.db, runId, by); // interrupted / restarted-daemon runs
     }
@@ -783,7 +783,7 @@ export function apiFailRun(state: ApiState, runId: string, body: Record<string, 
 
 export async function apiResume(state: ApiState, runId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (!getRun(state.db, runId)) {
-    // §13 404 semantics: a missing run 404s before any resume logic
+    // 404 semantics: a missing run 404s before any resume logic
     throw new ApiError(404, `run ${runId} not found`);
   }
   const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
@@ -792,7 +792,7 @@ export async function apiResume(state: ApiState, runId: string, body: Record<str
       ? Math.max(0, Math.floor(body.delayMs))
       : 0;
   try {
-    // §12 continuation (T07): re-import the blueprint from the §13.3
+    // continuation (T07): re-import the blueprint from the
     // snapshot, record the resume attempt + needs_review (T04 pin), and
     // relaunch the interrupted phase with the SAME --session-id + a
     // continue instruction — behind the pool, like a fresh run
@@ -800,7 +800,7 @@ export async function apiResume(state: ApiState, runId: string, body: Record<str
     state.pool.enqueue(runId, () => {
       try {
         const run = driveResumedRun(state.db, state.dataDir, preparedResume, { delayMs });
-        // F1 (§5.4): the resumed run holds a slot until its TERMINAL state
+        // F1: the resumed run holds a slot until its TERMINAL state
         void run.terminal.finally(() => state.pool.release(runId));
       } catch {
         state.pool.release(runId);

@@ -21,7 +21,7 @@ import type {
   PhaseStartCauseOnFail,
 } from "../../src/core/index.ts";
 
-// ── §3.2 Envelope ────────────────────────────────────────────────────────────
+// ── Envelope ────────────────────────────────────────────────────────────
 
 test("EnvelopeBase accepts a valid envelope", () => {
   const env = EnvelopeBase.parse({
@@ -49,7 +49,7 @@ test("EnvelopeBase accepts optional blocked/blocked_reason", () => {
   expect(env.blocked).toBe(true);
 });
 
-// ── §3.3 Agent ───────────────────────────────────────────────────────────────
+// ── Agent ───────────────────────────────────────────────────────────────
 
 test("defineAgent is a pass-through definition helper", () => {
   const a = defineAgent({
@@ -62,7 +62,7 @@ test("defineAgent is a pass-through definition helper", () => {
   expect(a.name).toBe("builder");
 });
 
-// ── §3.5 Blueprint load-time validation ──────────────────────────────────────
+// ── Blueprint load-time validation ──────────────────────────────────────
 
 const agent = defineAgent({
   name: "builder",
@@ -93,7 +93,7 @@ function validBlueprint(): Blueprint {
         envelope: baseEnvelope,
         gates: [],
         budget: 3,
-        on_fail: { to: "plan" }, // cycles allowed; the loop guard terminates (§5.2)
+        on_fail: { to: "plan" }, // cycles allowed; the loop guard terminates
       },
     ],
   };
@@ -165,15 +165,15 @@ test("a non-object phase envelope is rejected", () => {
   expect(() => defineBlueprint(b)).toThrow(BlueprintValidationError);
 });
 
-// ── §3.6 domain types ────────────────────────────────────────────────────────
+// ── domain types ────────────────────────────────────────────────────────
 
-test("DEFAULT_BUDGET is 3 (spec §3.5)", () => {
+test("DEFAULT_BUDGET is 3", () => {
   expect(DEFAULT_BUDGET).toBe(3);
 });
 
-// ── §6 event data shapes ─────────────────────────────────────────────────────
+// ── event data shapes ─────────────────────────────────────────────────────
 
-test("parseEventData validates the twelve event shapes against §6", () => {
+test("parseEventData validates the twelve event shapes", () => {
   const cases = [
     ["run_submitted", { blueprint: "b", cwd: "/w" }],
     ["run_status", { from: "submitted", to: "running" }],
@@ -197,15 +197,15 @@ test("parseEventData validates the twelve event shapes against §6", () => {
 test("parseEventData rejects malformed event data", () => {
   expect(() => parseEventData("tool_call", { tool: "bash" })).toThrow();
   expect(() => parseEventData("spend", { phase: "build", usd: "not a number" })).toThrow();
-  // every spend event must state its provenance (§11.1): estimated is required
+  // every spend event must state its provenance: estimated is required
   expect(() =>
     parseEventData("spend", { phase: "build", tokens_in: 1, tokens_out: 1, cache_read: 0, cache_write: 0, usd: null }),
   ).toThrow();
 });
 
-// ── §6 phase_start cause (R2): optional, back-compatible, typed ─────────────
+// ── phase_start cause (R2): optional, back-compatible, typed ─────────────
 
-test("R2: an old-style phase_start payload (no cause) still validates (§6 back-compat)", () => {
+test("R2: an old-style phase_start payload (no cause) still validates (back-compat)", () => {
   const oldStyle = { phase: "build", agent: "builder", visit: 1, budget: 3 };
   // through the canonical validator path AND the schema directly
   expect(parseEventData("phase_start", oldStyle)).toEqual(oldStyle);
@@ -247,7 +247,7 @@ test("R2: the inferred cause types are the three-variant union the spec declares
   expectTypeOf<PhaseStartCauseHuman>().toEqualTypeOf<{ kind: "human"; action: string; by?: string }>();
 });
 
-// ── §4.1 data dir resolution ─────────────────────────────────────────────────
+// ── data dir resolution ─────────────────────────────────────────────────
 
 test("resolveDataDir defaults to ~/.showrunner", () => {
   expect(resolveDataDir({})).toEndWith(`/${DEFAULT_DATA_DIR_NAME}`);

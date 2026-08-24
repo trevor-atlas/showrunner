@@ -8,7 +8,7 @@ import type { SnapshotPhase } from "../../lib/blueprint-snapshot.ts";
 import { Card, mono, Pre } from "./card.tsx";
 
 /**
- * CONFIG card (§16.8) — the phase's agent configuration FROM THE §13.3
+ * CONFIG card — the phase's agent configuration FROM THE
  * BLUEPRINT SNAPSHOT, never the live blueprint module: "the snapshot is what
  * actually ran". Renders agent name/model, tools, context (inlined-file
  * markers + literals), and the prompt pre block.

@@ -1,10 +1,10 @@
 import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../src/core/index.ts";
 
 /**
- * A one-phase blueprint whose §14 hooks BOTH fire with ctx.shell() — each
+ * A one-phase blueprint whose hooks BOTH fire with ctx.shell() — each
  * appends a marker line to `<run-cwd>/hooks.log` via the hook's shell()
  * escape hatch. The marker records the phase name and $PWD (the run's cwd —
- * ctx.shell() runs there, §3.7), so the contract test can prove onPhaseStart
+ * ctx.shell() runs there), so the contract test can prove onPhaseStart
  * AND onPhaseEnd fired, in order, with a working shell in the right cwd.
  * Driven by the existing fake-pi/build.json scripted session.
  */

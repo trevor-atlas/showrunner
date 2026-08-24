@@ -6,7 +6,7 @@ import type { Gate } from "../../../src/core/index.ts";
 
 /**
  * A one-phase blueprint whose gate REALLY runs a shell command (`sleep 2.5`)
- * via core's createShell — the §19 backpressure scenario at the HTTP seam:
+ * via core's createShell — the backpressure scenario at the HTTP seam:
  * while the gate executes, the daemon's event loop must stay responsive
  * (health/runs requests resolve DURING the gate). A spawnSync gate would
  * freeze every HTTP response for the gate's whole duration.
@@ -25,7 +25,7 @@ const GateEnvelope = EnvelopeBase.extend({ quality: z.number() });
 
 /** Runs a real 2.5s sleep as a gate — pass is unconditional after it returns.
  * Writes a marker file first so a test can probe the daemon WHILE the gate is
- * executing (the §19 backpressure window). */
+ * executing (the backpressure window). */
 const sleepingGate: Gate = async (_envelope, ctx) => {
   writeFileSync(join(ctx.cwd, "gate-started.marker"), "started\n");
   const res = await createShell(ctx.cwd)("sleep 2.5");

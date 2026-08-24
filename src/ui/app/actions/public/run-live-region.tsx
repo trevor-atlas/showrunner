@@ -12,7 +12,7 @@ import { TimelinePanel } from "../../ui/public/timeline-panel.tsx";
 /**
  * The client-entry boundary widens the daemon wire types (client.ts/db.ts)
  * with the SerializableProps index signature. The values are plain JSON — the
- * serialization at the entry boundary is exactly what the §13 API returns —
+ * serialization at the entry boundary is exactly what the API returns —
  * so the widened types are structural only; the intersection documents that
  * these props ARE serializable (the same `as unknown as` widening the
  * server-side client uses at the daemon boundary).
@@ -23,10 +23,10 @@ export type SerializableGateResult = GateResultWithOverride & SerializableObject
 export type SerializableAgentSession = AgentSessionRow & SerializableObject;
 
 /**
- * The run-detail LIVE region (spec §16.5 + R4/R5): the hydrated clientEntry
+ * The run-detail LIVE region (R4/R5): the hydrated clientEntry
  * that owns the timeline chart + the R5 detail panel + the live feed.
  * Server-rendered once with the initial snapshot (the R3 TimelineView — the
- * chart renders from it at SSR — plus the full event history; §4.3 the cursor
+ * chart renders from it at SSR — plus the full event history; the cursor
  * query IS the read transport), then the browser polls
  * `GET /runs/:runId/events.json?cursor=N` every ~1s while the page is open,
  * keeping `next_cursor` in setup scope. Each poll merges the new events,
@@ -51,7 +51,7 @@ export type SerializableAgentSession = AgentSessionRow & SerializableObject;
  * run is gone and stops the poll. The paused treatment (striped active
  * bubble) comes from the tracked run status; the pause reason travels in the
  * run_status → paused event the poll already receives (pauseAt writes
- * `reason: pause.reason` — the same value the §13 pause viewer reports), so
+ * `reason: pause.reason` — the same value the pause viewer reports), so
  * the panel header can surface it live with no extra proxy. The timeline
  * refetch never touches the R5 selection — it lives in a separate setup-scope
  * variable.
@@ -64,13 +64,13 @@ export type SerializableAgentSession = AgentSessionRow & SerializableObject;
  * final). Interrupted is NOT terminal — the run awaits a human resume, so the
  * poll keeps running; open segments render with the interrupted outcome per
  * R3 rule 2. Until then the poll keeps running: after any control action
- * (§16.9) the loop resumes automatically from the same sliding window.
+ * the loop resumes automatically from the same sliding window.
  *
  * Read-only: this region never POSTs — the control verbs are T10b's ticket
  * and live in the run-detail page's server-rendered forms.
  */
 
-/** The poll cadence (§16.5: 1 s per open run detail page). */
+/** The poll cadence (1 s per open run detail page). */
 export const POLL_MS = 1000;
 
 /** One selected phase's lazily-fetched panel data (per-phase cache). */
@@ -98,14 +98,14 @@ export interface RunLiveRegionProps extends SerializableProps {
   sessions: SerializableAgentSession[];
   /** the FULL event history so far (initial load or last poll merge) */
   events: FeedEvent[];
-  /** the last event rowid — the cursor for the next poll (§4.3) */
+  /** the last event rowid — the cursor for the next poll */
   cursor: number;
   /** the events.json proxy href for this run (routes.runs.events.href) */
   eventsHref: string;
   /** the timeline.json proxy href for this run (routes.runs.timeline.href —
    * the R6 per-tick timeline refetch) */
   timelineHref: string;
-  /** the §13 pause viewer's reason when the run is paused at SSR (null
+  /** the pause viewer's reason when the run is paused at SSR (null
    * otherwise) — the panel header surfaces it; the live poll captures the
    * same value from the run_status → paused event */
   pauseReason: string | null;
@@ -123,7 +123,7 @@ export const RunLiveRegion = clientEntry(
     // refetch on every poll (R5 selection stays in its own variable below, so
     // refetches never reset it)
     let timeline: TimelineView = handle.props.timeline;
-    // R6 pause surfacing: the §13 pause viewer's reason (SSR seed) or the
+    // R6 pause surfacing: the pause viewer's reason (SSR seed) or the
     // reason captured live from the run_status → paused event
     let pauseReason: string | null = handle.props.pauseReason;
     // R5: the selection survives polls because it lives here, not in props
@@ -222,7 +222,7 @@ export const RunLiveRegion = clientEntry(
           events = [...events, ...page.events];
           cursor = page.next_cursor;
         } else {
-          cursor = page.next_cursor; // idempotent at the tail (§4.3)
+          cursor = page.next_cursor; // idempotent at the tail
         }
         // keep the run status + timeline live from run_status events — a
         // TERMINAL transition (success/failed) freezes the timeline at the
@@ -241,7 +241,7 @@ export const RunLiveRegion = clientEntry(
               }
               // R6 pause surfacing: the run_status → paused event carries the
               // pause reason (pauseAt writes `reason: pause.reason` — the same
-              // value the §13 pause viewer reports), so the panel header can
+              // value the pause viewer reports), so the panel header can
               // surface it LIVE with no extra proxy. Cleared on any other
               // transition; the panel only renders it while the live status
               // is paused anyway.

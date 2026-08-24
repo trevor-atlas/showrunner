@@ -4,7 +4,7 @@ import { ApiError, type ApiState } from "./server.ts";
  * The merged web server's in-process state holder (Phase 2 / T4): the daemon
  * builds its state (db, dataDir, pool, startedAt) once and hands it to
  * createWebServer, which registers it here. The remix dashboard's server-side
- * data layer (src/ui/app/lib/daemon.ts) calls the §13 api core functions
+ * data layer (src/ui/app/lib/daemon.ts) calls the api core functions
  * IN-PROCESS against this state — the unix socket and the self-round-trip
  * DaemonClient are gone, and the UI and the daemon share one process.
  *

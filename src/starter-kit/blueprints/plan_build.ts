@@ -28,7 +28,7 @@ export default defineBlueprint({
       agent: builder,
       envelope: BuildEnvelope,
       // the build must reference the plan the planner wrote (a plan file
-      // arrives in this phase's inputs via the §9.3 handoff)
+      // arrives in this phase's inputs via the handoff)
       gates: [envelopeShape(BuildEnvelope), matchesPlan()],
       budget: 3,
       on_fail: { to: "plan" }, // a build that cannot pass goes back to planning

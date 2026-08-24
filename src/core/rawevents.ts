@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Raw pi event shapes (spec §7.1, Appendix A, verified against pi 0.84.2).
+ * Raw pi event shapes (Appendix A, verified against pi 0.84.2).
  *
  * These describe the JSONL lines pi writes to stdout in `--mode rpc`. The
  * tracer uses them to *identify* and extract raw events; unrecognized or
@@ -9,7 +9,7 @@ import { z } from "zod";
  * folding.
  *
  * Content blocks: `{type:"text",text}` blocks appear in `partialResult.content`
- * / `result.content`; the tracer joins the `text` fields for snippets (§7.2).
+ * / `result.content`; the tracer joins the `text` fields for snippets.
  */
 
 export const TextBlock = z.object({
@@ -40,7 +40,7 @@ export const RawMessageStart = z.object({ type: z.literal("message_start") });
 export const RawMessageUpdate = z.object({ type: z.literal("message_update") });
 export const RawMessageEnd = z.object({ type: z.literal("message_end") });
 
-/** tool_execution_start — open a call keyed by toolCallId (§7.2). */
+/** tool_execution_start — open a call keyed by toolCallId. */
 export const RawToolExecutionStart = z.object({
   type: z.literal("tool_execution_start"),
   toolCallId: z.string().optional(),
@@ -57,7 +57,7 @@ export const RawToolExecutionUpdate = z.object({
   partialResult: z.object({ content: ContentBlocks }),
 });
 
-/** tool_execution_end — close: ok = !isError, snippet from result.content (§7.2). */
+/** tool_execution_end — close: ok = !isError, snippet from result.content. */
 export const RawToolExecutionEnd = z.object({
   type: z.literal("tool_execution_end"),
   toolCallId: z.string().optional(),
@@ -67,7 +67,7 @@ export const RawToolExecutionEnd = z.object({
 });
 
 /**
- * Machinery events (spec §7.4): recorded raw, never folded into harness event
+ * Machinery events: recorded raw, never folded into harness event
  * types. The list is open - the tracer treats any other `type` the same way.
  */
 export const MACHINERY_EVENT_TYPES = [

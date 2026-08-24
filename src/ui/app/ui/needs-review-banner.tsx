@@ -1,9 +1,9 @@
 import { css } from "remix/ui";
 
 /**
- * Needs-review banner (spec §16.10): the run was resumed after an
+ * Needs-review banner: the run was resumed after an
  * interruption — the transcript may be incomplete; review before trusting.
- * Shown on run detail (and phase drill-in, §16.8) when the run is flagged.
+ * Shown on run detail (and phase drill-in) when the run is flagged.
  */
 export function NeedsReviewBanner() {
   return () => (

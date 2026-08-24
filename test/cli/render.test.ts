@@ -4,9 +4,9 @@ import type { EventRow } from "../../src/core/index.ts";
 import { formatEvent } from "../../src/cli/render.ts";
 
 /**
- * The CLI feed renderer (spec §6) — unit-pinned so the human-readable lines
- * the watcher prints never drift from the §6 naming rule. T13 #6: the spend
- * line must visibly mark the §11.1 estimate path ("(estimated)") so a viewer
+ * The CLI feed renderer — unit-pinned so the human-readable lines
+ * the watcher prints never drift from the naming rule. T13 #6: the spend
+ * line must visibly mark the estimate path ("(estimated)") so a viewer
  * can tell pi-reported cost from roster-estimated cost.
  */
 
@@ -21,7 +21,7 @@ function row(partial: Partial<EventRow> & { type: EventRow["type"]; data: unknow
   };
 }
 
-test("a spend line marks the §11.1 estimate path with an (estimated) suffix (T13 #6)", () => {
+test("a spend line marks the estimate path with an (estimated) suffix (T13 #6)", () => {
   const estimated = formatEvent(
     row({
       type: "spend",
@@ -42,7 +42,7 @@ test("a spend line marks the §11.1 estimate path with an (estimated) suffix (T1
   expect(reported).toContain("usd=$0.0042");
   expect(reported).not.toContain("(estimated)");
 
-  // a null usd (no report, no roster entry, §11.1) renders n/a and is not marked
+  // a null usd (no report, no roster entry) renders n/a and is not marked
   const nullUsd = formatEvent(
     row({
       type: "spend",
@@ -53,7 +53,7 @@ test("a spend line marks the §11.1 estimate path with an (estimated) suffix (T1
   expect(nullUsd).not.toContain("(estimated)");
 });
 
-test("the feed reads aloud per §6: tool calls, gates, corrections, human actions", () => {
+test("the feed reads aloud: tool calls, gates, corrections, human actions", () => {
   const tool = formatEvent(
     row({
       type: "tool_call",

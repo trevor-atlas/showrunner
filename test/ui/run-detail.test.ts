@@ -1,6 +1,6 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 /**
- * T10a acceptance e2e (issue #15) + R4/R5: the run detail page (§16.7) with
+ * T10a acceptance e2e (issue #15) + R4/R5: the run detail page with
  * the R3/R4/R5 timeline rendered from REAL daemon data — server-side first,
  * driven through the app router with `router.fetch(...)` (the same hermetic
  * pattern as T09/T11; there is no DOM click harness, so selection is tested
@@ -11,8 +11,8 @@ process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never 
  * query the hydrated clientEntry runs (POLL_MS = 1000).
  *
  * The rich scenario is SEEDED directly into the daemon's DB (after daemon
- * start, so §12.2 startup reconciliation cannot flip the running/paused
- * rows): a paused run with needs_review and a full §6 event spread
+ * start, so startup reconciliation cannot flip the running/paused
+ * rows): a paused run with needs_review and a full event spread
  * (corrections, gates, tool calls, human action, spend, lifecycle), plus a
  * running run for the live now-cursor/status pill, plus a redrive run whose
  * review failed and sent execution back (R4 revisit arrow + R5 on_fail
@@ -120,7 +120,7 @@ const T0 = Date.now() - 10 * 60_000; // run A started 10 min ago
 const iso = (offsetMs: number): string => new Date(T0 + offsetMs).toISOString();
 
 /** Seed run A: 3 phases (plan ✓, build in-flight paused, ship pending) + the
- * full §6 event spread; run B: 1 in-flight phase + a few events; run C: the
+ * full event spread; run B: 1 in-flight phase + a few events; run C: the
  * redrive (implement v2 caused by review v1 failing). The phase_start events
  * carry the R2 cause payloads the timeline fold copies verbatim. */
 function seedDetailData(dir: string): void {
@@ -175,7 +175,7 @@ function seedDetailData(dir: string): void {
     ended_at: null,
   });
 
-  // §6 #1–12 spread, oldest → newest (rowid = cursor)
+  // spread, oldest → newest (rowid = cursor)
   const ev = (
     type: EventType,
     data: unknown,
@@ -412,7 +412,7 @@ function seedDetailData(dir: string): void {
   evc("run_status", { from: "running", to: "paused", reason: "review failed its gates" }, 200_000, null);
 
   // run D — interrupted (R6): a dangling phase_start on a run the daemon
-  // died on (§12 reconcile) — R3 rule 2 reports the open segment as
+  // died on — R3 rule 2 reports the open segment as
   // interrupted, and the run awaits a human resume (the resume header action)
   const t0d = T0 - 2 * 60_000;
   const isod = (offsetMs: number): string => new Date(t0d + offsetMs).toISOString();
@@ -477,7 +477,7 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
     let daemon: DaemonHandle | null = null;
     try {
       daemon = await startDaemon({ dataDir: dir, port: 0 });
-      // seed AFTER daemon start — §12.2 reconciliation must not touch the rows
+      // seed AFTER daemon start — reconciliation must not touch the rows
       seedDetailData(dir);
       const client = new DaemonClient({ baseUrl: daemon.baseUrl });
 
@@ -499,7 +499,7 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       expect(html).toContain('data-meta="needs-review"');
       expect(html).toContain("needs review");
 
-      // ── needs_review banner (§16.10) ────────────────────────────────────
+      // ── needs_review banner ────────────────────────────────────
       expect(html).toContain("resumed after an interruption");
       expect(html).toContain("review before trusting");
       expect(html).toContain('data-state="needs-review"');
@@ -1027,7 +1027,7 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       expect((tl.match(/data-paused-stripe/g) ?? []).length).toBe(1);
 
       // the pause reason surfaces in the PANEL HEADER — the R6 choice: the
-      // §13 pause viewer's reason (seeded here via the run_status → paused
+      // pause viewer's reason (seeded here via the run_status → paused
       // event, which is the pause viewer's fallback source)
       expect(tl).toContain("data-panel-pause-reason");
       const banner = tl.slice(tl.indexOf("data-panel-pause-reason"), tl.indexOf("data-panel-pause-reason") + 120);

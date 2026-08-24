@@ -1,5 +1,5 @@
 /**
- * poll — a wait-with-timeout tool for pi (spec §14 "Waits": the harness does
+ * poll — a wait-with-timeout tool for pi ("Waits": the harness does
  * not manage external waits; the agent's poll tool carries its own timeout
  * and the harness just observes the long tool call).
  *
@@ -9,7 +9,7 @@
  * ── Install ───────────────────────────────────────────────────────────────
  * pi's tool/extension format (docs/extensions.md): an extension module that
  * registers the tool. Install like the skills — copy or symlink this file
- * into ~/.pi/agent/extensions/ (global) or .pi/extensions/ (project), or add
+ * into ~/.pi/agent/extensions/ (global) or.pi/extensions/ (project), or add
  * it via settings.json ("extensions" array). Once loaded, agents that list
  * "poll" in their tools can call it.
  *

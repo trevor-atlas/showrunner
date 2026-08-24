@@ -20,7 +20,7 @@ import { failingWorkspace, passingWorkspace, rmDir, runToTerminal, tmpDir } from
 import type { Blueprint } from "../../src/core/index.ts";
 
 /**
- * The starter kit's own fixtures (spec §17, §15) — FakePi drives every one of
+ * The starter kit's own fixtures  — FakePi drives every one of
  * the ten starter blueprints (and therefore all six agents) end-to-end:
  * envelope accepted, gates run and recorded, terminal success — plus a
  * bounded fix loop that exercises on_fail routing in both directions and the
@@ -69,7 +69,7 @@ async function runToSuccess(e: RunEnv, blueprint: Blueprint, scripts: ScriptMap)
   return run.run_id;
 }
 
-// ── one blueprint per agent (six agents, §15) ────────────────────────────────
+// ── one blueprint per agent (six agents) ────────────────────────────────
 
 test("scout runs end-to-end (scout agent, recon phase)", async () => {
   const e = env("scout");
@@ -107,7 +107,7 @@ test("plan_build runs plan → build → ship; ship waits for human approval; ma
     build: session([buildTurn()]),
     ship: session([shipTurn()]),
   });
-  // the build phase's matchesPlan gate saw the plan arrive via the §9.3 handoff
+  // the build phase's matchesPlan gate saw the plan arrive via the handoff
   expect(gatePassed(e.db, runId, "matchesPlan")).toBe(true);
   // the ship phase was a real approval pause: a human_action approve was recorded
   const approves = cursorEvents(e.db, runId, 0, 10_000).filter(
@@ -189,7 +189,7 @@ test("everything runs end-to-end with two human approvals (plan and ship)", asyn
   expect(approves.length).toBe(2);
 }, { timeout: 30_000 });
 
-// ── CLI path: on-disk scripted sessions (spec §13.3, §17) ────────────────────
+// ── CLI path: on-disk scripted sessions  ────────────────────
 
 test("every blueprint phase resolves a scripted FakePi session for the CLI path (src/starter-kit/blueprints/fake-pi)", () => {
   const blueprints = [

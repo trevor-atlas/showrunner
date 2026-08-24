@@ -5,16 +5,16 @@ agent — observed live, corrected in place, and paused
 for humans when success cannot be earned.
 
 - **Observable** — every event lands in SQLite mid-flight; runs are watched, not
-  read about afterwards. Each phase produces a typed envelope (§9) that gates
+  read about afterwards. Each phase produces a typed envelope that gates
   the next phase.
 - **Corrected in place** — when a gate rejects an envelope, the daemon re-prompts
-  the SAME pi session with one message naming exactly what was wrong (§5.2).
+  the SAME pi session with one message naming exactly what was wrong.
 - **Human in the loop** — approval, budget-exhaustion, blocked, and visit-guard
   pauses suspend the run until a human steers, approves, overrides a gate, or
-  restarts the phase fresh (§5.3).
+  restarts the phase fresh.
 - **Crash-safe** — the raw stream is appended before it is parsed; a killed
   daemon reaps orphans, surfaces interrupted runs, and backfills the missed
-  session tail on restart (§12).
+  session tail on restart.
 
 ## Quickstart
 
@@ -35,7 +35,7 @@ In another terminal:
 ```bash
 # 3. run a starter blueprint. Real pi by default — the daemon auto-detects the
 #    binary and spawns the actual agent; --prompt steers it (it becomes the
-#    run's first instruction, §8.2). The run's inputs/outputs live under the
+#    run's first instruction). The run's inputs/outputs live under the
 #    DATA DIRECTORY (~/.showrunner/runs/<run_id>/<phase>/), never in your
 #    checkout — nothing the harness does touches the source tree. (Set
 #    SHOWRUNNER_FAKE=1 to replay the scripted demo sessions instead — no
@@ -56,7 +56,7 @@ adds the project's real tests + typecheck as build gates — run it in a project
 that has a `tsconfig.json` (or a `"typecheck"` script) and a test suite; the
 gates fail loudly, naming the missing piece, when it does not.
 
-The daemon serves ONE web server — the §13 JSON API under `/api/*` and the
+The daemon serves ONE web server — the JSON API under `/api/*` and the
 dashboard — on `http://localhost:44100` (`SHOWRUNNER_PORT` overrides; `0` =
 ephemeral port, a test seam — not an off switch). The dashboard is always on;
 a failed bind logs and the daemon continues without a web server.
@@ -99,7 +99,7 @@ showrunner status            # is it up? pool utilization + run counts
 - **Dashboard.** http://localhost:44100 — the first hit may 503 for a few
   seconds while the remix router import warms up, then 200.
 - **Restart caveat.** Runs left `running` when the daemon died are reconciled
-  to `interrupted` on the next start (§12) and need `showrunner resume <run_id>`
+  to `interrupted` on the next start and need `showrunner resume <run_id>`
   to continue; completed runs are untouched.
 
 ### The starter kit
@@ -128,13 +128,13 @@ FakePi sessions — the test fixture, not a runtime mode — are the opt-in
 
 | Variable | Meaning |
 | --- | --- |
-| `SHOWRUNNER_DATA_DIR` | data directory (default `~/.showrunner`): `showrunner.db`, `runs/`, `daemon.pid`, `prices.json`. Honored by the daemon, the CLI, and the SDK. One run = one folder under `runs/<run_id>/`: the §13.3 `blueprint.json` config snapshot, the §10 raw record (`raw_output.jsonl`, `envelope.json`, `agent_map.json`), `sessions/`, and the per-phase workspace `<phase>/inputs|outputs/` — everything a run produced, inspectable and modifiable by hand. |
-| `SHOWRUNNER_PORT` | the single web-server port (default `44100`): the §13 API and the dashboard share it; `0` = ephemeral (the pidfile's second line records the bound port). This replaced `SHOWRUNNER_DAEMON_URL` and `SHOWRUNNER_DASHBOARD_PORT` (deleted). |
+| `SHOWRUNNER_DATA_DIR` | data directory (default `~/.showrunner`): `showrunner.db`, `runs/`, `daemon.pid`, `prices.json`. Honored by the daemon, the CLI, and the SDK. One run = one folder under `runs/<run_id>/`: the `blueprint.json` config snapshot, the raw record (`raw_output.jsonl`, `envelope.json`, `agent_map.json`), `sessions/`, and the per-phase workspace `<phase>/inputs|outputs/` — everything a run produced, inspectable and modifiable by hand. |
+| `SHOWRUNNER_PORT` | the single web-server port (default `44100`): the API and the dashboard share it; `0` = ephemeral (the pidfile's second line records the bound port). This replaced `SHOWRUNNER_DAEMON_URL` and `SHOWRUNNER_DASHBOARD_PORT` (deleted). |
 | `SHOWRUNNER_FAKE` | `=1` forces the scripted FakePi sessions (tests, CI, token-free demos). Unset = real pi by default (auto-detected). Explicitly overrides `SHOWRUNNER_SMOKE`. |
 | `SHOWRUNNER_SMOKE` | `=1` forces the REAL pi driver regardless of detection (the capstone smoke). The smoke runs with `SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts`. |
 | `SHOWRUNNER_PI_BINARY` | path to the pi binary for real runs (default: `pi` on PATH). |
-| `SHOWRUNNER_POOL_SIZE` | concurrent run slots (default 2; a paused run keeps its slot, §5.4). |
-| `PI_CODING_AGENT_SESSION_DIR` | session-tree root pi writes to and the §12.4 backfill reads from (tests point it at a scratch dir). |
+| `SHOWRUNNER_POOL_SIZE` | concurrent run slots (default 2; a paused run keeps its slot). |
+| `PI_CODING_AGENT_SESSION_DIR` | session-tree root pi writes to and the backfill reads from (tests point it at a scratch dir). |
 
 `SHOWRUNNER_FAKE` never needs to be set for normal use: the daemon runs the
 real pi binary when one is on PATH, and falls back to the scripted sessions
@@ -145,17 +145,17 @@ only on a machine with no pi installed.
 One package, one runtime, one process. The tree mirrors the old five-package
 split as plain directories — `src/core`, `src/daemon`, `src/cli`,
 `src/starter-kit`, `src/ui` — because the modules are load-bearing, not the
-package boundaries (spec §2.2 deferred workspaces; there is no publishing
+package boundaries (deferred workspaces; there is no publishing
 boundary). Cross-directory imports are plain relative imports; there is a
 single tsconfig, a single node_modules, a single cwd.
 
 - **`src/core`** — the SDK: blueprint/agent/envelope/gate types, the FakePi
   harness, and the run-loop skeleton. No pi, no SQLite.
 - **`src/daemon`** — the long-lived daemon: owns SQLite (the write path),
-  spawns pi, folds the raw stream into events (tracer, §7), runs the envelope
+  spawns pi, folds the raw stream into events (tracer), runs the envelope
   and gate stages, the pause/control surface, and the merged web server
-  (`src/daemon/web.ts`): ONE TCP listener on `127.0.0.1:44100` serving the §13
-  JSON API under `/api/*` AND the remix@next dashboard in-process (§16).
+  (`src/daemon/web.ts`): ONE TCP listener on `127.0.0.1:44100` serving the
+  JSON API under `/api/*` AND the remix@next dashboard in-process.
 - **`src/cli`** — `showrunner`: a thin typed client over the daemon's HTTP API.
 - **`src/starter-kit`** — the replace-this content (agents, gates, blueprints, skills, poll tool).
 - **`src/ui`** — the remix@next dashboard (served by the daemon via `src/daemon/web.ts`; `bun --watch src/ui/server.ts` boots the whole daemon in-process for UI dev).

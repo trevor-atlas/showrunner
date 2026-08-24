@@ -23,12 +23,12 @@ import type { DaemonHandle, SubmitRunBody } from "../../src/daemon/index.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
- * The §13 API contract surface (issue #13 / T08): a real daemon against a
- * scratch data dir, FakePi runs only (no pi binary), exercising EVERY §13
- * endpoint — read (§13.1), control (§13.2), blueprint submission (§13.3),
- * hooks & waits (§14), the exact §4.3 cursor query, the queue-position +
+ * The API contract surface (issue #13 / T08): a real daemon against a
+ * scratch data dir, FakePi runs only (no pi binary), exercising EVERY
+ * endpoint — read, control, blueprint submission,
+ * hooks & waits, the exact cursor query, the queue-position +
  * run_submitted-at-acceptance fixes (F2), and the typed client over the
- * merged HTTP transport (every §13 path under /api/*, §16).
+ * merged HTTP transport (every path under /api/*).
  */
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -40,7 +40,7 @@ const HOOK = join(fixturesDir, "hook-blueprint.ts");
 const HOOK_START_FAIL = join(fixturesDir, "hook-start-fail.ts");
 const HOOK_END_FAIL = join(fixturesDir, "hook-end-fail.ts");
 
-/** Raw §13 probe over the daemon's merged HTTP server: every path below is
+/** Raw probe over the daemon's merged HTTP server: every path below is
  * `/api`-prefixed (the web server dispatches /api/* to the api core). */
 function api(
   baseUrl: string,
@@ -105,9 +105,9 @@ function scratchCwd(label: string): string {
   return mkdtempSync(join(tmpdir(), `showrunner-${label}-`));
 }
 
-// ── §13.1 read endpoints over a completed blueprint run ─────────────────────
+// ── read endpoints over a completed blueprint run ─────────────────────
 
-test("§13.1 read surface: detail, envelopes, gates, spend, raw tail, list — and the 404 semantics", async () => {
+test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 404 semantics", async () => {
   const dir = tmpDataDir("contract-read");
   const cwd = scratchCwd("contract-read-cwd");
   let daemon: DaemonHandle | null = null;
@@ -212,7 +212,7 @@ test("§13.1 read surface: detail, envelopes, gates, spend, raw tail, list — a
     expect(full.truncated).toBe(false);
     expect(full.line_count).toBe(raw.line_count);
 
-    // §4.3: the exact cursor query shape is the server's read transport
+    // the exact cursor query shape is the server's read transport
     expect(CURSOR_SQL).toBe("SELECT * FROM events WHERE run_id = ? AND rowid > ? ORDER BY rowid LIMIT ?");
 
     // ── 404 semantics: missing run everywhere; missing phase on phase-scoped reads
@@ -238,9 +238,9 @@ test("§13.1 read surface: detail, envelopes, gates, spend, raw tail, list — a
   }
 }, { timeout: 30_000 });
 
-// ── §4.3 cursor contract: pagination, next_cursor, the 500 limit ────────────
+// ── cursor contract: pagination, next_cursor, the 500 limit ────────────
 
-test("§4.3 cursor contract: limit honored (500 cap, default), next_cursor advances, idempotent at the tail", async () => {
+test("cursor contract: limit honored (500 cap, default), next_cursor advances, idempotent at the tail", async () => {
   const dir = tmpDataDir("contract-cursor");
   let daemon: DaemonHandle | null = null;
   try {
@@ -311,7 +311,7 @@ test("§4.3 cursor contract: limit honored (500 cap, default), next_cursor advan
   }
 }, { timeout: 30_000 });
 
-// ── §13.2/§13.3: submit with queue position + run_submitted at ACCEPTANCE ───
+// ── submit with queue position + run_submitted at ACCEPTANCE ───
 
 test("F2: run_submitted fires at acceptance (a queued run has it before it drives); queue position surfaces on POST /runs and GET /runs", async () => {
   const dir = tmpDataDir("contract-queue");
@@ -346,7 +346,7 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
     expect(bEvents.map((e) => e.type)).toEqual(["run_submitted"]);
     expect(bEvents[0]!.data).toMatchObject({ blueprint: "demo", cwd });
 
-    // the §13.3 snapshot records the submit-time args
+    // the snapshot records the submit-time args
     const snap = JSON.parse(readFileSync(join(runDirFor(dir, bId), "blueprint.json"), "utf8")) as { args: string[] };
     expect(snap.args).toEqual(["--go", "fast"]);
 
@@ -391,9 +391,9 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
   }
 }, { timeout: 40_000 });
 
-// ── §13.2 control verbs: approve, override (audited), restart-fresh, fail ───
+// ── control verbs: approve, override (audited), restart-fresh, fail ───
 
-test("§13.2 control surface: approve + audited gate override + restart-fresh + fail, with human_action events and guardrails", async () => {
+test("control surface: approve + audited gate override + restart-fresh + fail, with human_action events and guardrails", async () => {
   const dir = tmpDataDir("contract-control");
   const cwd = scratchCwd("contract-control-cwd");
   let daemon: DaemonHandle | null = null;
@@ -541,9 +541,9 @@ test("override audit: a request WITHOUT by records cli; with by:\"web\" records 
   }
 }, { timeout: 60_000 });
 
-// ── §13.2: session steer, resume guardrails, fail guardrails ────────────────
+// ── session steer, resume guardrails, fail guardrails ────────────────
 
-test("§13.2 session steer delivers between turns; resume and fail answer 409 outside their contract", async () => {
+test("session steer delivers between turns; resume and fail answer 409 outside their contract", async () => {
   const dir = tmpDataDir("contract-steer");
   const cwd = scratchCwd("contract-steer-cwd");
   let daemon: DaemonHandle | null = null;
@@ -575,7 +575,7 @@ test("§13.2 session steer delivers between turns; resume and fail answer 409 ou
     await waitForStatus(baseUrl, runId, "success");
     const evts = await runEvents(baseUrl, runId);
     expect(evts.some((e) => e.type === "human_action" && e.data.action === "steer" && e.data.by === "reviewer")).toBe(true);
-    // waits are observed, not managed (§14): tool_call rows carry duration_ms
+    // waits are observed, not managed: tool_call rows carry duration_ms
     const tool = evts.find((e) => e.type === "tool_call");
     expect(tool).toBeDefined();
     expect(tool!.data.duration_ms).toBeTypeOf("number");
@@ -596,14 +596,14 @@ test("§13.2 session steer delivers between turns; resume and fail answer 409 ou
   }
 }, { timeout: 60_000 });
 
-// ── §12 resume over HTTP: an interrupted run continues to success ───────────
+// ── resume over HTTP: an interrupted run continues to success ───────────
 
-test("§13.2 resume over HTTP: an interrupted run relaunches from its recorded phase and succeeds", async () => {
+test("resume over HTTP: an interrupted run relaunches from its recorded phase and succeeds", async () => {
   const dir = tmpDataDir("contract-resume");
   const cwd = scratchCwd("contract-resume-cwd");
   let daemon: DaemonHandle | null = null;
   try {
-    // build an INTERRUPTED run directly (status interrupted + the §13.3
+    // build an INTERRUPTED run directly (status interrupted + the
     // snapshot + pending phase rows) — prepareResume reads exactly this
     const runId = "bbbbbbbb-0000-4000-8000-000000000002";
     const seedDb = openDb(join(dir, "showrunner.db"));
@@ -640,9 +640,9 @@ test("§13.2 resume over HTTP: an interrupted run relaunches from its recorded p
   }
 }, { timeout: 40_000 });
 
-// ── §14 hooks: fire points + failure pauses ─────────────────────────────────
+// ── hooks: fire points + failure pauses ─────────────────────────────────
 
-test("§14 hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseEnd)", async () => {
+test("hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseEnd)", async () => {
   const dir = tmpDataDir("contract-hooks");
   const cwd = scratchCwd("contract-hooks-cwd");
   let daemon: DaemonHandle | null = null;
@@ -662,7 +662,7 @@ test("§14 hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseE
   }
 }, { timeout: 30_000 });
 
-test("§14 a throwing onPhaseStart audits + parks the run at the hook_failed menu (never dies silently)", async () => {
+test("a throwing onPhaseStart audits + parks the run at the hook_failed menu (never dies silently)", async () => {
   const dir = tmpDataDir("contract-hook-start");
   const cwd = scratchCwd("contract-hook-start-cwd");
   let daemon: DaemonHandle | null = null;
@@ -690,7 +690,7 @@ test("§14 a throwing onPhaseStart audits + parks the run at the hook_failed men
       "run_submitted", // acceptance (F2)
       "run_status", // submitted → running at drive start
       "phase_start",
-      "human_action", // the §14 audit event
+      "human_action", // the audit event
       "phase_end", // status failed
       "run_status", // running → paused
     ]);
@@ -699,7 +699,7 @@ test("§14 a throwing onPhaseStart audits + parks the run at the hook_failed men
     expect(hookAudit.data.detail).toContain("hook start boom");
     const phaseEndEvt = evts.find((e) => e.type === "phase_end")!;
     expect((phaseEndEvt.data as { status: string }).status).toBe("failed");
-    // no session ever spawned (the start hook threw before spawn, §5.2)
+    // no session ever spawned (the start hook threw before spawn)
     expect(types.includes("agent_start")).toBe(false);
 
     // the menu is live: fail ends the run
@@ -713,7 +713,7 @@ test("§14 a throwing onPhaseStart audits + parks the run at the hook_failed men
   }
 }, { timeout: 30_000 });
 
-test("§14 a throwing onPhaseEnd records the phase FAILED + audits, then parks at the hook_failed menu", async () => {
+test("a throwing onPhaseEnd records the phase FAILED + audits, then parks at the hook_failed menu", async () => {
   const dir = tmpDataDir("contract-hook-end");
   const cwd = scratchCwd("contract-hook-end-cwd");
   let daemon: DaemonHandle | null = null;
@@ -744,9 +744,9 @@ test("§14 a throwing onPhaseEnd records the phase FAILED + audits, then parks a
   }
 }, { timeout: 30_000 });
 
-// ── §13 submit error semantics: missing module / invalid blueprint / bad args ─
+// ── submit error semantics: missing module / invalid blueprint / bad args ─
 
-test("§13.3 submit errors are clean 400s: missing module, bad args, no fixture/blueprint", async () => {
+test("submit errors are clean 400s: missing module, bad args, no fixture/blueprint", async () => {
   const dir = tmpDataDir("contract-submit400");
   let daemon: DaemonHandle | null = null;
   try {

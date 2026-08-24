@@ -46,7 +46,7 @@ test("every fixture line parses as JSON with a type field", () => {
   }
 });
 
-test("tool execution events match the verified pi shapes (§7.2)", () => {
+test("tool execution events match the verified pi shapes", () => {
   for (const name of FIXTURE_NAMES) {
     for (const line of fixtureLines(name)) {
       const evt = parseLine(line) as { type: string };
@@ -91,7 +91,7 @@ test("happy and gate-fail settle; crash dies before agent_settled", () => {
   expect(RawAgentEnd.safeParse({ type: "agent_end", willRetry: false }).success).toBe(true);
 });
 
-// ── FakePi replays deterministically (spec §17) ──────────────────────────────
+// ── FakePi replays deterministically ──────────────────────────────
 
 function replay(name: FixtureName, delayMs = 0): Promise<{ stdout: string; code: number }> {
   return new Promise((resolve, reject) => {

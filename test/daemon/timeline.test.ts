@@ -9,7 +9,7 @@
 // ApiState is built the way server.test.ts builds the daemon's (db + dataDir
 // + a stub pool + startedAt).
 //
-// envelope_attempts derives from the `envelopes` TABLE (R7 resolution: §6
+// envelope_attempts derives from the `envelopes` TABLE (R7 resolution:
 // #8's `envelope` event fires only on acceptance, so a rejected visit would
 // report 0 attempts from events) — those tests seed envelope ROWS per
 // attempt, the same source the phase drill-in's attempt list reads.
@@ -125,7 +125,7 @@ function correction(state: ApiState, runId: string, phaseId: string, name: strin
 /** An `envelopes` TABLE row for one attempt — the canonical per-attempt record
  * (valid or rejected), the same source the phase drill-in's attempt list
  * reads. The R7 resolution derives the timeline's envelope_attempts from
- * these rows per (phase_id, visit), NOT from §6 #8 `envelope` events (which
+ * these rows per (phase_id, visit), NOT from `envelope` events (which
  * fire only on acceptance). Quality < 8 mirrors the demo-loop fixture's
  * gate-rejected review v1 rows: parse-valid (valid=1) with gate violations. */
 function envelopeRow(
@@ -232,7 +232,7 @@ test("R7 acceptance: plan/implement/review/package fold into 1/2/2/1 segments wi
     const review = view.phases.find((p) => p.name === "review")!;
     expect(review.segments[0]!.outcome).toBe("failed");
     expect(review.segments[0]!.corrections).toBe(1);
-    // review v1: TWO rows (attempts 0 + 1, both gate-rejected) — the §6 #8
+    // review v1: TWO rows (attempts 0 + 1, both gate-rejected) — the
     // `envelope` event fires only on acceptance, so only the row count can
     // report the rejected visit's 2 attempts (R7)
     expect(review.segments[0]!.envelope_attempts).toBe(2);
@@ -396,7 +396,7 @@ test("a pre-R2 run (phase_start payload without cause) reports cause null — ne
 
 // ── blueprint order ──────────────────────────────────────────────────────────
 
-test("phases with out-of-order started_at return in blueprint order from the §13.3 snapshot", () => {
+test("phases with out-of-order started_at return in blueprint order from the snapshot", () => {
   const env = makeEnv("timeline-order");
   try {
     const runId = "ord";
@@ -411,7 +411,7 @@ test("phases with out-of-order started_at return in blueprint order from the §1
     startPhase(env.state, runId, phaseId(runId, "review"), "review", 1, ts(5), { kind: "flow" });
     startPhase(env.state, runId, phaseId(runId, "plan"), "plan", 1, ts(6), { kind: "flow" });
 
-    // the §13.3 snapshot: plan, implement, review, package (what actually ran)
+    // the snapshot: plan, implement, review, package (what actually ran)
     const runDir = runDirFor(env.dir, runId);
     mkdirSync(runDir, { recursive: true });
     writeFileSync(
@@ -458,9 +458,9 @@ test("phases with out-of-order started_at return in blueprint order from the §1
   }
 });
 
-// ── the §12 resume fold ──────────────────────────────────────────────────────
+// ── the resume fold ──────────────────────────────────────────────────────
 
-test("the §12 resume fold: two phase_start events with the SAME visit collapse into one segment", () => {
+test("the resume fold: two phase_start events with the SAME visit collapse into one segment", () => {
   const env = makeEnv("timeline-resume");
   try {
     const runId = "resume";
@@ -489,7 +489,7 @@ test("the §12 resume fold: two phase_start events with the SAME visit collapse 
     expect(seg.cause).toEqual({ kind: "flow" }); // the FIRST start's cause
     expect(seg.corrections).toBe(1); // both visit-2 events land in the one segment
     expect(seg.envelope_attempts).toBe(1);
-    expect(view.needs_review).toBe(true); // §12 needs_review pin
+    expect(view.needs_review).toBe(true); // needs_review pin
 
     // a second crash before the resume completes: still ONE segment, and rule
     // 2 makes the collapsed open segment read interrupted

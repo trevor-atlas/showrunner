@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Skill file validation (spec §15, pi docs/skills.md — Agent Skills standard):
+ * Skill file validation (pi docs/skills.md — Agent Skills standard):
  * one dir per skill, SKILL.md with frontmatter `name` (lowercase-hyphens,
  * ≤64 chars) and a specific `description` (the only thing pi's model sees
  * until the skill loads), and a body that submits a run via the CLI.

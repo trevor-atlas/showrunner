@@ -12,12 +12,12 @@ import {
 import type { Roster } from "../../src/daemon/index.ts";
 
 /**
- * The price roster (spec §11.1) — the fallback/estimate path for spend.
+ * The price roster — the fallback/estimate path for spend.
  * Tests use the scratch data dir (T03's F3 pattern): no real prices.json is
  * ever touched, and every run's estimates read from its own data dir.
  */
 
-test("a missing prices.json reads as the empty roster (no estimates, §11.1)", () => {
+test("a missing prices.json reads as the empty roster (no estimates, )", () => {
   const dir = tmpDataDir("roster-missing");
   try {
     expect(loadRoster(dir)).toEqual({});

@@ -9,7 +9,7 @@ export interface Agent {
   prompt: string;
   /** bash, edit, read, grep, find, poll... */
   tools: string[];
-  /** literal content or exact filepaths (spec §9) */
+  /** literal content or exact filepaths */
   context: string[];
 }
 

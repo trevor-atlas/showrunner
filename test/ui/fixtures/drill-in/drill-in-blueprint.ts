@@ -13,11 +13,11 @@ import type { Envelope, Gate } from "../../../../src/core/index.ts";
  *  - verify — every attempt fails `verifyNeverGreen` → budget exhausted →
  *             the run PAUSES; the e2e overrides the gate (audited, who+why)
  *             and the drill-in shows the override badge. usage reports tokens
- *             but NO cost → the roster estimates USD (the §11.1 estimated
+ *             but NO cost → the roster estimates USD (the estimated
  *             marker path, prices.json lives in the scratch data dir).
  *
  * The e2e mutates this module file AFTER submit to prove the CONFIG card
- * renders the §13.3 snapshot (what actually ran), never the live module.
+ * renders the snapshot (what actually ran), never the live module.
  */
 
 const qualityGate: Gate = async (envelope: Envelope) => {

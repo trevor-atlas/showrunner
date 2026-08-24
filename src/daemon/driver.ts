@@ -37,7 +37,7 @@ import { Tracer } from "./tracer.ts";
  * envelope/gate/correction handling - T01b owns that); this is the
  * observation half of the tracer bullet.
  *
- * The raw record (§10) is written per run under {data_dir}/runs/<run_id>/:
+ * The raw record is written per run under {data_dir}/runs/<run_id>/:
  * raw_output.jsonl (verbatim, appended before parsing), agent_map.json, and
  * stderr.log when the child wrote diagnostics. envelope.json is written by the
  * envelope/gate orchestration (T01b), not here.
@@ -56,7 +56,7 @@ export interface SubmitOptions {
   agent?: string;
   model?: string;
   phase?: string;
-  /** diagnostic line for the FakePi child to write to stderr (§8.3 capture) */
+  /** diagnostic line for the FakePi child to write to stderr */
   stderrLine?: string;
 }
 
@@ -68,7 +68,7 @@ export interface SubmittedRun {
   done: Promise<{ status: string; needs_review: boolean }>;
 }
 
-/** Sanitize a phase name into the pi session-id character set (§8.1). */
+/** Sanitize a phase name into the pi session-id character set. */
 export function sessionIdFor(runId: string, phase: string, visit: number): string {
   const safe = phase.replace(/[^A-Za-z0-9._-]/g, "_");
   return `${runId.slice(0, 8)}_${safe}_v${visit}`;
@@ -90,10 +90,10 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
   const visit = 1;
   const budget = 3;
   const piSessionId = sessionIdFor(runId, phase, visit);
-  // §11.1: the roster is read BEFORE any row is created — a malformed
+  // the roster is read BEFORE any row is created — a malformed
   // prices.json is a config error that must fail fast with NO run row left
   // behind (a fixture submit returning 500 must not strand a zombie 'running'
-  // run; the daemon survives either way — §13, T13 #5). The blueprint path
+  // run; the daemon survives either way — T13 #5). The blueprint path
   // validates at submit (a clean 400); this path validates here, before insert.
   const roster = loadRoster(dataDir);
   const runDir = runDirFor(dataDir, runId);
@@ -136,7 +136,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
 
   const sink = new EventSink(db, { runId, phaseId: null, agentSessionId: null });
   let spendTotal = 0;
-  // reviewer nit (T01b): run-level events carry NULL phase/session ids (§6);
+  // reviewer nit (T01b): run-level events carry NULL phase/session ids;
   // phase/session events carry theirs. `emit` takes per-event overrides.
   const emit = (type: Parameters<EventSink["push"]>[0], data: unknown, ids?: { phase_id?: string | null; agent_session_id?: string | null }): void => {
     if (type === "spend") {
@@ -193,7 +193,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     JSON.stringify({ [phase]: { pi_session_id: piSessionId, pid: child.pid ?? 0, visit, model } }, null, 2) + "\n",
   );
 
-  // stderr: real diagnostics live here (§8.3) - capture per run for crash debugging
+  // stderr: real diagnostics live here - capture per run for crash debugging
   const stderrChunks: string[] = [];
   let stderrBytes = 0;
   child.stderr.on("data", (chunk: Buffer) => {
@@ -201,7 +201,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
     if (stderrBytes <= MAX_CAPTURED_STDERR) stderrChunks.push(chunk.toString("utf8"));
   });
 
-  // The read loop (spec §7.1): split on `\n` only (StringDecoder keeps UTF-8
+  // The read loop: split on `\n` only (StringDecoder keeps UTF-8
   // multi-byte sequences intact across chunk boundaries), append raw lines
   // verbatim before parsing, and never block on SQLite - the EventSink queue
   // drains on later ticks.

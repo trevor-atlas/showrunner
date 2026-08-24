@@ -5,7 +5,7 @@ import { FIXTURE_NAMES, isFixtureName } from "../daemon/pi/harness/fixtures.ts";
 
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";
-// the typed §13 client is the single HTTP surface — base URL from the
+// the typed client is the single HTTP surface — base URL from the
 // pidfile port (SHOWRUNNER_PORT override for dev)
 import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
 import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
@@ -18,22 +18,22 @@ import { watchRun } from "./watch.ts";
  *
  *   showrunner daemon                  run the daemon in the foreground
  *   showrunner run <fixture>           submit a scripted fixture run (T01a observation path)
- *   showrunner run <blueprint.ts>      submit a blueprint run (T01b §5 loop; FakePi sessions)
+ *   showrunner run <blueprint.ts>      submit a blueprint run (T01b loop; FakePi sessions)
  *   showrunner runs                    list runs with status + phase counts
  *   showrunner show <run_id>           run detail: phases with status/visits/corrections/spend
  *   showrunner watch <run_id> [--interval N]
- *   showrunner steer <run_id> <msg>    send a corrective instruction to the run's session (§8.4)
+ *   showrunner steer <run_id> <msg>    send a corrective instruction to the run's session
  *   showrunner pause <run_id>          pause-state viewer + pause menu (pauses are automatic)
  *   showrunner approve <run_id>        approve a require_approval pause
  *   showrunner resume <run_id>         continue an interrupted run (relaunch + continue instruction)
- *   showrunner fail <run_id>           fail the run (kills children, §8.3)
+ *   showrunner fail <run_id>           fail the run (kills children)
  *   showrunner restart-fresh <run_id> [phase]
  *   showrunner override <run_id> --gate <name> --reason <why> [--phase <name>]
  *   showrunner status                  daemon status: pool utilization + run status counts
  *   showrunner stop                    SIGTERM the daemon (stops children, removes pidfile)
  *
  * Global flags: --data-dir <dir> (env SHOWRUNNER_DATA_DIR is honored everywhere).
- * The CLI talks only to the daemon's HTTP API on one TCP listener (§13).
+ * The CLI talks only to the daemon's HTTP API on one TCP listener.
  */
 
 interface Flags {
@@ -136,11 +136,11 @@ async function cmdRun(flags: Flags): Promise<number> {
     const body: Record<string, unknown> = { blueprint: resolve(arg) };
     if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
     if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
-    // FINDING-1 (§13.2/§13.3 `args?`): `--prompt "<goal>"` is the user
+    // FINDING-1 (`args?`): `--prompt "<goal>"` is the user
     // instruction channel the skills use (`showrunner run <bp> --prompt "…"`).
     // It rides the opaque `args` array — the daemon snapshots it verbatim into
     // blueprint.json AND composes it as the [User request] section of the run's
-    // first prompt (§8.2), so the instruction actually reaches the agent.
+    // first prompt, so the instruction actually reaches the agent.
     if (flags.rest.prompt !== undefined) body.args = ["--prompt", flags.rest.prompt];
     const res = await submit(body);
     if (res === null) return 1;
@@ -168,7 +168,7 @@ async function cmdRuns(flags: Flags): Promise<number> {
   for (const r of runs) {
     const review = r.needs_review ? " (needs review)" : "";
     const phases = `${r.phase_counts.success ?? 0}/${r.phase_counts.total ?? 0}`;
-    // §13.1 queue position — surfaced for pool-queued runs
+    // queue position — surfaced for pool-queued runs
     const queue = r.queue_position !== null && r.queue_position > 0 ? `  queued #${r.queue_position}` : "";
     console.log(
       `${r.id}  ${r.blueprint.padEnd(16)} ${r.status.padEnd(12)} ${phases.padStart(9)} $${r.spend_usd.toFixed(4).padStart(8)}  ${r.started_at}${review}${queue}`,
@@ -275,9 +275,9 @@ async function cmdStop(flags: Flags): Promise<number> {
 }
 
 // ── T04 control verbs: steer / pause / resume / approve (+ the full pause
-// menu: fail, restart-fresh, override). Each maps to a §13.2 daemon control
+// menu: fail, restart-fresh, override). Each maps to a daemon control
 // endpoint and surfaces the resulting run state. `pause` has no manual-pause
-// endpoint (pauses are automatic, §13) — it is the pause-state viewer / menu
+// endpoint (pauses are automatic) — it is the pause-state viewer / menu
 // trigger for a paused run. ───────────────────────────────────────────────────
 
 interface RunSummary {
@@ -410,7 +410,7 @@ async function cmdResume(flags: Flags): Promise<number> {
   try {
     const res = await client.resume(runId, { by: flags.rest.by });
     console.log(`run ${runId} resumed — status: ${res.status}, needs_review: ${res.needs_review === 1 ? "yes" : "no"}`);
-    console.log("the interrupted phase was relaunched with the same session id + a continue instruction (§12)");
+    console.log("the interrupted phase was relaunched with the same session id + a continue instruction");
     return 0;
   } catch (err) {
     console.error(`showrunner resume: ${err instanceof Error ? err.message : String(err)}`);
@@ -418,7 +418,7 @@ async function cmdResume(flags: Flags): Promise<number> {
   }
 }
 
-/** `showrunner status` — the §13 daemon status verb: health + pool + run counts. */
+/** `showrunner status` — the daemon status verb: health + pool + run counts. */
 async function cmdStatus(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   if (!(await isDaemonUp(daemonBaseUrl(dataDir)))) {

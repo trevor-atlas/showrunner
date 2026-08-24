@@ -6,10 +6,10 @@ import type { DaemonHandle } from "../../src/daemon/daemon.ts";
 import { tmpDataDir, cleanupDir } from "./helpers.ts";
 
 /**
- * The dashboard runs INSIDE the daemon process (§16): `showrunner daemon`
+ * The dashboard runs INSIDE the daemon process: `showrunner daemon`
  * serves the web UI automatically, same process, no separate boot, no env
  * needed. The merged web server (src/daemon/web.ts) is ONE TCP listener for
- * BOTH the §13 JSON API (under /api/*) and the remix dashboard (everything
+ * BOTH the JSON API (under /api/*) and the remix dashboard (everything
  * else). This proves the merged mount: a daemon answers GET / with the
  * run-list page AND /api/health on the same ephemeral port.
  *
@@ -48,7 +48,7 @@ test("the merged server serves BOTH the dashboard (GET /) and the /api JSON on O
   expect(daemon.baseUrl).toBe(`http://127.0.0.1:${port}`);
   expect(port).toBeGreaterThan(0); // 0 = ephemeral → the real port is on the handle
 
-  // the §13 JSON API answers on the SAME listener (no separate dashboard port)
+  // the JSON API answers on the SAME listener (no separate dashboard port)
   const health = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(5_000) });
   expect(health.status).toBe(200);
   expect(await health.json()).toEqual({ ok: true });

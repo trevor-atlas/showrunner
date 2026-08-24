@@ -4,7 +4,7 @@ import type { Gate } from "../../../src/core/index.ts";
 
 /**
  * A one-phase blueprint whose gate runs a command that EXCEEDS its timeout
- * cap (`sleep 5` capped at 500ms) — the §5.5 doctrine: a gate that exceeds
+ * cap (`sleep 5` capped at 500ms) — the doctrine: a gate that exceeds
  * its cap is a violation (error text), never a daemon crash or hang. The gate
  * fails deterministically, so the phase exhausts its budget and pauses.
  *

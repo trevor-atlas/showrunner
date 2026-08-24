@@ -4,14 +4,14 @@ import type { Handle } from "remix/ui";
 import { routes } from "../routes.ts";
 
 /**
- * The pause menu (spec §16.9/§16.10 — `PauseMenu` + `SteerForm` /
+ * The pause menu (`PauseMenu` + `SteerForm` /
  * `OverrideForm`): the control surface shown on run detail when the run is
  * PAUSED. One form per action; every form posts to a remix POST route (which
- * calls the §13.2 daemon endpoint through the server-side client — the
- * browser never talks to the daemon, §16.5) and re-renders/redirects from
+ * calls the daemon endpoint through the server-side client — the
+ * browser never talks to the daemon) and re-renders/redirects from
  * daemon state. No optimistic mutation: nothing here flips client state.
  *
- * Which actions render comes from the daemon's own pause viewer (§13
+ * Which actions render comes from the daemon's own pause viewer (
  * `/runs/:id/pause`): the `actions` array is `effectiveMenu(info)` per pause
  * kind (approval → approve+steer+fail; budget_exhausted →
  * steer+override+restart_fresh+fail; guard/blocked/hook → steer+restart_fresh
@@ -19,11 +19,11 @@ import { routes } from "../routes.ts";
  * so a 409/validation failure is never dropped silently — the error renders
  * inline on the form that was submitted.
  *
- * Resume (interrupted runs) is a separate HEADER action (§16.9) and is NOT
+ * Resume (interrupted runs) is a separate HEADER action and is NOT
  * part of this menu.
  */
 
-/** The six control verbs — one remix POST route each (§16.9/§13.2). */
+/** The six control verbs — one remix POST route each. */
 export type ControlVerb = "steer" | "override" | "restart" | "fail" | "approve" | "resume";
 
 /** A control failure surfaced on the form that submitted it. `fields` holds
@@ -44,9 +44,9 @@ export interface PauseMenuProps {
   kind: string;
   /** the pause reason (the run_status event's reason) */
   reason: string | null;
-  /** the daemon's effective menu — which forms to render (§13 pause viewer) */
+  /** the daemon's effective menu — which forms to render */
   actions: readonly string[];
-  /** steers queued while paused (delivered on continuation, §8.4) */
+  /** steers queued while paused (delivered on continuation) */
   queuedSteers: readonly string[];
   /** the FAILED gate names on the paused phase — the override select options */
   overrideGates: readonly string[];
@@ -131,9 +131,9 @@ export function PauseMenu(handle: Handle<PauseMenuProps>) {
   };
 }
 
-/** The audited steer form (§16.9): message → POST /runs/:runId/steer (the
+/** The audited steer form: message → POST /runs/:runId/steer (the
  * daemon's run-keyed steer — on a paused run the message is queued and the
- * run stays paused; delivery lands with the continuation machinery, §8.4).
+ * run stays paused; delivery lands with the continuation machinery).
  * `message` is validated with data-schema (required, non-blank). */
 function SteerForm(handle: Handle<{ runId: string; error: ControlError | null }>) {
   return () => {
@@ -171,7 +171,7 @@ function SteerForm(handle: Handle<{ runId: string; error: ControlError | null }>
   };
 }
 
-/** The audited override form (§16.9): gate select + reason →
+/** The audited override form: gate select + reason →
  * POST /runs/:runId/phases/:phase/override. Both fields validate with
  * data-schema (required). The gate options are the FAILED gates on the paused
  * phase (the pause's override targets). */
@@ -249,7 +249,7 @@ function ConfirmForm(
   };
 }
 
-/** The inline error block for one form (§16.9: a failed action surfaces the
+/** The inline error block for one form (a failed action surfaces the
  * error from ApiError.status/message on the form — no silent drop). */
 function FormError(handle: Handle<{ error: ControlError | null }>) {
   return () => {

@@ -3,7 +3,7 @@ import type { EventType } from "../core/index.ts";
 import { parseEventData } from "../core/index.ts";
 import { insertEvent } from "./db.ts";
 
-/** Per-event id overrides (§6): run-level events must carry NULL phase/session ids. */
+/** Per-event id overrides: run-level events must carry NULL phase/session ids. */
 export interface EventIds {
   phase_id?: string | null;
   agent_session_id?: string | null;
@@ -16,14 +16,14 @@ interface PendingEvent {
 }
 
 /**
- * Backpressure-safe event sink (spec §7.1): the tracer's stdout read loop must
+ * Backpressure-safe event sink: the tracer's stdout read loop must
  * never block on SQLite - the raw file is the safe buffer. The read loop only
  * appends to an in-memory queue here; a drain worker writes batches to the DB
  * on the next event-loop ticks. Order is preserved (FIFO).
  *
  * The sink has a default (run-level) id context; `push` accepts per-event
  * overrides so run-level events can carry NULL phase_id/agent_session_id while
- * phase/session events carry theirs (§6).
+ * phase/session events carry theirs.
  */
 export class EventSink {
   private readonly pending: PendingEvent[] = [];

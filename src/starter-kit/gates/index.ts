@@ -4,7 +4,7 @@ import type { Gate, GateContext, GateResult } from "../../core/index.ts";
 import { createShell } from "../../core/index.ts";
 
 /**
- * Shared gates library (spec §3.4). Each export is a curried gate
+ * Shared gates library. Each export is a curried gate
  * factory: `testsPass()` returns a Gate you drop into a phase's `gates` array.
  * Gates are workspace-aware via ctx (cwd, phase, visit) and use `ctx.shell()`
  * where a command must run — falling back to core's `createShell` when the
@@ -15,14 +15,14 @@ import { createShell } from "../../core/index.ts";
  * is the point.
  */
 
-/** The §9.1 workspace layout is a spec fact; the daemon hands the gate its
- * phase's inputs/outputs dirs via the context (§3.7). These helpers make the
+/** The workspace layout is a spec fact; the daemon hands the gate its
+ * phase's inputs/outputs dirs via the context. These helpers make the
  * starter gates read them through one place. */
 export function inputsDirFor(ctx: GateContext): string {
   return ctx.inputs_dir ?? "";
 }
 
-/** The §9.1 outputs dir — where this phase's agent wrote its files. */
+/** The outputs dir — where this phase's agent wrote its files. */
 export function outputsDirFor(ctx: GateContext): string {
   return ctx.outputs_dir ?? "";
 }
@@ -271,7 +271,7 @@ export interface MatchesPlanOptions {
  * matchesPlan — the envelope must reference the plan this phase was handed.
  * Reads the phase's materialized inputs (ctx.inputs_dir — <runDir>/<phase>/inputs),
  * finds the plan document (an earlier planner phase listed it in its
- * artifacts, §9.3), and passes only if the envelope names it — in its
+ * artifacts), and passes only if the envelope names it — in its
  * artifacts, or in notes_for_next_agent/summary. Fails loudly when no plan
  * arrived, so a phase that assumed a plan exists cannot silently pass.
  */

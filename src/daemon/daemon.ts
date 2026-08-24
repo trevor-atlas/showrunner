@@ -11,7 +11,7 @@ import { RunPool } from "./pool.ts";
 import { createWebServer } from "./web.ts";
 
 /**
- * The long-lived daemon (spec §2.1): owns SQLite and serves BOTH the §13 JSON
+ * The long-lived daemon: owns SQLite and serves BOTH the JSON
  * API (under /api/*) and the remix dashboard on ONE TCP listener (default
  * 127.0.0.1:44100, src/daemon/web.ts). The dashboard lives "under the remix
  * side": the same process that owns the data serves the web UI.
@@ -26,7 +26,7 @@ export interface DaemonHandle {
   close(): Promise<void>;
 }
 
-/** §5.4 pool size override (default: SHOWRUNNER_POOL_SIZE ?? 2) — test seam */
+/** pool size override (default: SHOWRUNNER_POOL_SIZE ?? 2) — test seam */
 const POOL_SLOTS = Number(process.env.SHOWRUNNER_POOL_SIZE ?? "2") || 2;
 
 function isProcessAlive(pid: number): boolean {
@@ -61,15 +61,15 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
   }
 
   const db = openDb(dbPathFor(dataDir));
-  // §12 crash recovery, in reap-then-restore order:
-  //   §12.1 orphan cleanup — sweep the processes table: dead-pid rows are
+  // crash recovery, in reap-then-restore order:
+  //   orphan cleanup — sweep the processes table: dead-pid rows are
   //   removed, ALIVE pids are orphaned children of a SIGKILLed daemon and are
-  //   SIGTERM'd (SIGKILL after 1s, §8.3) and removed.
+  //   SIGTERM'd (SIGKILL after 1s) and removed.
   const orphans = cleanupProcesses(db);
-  //   §12.2 crash surfacing — runs left `running` become `interrupted` (the
+  //   crash surfacing — runs left `running` become `interrupted` (the
   //   children are already reaped above; a human continue comes via resume).
   const interrupted = reconcileInterruptedRuns(db);
-  //   §12.4 backfill — restore the session tail the daemon missed while down
+  //   backfill — restore the session tail the daemon missed while down
   //   (JSONL re-read, deduped against the run's own raw file; idempotent).
   const backfill = backfillMissedEvents(db, dataDir);
   if (orphans.killed.length > 0 || orphans.removed_dead > 0) {
@@ -123,7 +123,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
     port: boundPort ?? port,
     baseUrl: `http://127.0.0.1:${boundPort ?? port}`,
     close: async () => {
-      // graceful shutdown (§13, T07): stop recorded children (SIGTERM →
+      // graceful shutdown (T07): stop recorded children (SIGTERM →
       // SIGKILL after 1s) — events are already durable, nothing is persisted
       stopRecordedChildren(db);
       if (keepAlive !== null) clearInterval(keepAlive);

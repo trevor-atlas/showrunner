@@ -10,14 +10,14 @@ import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 
 /**
- * §12.4 backfill — restore events the daemon missed while it was down.
+ * backfill — restore events the daemon missed while it was down.
  *
  * CHOICE (documented): re-read the pi session JSONL instead of `get_entries`.
  * After a SIGKILL the daemon owns no live pi process to query, and pi appends
  * every `message_end` to its session tree (<session-dir>/--<cwd>--/<ts>_<id>.jsonl)
  * — the same durable record `get_entries {since}` would serve — so the JSONL
  * is read directly and folded through the tracer. The dedup key is the run's
- * OWN raw_output.jsonl (§10, append-only, byte-identical): every raw line the
+ * OWN raw_output.jsonl (append-only, byte-identical): every raw line the
  * daemon already folded is in that file, so a restored line is one the daemon
  * never saw. That makes the sweep idempotent — the events table stays
  * append-only, no double-inserted events. (get_entries is the real-pi
@@ -27,7 +27,7 @@ import { Tracer } from "./tracer.ts";
  *
  * Runs the folded events through a fresh Tracer per agent session: usage
  * deltas → spend, tool calls → tool_call, and onEnd flushes any call left open
- * at the crash as ok:false truncated:true (§19) plus the agent_end verdict.
+ * at the crash as ok:false truncated:true plus the agent_end verdict.
  */
 
 export interface BackfillSessionReport {
@@ -133,7 +133,7 @@ function sessionLines(path: string): string[] {
 
 /**
  * Backfill the missed session tails for every INTERRUPTED run. Called on
- * daemon start AFTER orphan cleanup (§12.1: the children are reaped first, so
+ * daemon start AFTER orphan cleanup (the children are reaped first, so
  * their session files are stable). Fully synchronous — events are inserted
  * directly (this is offline recovery, not live streaming, so the async
  * EventSink backpressure queue is not needed) and the daemon only reports up
@@ -187,7 +187,7 @@ export function backfillMissedEvents(
         phase: phase.name,
         visit: s.visit,
         agent: phase.agent,
-        model: mapEntry?.model ?? phase.agent, // agent_map carries the model (§10)
+        model: mapEntry?.model ?? phase.agent, // agent_map carries the model
         roster,
         piSessionId: s.pi_session_id,
         sink: (evt) => {
@@ -215,7 +215,7 @@ export function backfillMissedEvents(
       }
       if (report.lines_restored > 0) {
         // the stream is gone (the child was reaped): flush open tool calls as
-        // truncated and emit the agent_end verdict (§19)
+        // truncated and emit the agent_end verdict
         tracer.onEnd({ exitCode: null }, { settled: false });
         summary.events_folded += report.events_folded;
         summary.sessions.push(report);

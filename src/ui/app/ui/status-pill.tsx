@@ -2,14 +2,14 @@ import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
 /**
- * The shared run-status pill (spec §16.10, §16.6). Status → color/glyph:
+ * The shared run-status pill. Status → color/glyph:
  *
  *   running      ▶   blue, animated pulse
  *   paused       ⏸   amber
  *   success      ✓   green
  *   failed       ✗   red
  *   interrupted  ⚠   grey
- *   queued       ⏳   dim, with the §13.1 spawn-queue position when present
+ *   queued       ⏳   dim, with the spawn-queue position when present
  */
 
 export type RunStatus = "running" | "paused" | "success" | "failed" | "interrupted" | "queued";
@@ -29,7 +29,7 @@ export function isRunStatus(value: string): value is RunStatus {
 
 export interface StatusPillProps {
   status: RunStatus;
-  /** §13.1: 1-based spawn-queue position — rendered for queued runs */
+  /** 1-based spawn-queue position — rendered for queued runs */
   queuePosition?: number | null;
 }
 

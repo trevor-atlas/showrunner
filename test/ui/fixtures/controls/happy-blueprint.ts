@@ -4,7 +4,7 @@ import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../../src/core
  * The T10b resume e2e fixture — a one-phase happy blueprint: the build phase
  * succeeds on its first turn (fake-pi/build.json). Used for the interrupted →
  * resume → success scenario: the e2e seeds an INTERRUPTED run row + pending
- * phase + the §13.3 snapshot (this module path) directly, then POSTs the
+ * phase + the snapshot (this module path) directly, then POSTs the
  * resume verb — the daemon relaunches the phase behind the pool and succeeds.
  */
 const builder = defineAgent({

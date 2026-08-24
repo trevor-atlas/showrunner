@@ -21,7 +21,7 @@ import type { FoldedEvent } from "../../src/daemon/index.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
- * The real-pi session driver (T02, spec §8) — unit-tested against a scripted
+ * The real-pi session driver (T02, spec) — unit-tested against a scripted
  * mock RPC process (no real pi, no tokens): LF framing, id-matched responses,
  * ack timeouts, stderr capture, settle/crash detection, and stop() lifecycle.
  * The byte-compat proof for the FakeSessionDriver lives in runner.test.ts
@@ -65,7 +65,7 @@ function tmpCwd(label: string): string {
   return mkdtempSync(join(tmpdir(), `showrunner-pi-${label}-`));
 }
 
-// ── driver kind selection (§17) ──────────────────────────────────────────────
+// ── driver kind selection ──────────────────────────────────────────────
 
 // a probe stub: "pi" present on PATH vs absent — keeps the detection tests
 // deterministic on any machine
@@ -99,7 +99,7 @@ test("findPiBinary resolves the override path, a bare name on PATH, or null", ()
   expect(findPiBinary({ SHOWRUNNER_PI_BINARY: "", PI_BINARY: "" })).toBeNull();
 });
 
-// ── session id charset (§8.1) ────────────────────────────────────────────────
+// ── session id charset ────────────────────────────────────────────────
 
 test("derived session ids match the pi charset; the driver rejects invalid ids", () => {
   const runId = "0123456789abcdef0123456789abcdef";
@@ -149,7 +149,7 @@ test("prompt ack is id-matched; events stream raw; settle resolves; stdin EOF re
     expect(session.exitCode).toBe(0);
 
     // every raw line was delivered to the tracer callback, byte-identical,
-    // including the response line (recorded raw, §7.4) and agent_settled
+    // including the response line (recorded raw) and agent_settled
     const rawLines = lines.filter((l) => l.trim() !== "");
     expect(rawLines).toContain(JSON.stringify({ type: "agent_settled", sessionId: "t_build_v1" }));
     expect(rawLines.some((l) => l.includes('"type":"response"'))).toBe(true);
@@ -164,7 +164,7 @@ test("prompt ack is id-matched; events stream raw; settle resolves; stdin EOF re
   }
 });
 
-// ── LF-only framing: a line split across chunk boundaries (§7.1) ─────────────
+// ── LF-only framing: a line split across chunk boundaries ─────────────
 
 test("partial lines across chunk boundaries are reassembled (LF-only framing)", async () => {
   const cwd = tmpCwd("chunked");
@@ -185,7 +185,7 @@ test("partial lines across chunk boundaries are reassembled (LF-only framing)", 
   }
 });
 
-// ── concurrent id matching (§8.4) ────────────────────────────────────────────
+// ── concurrent id matching ────────────────────────────────────────────
 
 test("concurrent commands each get their own id-matched response", async () => {
   const cwd = tmpCwd("ids");
@@ -206,7 +206,7 @@ test("concurrent commands each get their own id-matched response", async () => {
   }
 });
 
-// ── ack timeout handling (§8.1: the model catalog refresh makes the first
+// ── ack timeout handling (the model catalog refresh makes the first
 //    prompt slow — a timed-out ack must not kill the session) ─────────────────
 
 test("a slow ack times out the send without killing the process; later commands work", async () => {
@@ -229,7 +229,7 @@ test("the first-prompt ack budget is generous (slow catalog refresh)", () => {
   expect(DEFAULT_RPC_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
 });
 
-// ── stream death before settle (§8.3 crash detection) ───────────────────────
+// ── stream death before settle ───────────────────────
 
 test("stdout EOF without agent_settled rejects the settle waiter and pending sends", async () => {
   const cwd = tmpCwd("crash");
@@ -300,11 +300,11 @@ test("G1: each settle satisfies exactly one wait — a fast stream cannot double
   }
 }, { timeout: 15_000 });
 
-// ── §19 child-death flush, pinned against the raw stream through the REAL
+// ── child-death flush, pinned against the raw stream through the REAL
 //    driver seam (mock RPC): the settle waiter resolves with a crash verdict
 //    (no hang) and the tracer flushes the open tool call as truncated ─────────
 
-test("mid-tool-call death via the real seam: crash verdict + open tool call flushed ok:false truncated:true (§19)", async () => {
+test("mid-tool-call death via the real seam: crash verdict + open tool call flushed ok:false truncated:true", async () => {
   const cwd = tmpCwd("flush");
   const eventsDir = tmpDataDir("pi-flush");
   try {
@@ -337,7 +337,7 @@ test("mid-tool-call death via the real seam: crash verdict + open tool call flus
     // the run does not hang: the settle waiter resolves with a crash verdict
     await expect(session.waitForSettled()).rejects.toThrow(/agent_settled/);
     expect(await session.exit).toBe(1);
-    // §19: the open tool call is flushed as ok:false, truncated:true
+    // the open tool call is flushed as ok:false, truncated:true
     tracer.onEnd({ exitCode: session.exitCode }, { settled: false });
     const tool = folded.find((e) => e.type === "tool_call")!.data as z.infer<typeof ToolCallData>;
     expect(tool).toMatchObject({
@@ -363,7 +363,7 @@ test("stop() SIGTERMs the child; pi's handler exits 143", async () => {
     const session = openSession({ cwd });
     await session.send({ type: "get_state" });
     await session.stop();
-    expect(await session.exit).toBe(143); // pi's own SIGTERM handler (§8.1)
+    expect(await session.exit).toBe(143); // pi's own SIGTERM handler
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -384,7 +384,7 @@ test("stop() escalates to SIGKILL when the child ignores SIGTERM", async () => {
       new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 5_000)),
     ]);
     expect(exitCode).not.toBe("timeout");
-    // a signal-killed child reports code null (§8.1: pi's handlers exit 143/129;
+    // a signal-killed child reports code null (pi's handlers exit 143/129;
     // SIGKILL bypasses them)
     expect(session.exitCode).toBeNull();
   } finally {
@@ -392,7 +392,7 @@ test("stop() escalates to SIGKILL when the child ignores SIGTERM", async () => {
   }
 });
 
-// ── stderr capture (§8.3) ────────────────────────────────────────────────────
+// ── stderr capture ────────────────────────────────────────────────────
 
 test("stderr is captured per session and bounded by the cap", async () => {
   const cwd = tmpCwd("stderr");
@@ -423,7 +423,7 @@ test("FakeSessionDriver speaks the same seam: prompt → turn → settle → exi
   const cwd = tmpCwd("fakedrv");
   const eventsDir = tmpDataDir("pi-fake");
   try {
-    // the fake writes the agent's envelope to the runDir/phase/outputs path (§9.1)
+    // the fake writes the agent's envelope to the runDir/phase/outputs path
     const outputsDir = join(eventsDir, "runs", "t_build", "build", "outputs");
     mkdirSync(outputsDir, { recursive: true });
     const sessionFile = join(eventsDir, "session.json");
@@ -457,7 +457,7 @@ test("FakeSessionDriver speaks the same seam: prompt → turn → settle → exi
     expect(await session.exit).toBe(0);
     expect(session.exitCode).toBe(0);
     expect(lines.some((l) => l.includes('"type":"agent_settled"'))).toBe(true);
-    // the agent's envelope landed in <runDir>/<phase>/outputs (the §9 path)
+    // the agent's envelope landed in <runDir>/<phase>/outputs (the path)
     expect(readFileSync(join(outputsDir, "envelope.json"), "utf8")).toContain('"notes_for_next_agent"');
   } finally {
     rmSync(cwd, { recursive: true, force: true });

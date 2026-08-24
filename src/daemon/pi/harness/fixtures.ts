@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * The scripted pi fixture registry (spec §17, §7). The daemon's minimal submit
+ * The scripted pi fixture registry. The daemon's minimal submit
  * path drives these through the FakePi harness; daemon and core tests replay
  * them for deterministic, CI-safe assertions.
  */

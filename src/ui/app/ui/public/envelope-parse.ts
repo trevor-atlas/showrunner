@@ -1,6 +1,6 @@
 /**
  * The UI's single adapter to the daemon's stored envelope/violations format
- * (spec §9.1, §16.8). Extracted verbatim from the three former local copies
+ *. Extracted verbatim from the three former local copies
  * (timeline-panel, envelope-card, gates-card) — pure dedup, byte-identical
  * behavior.
  *

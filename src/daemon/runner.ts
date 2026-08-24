@@ -70,21 +70,21 @@ import {
 import type { RpcCommand, RpcResponse, SessionDriver } from "./pi/index.ts";
 
 /**
- * The run loop (spec §5, T01b) — the state machine that drives a blueprint's
- * phases to completion. The loop itself is driver-agnostic: per visit (§5.2)
+ * The run loop (T01b) — the state machine that drives a blueprint's
+ * phases to completion. The loop itself is driver-agnostic: per visit
  * it materializes the predecessor handoff → visit guard (visits >= max_visits
- * → pause) → obtains the session driver (§8, T02: the real pi binary when
+ * → pause) → obtains the session driver (T02: the real pi binary when
  * SHOWRUNNER_SMOKE=1, scripted FakePi sessions otherwise; session id
- * `<run8>_<phase>_v<visit>`, §8.1) → sends the composed prompt → tails/folds
+ * `<run8>_<phase>_v<visit>`) → sends the composed prompt → tails/folds
  * events until agent_settled → zod-validates envelope.json → blocked? → gates →
  * records the envelope → next phase. Corrections re-prompt the SAME session
  * (one message naming exactly what was wrong) against the phase's budget
  * (default 3); exhaustion routes through `on_fail` (new visit) or pauses.
  *
- * The envelope/gate stage lives in envelope-runner.ts (T03's seam); the §9
+ * The envelope/gate stage lives in envelope-runner.ts (T03's seam); the
  * context/handoff protocol lives in handoff.ts (T05) — this loop calls
  * materializeHandoff at visit start and recordAcceptedEnvelope on acceptance.
- * Hooks (§14) run in-process with a shell() helper. The §5.4 pool is
+ * Hooks run in-process with a shell() helper. The pool is
  * server-side (pool.ts).
  */
 
@@ -99,7 +99,7 @@ export interface ScriptedTurn {
   /** the envelope.json the agent "writes" at the end of this turn */
   envelope: Record<string, unknown>;
   /** extra files the agent "writes" into outputs/ (path → content) — the
-   * paths listed in envelope.artifacts become the next phase's inputs (§9.3) */
+   * paths listed in envelope.artifacts become the next phase's inputs */
   artifacts?: Record<string, string>;
 }
 
@@ -112,7 +112,7 @@ export interface ScriptedSession {
    * script), so a phase can behave differently across its visits (e.g.
    * review v1 exhausts its budget while review v2 passes). */
   byVisit?: Record<number, ScriptedTurn[]>;
-  /** emit the very last event without a trailing newline (§10 byte-identical raw) */
+  /** emit the very last event without a trailing newline (byte-identical raw) */
   unterminatedFinalLine?: boolean;
   /** after the last scripted turn, the session dies instead of waiting (crash tests) */
   exitAfterLastTurn?: { code?: number };
@@ -132,7 +132,7 @@ export interface BlueprintRun {
   /** resolves at the first stable state — a pause counts (T01b compat) */
   done: Promise<RunResult>;
   /** resolves only at a TERMINAL state (success|failed) — the F1 slot release
-   * (§5.4: a paused run keeps its pool slot, cheap — no pi process alive) */
+   * (a paused run keeps its pool slot, cheap — no pi process alive) */
   terminal: Promise<RunResult>;
 }
 
@@ -145,7 +145,7 @@ export interface RunBlueprintOptions {
   scripts: ScriptMap;
   maxVisits?: number;
   delayMs?: number;
-  /** the blueprint module's directory, for context-entry file fallback (§9.2) */
+  /** the blueprint module's directory, for context-entry file fallback */
   moduleDir?: string | null;
   now?: () => string;
 }
@@ -160,7 +160,7 @@ export interface PreparedRun {
   delayMs?: number;
 }
 
-// ── blueprint module loading + validation (§3.5, §13.3) ──────────────────────
+// ── blueprint module loading + validation ──────────────────────
 
 export async function loadBlueprintModule(modulePath: string): Promise<Blueprint> {
   const mod = (await import(pathToFileURL(modulePath).href)) as {
@@ -212,7 +212,7 @@ export function resolveScriptedSessions(blueprint: Blueprint, scriptDir: string)
 
 /**
  * Import + validate + snapshot a blueprint module, resolve its scripted
- * sessions, create the run/phase rows and the §6 run events. Returns the
+ * sessions, create the run/phase rows and the run events. Returns the
  * prepared run; driving it is drivePreparedRun (server-side, behind the pool).
  */
 export async function prepareBlueprintRun(
@@ -221,9 +221,9 @@ export async function prepareBlueprintRun(
   opts: { modulePath: string; cwd?: string; maxVisits?: number; delayMs?: number; args?: string[] },
 ): Promise<PreparedRun> {
   const modulePath = isAbsolute(opts.modulePath) ? opts.modulePath : join(process.cwd(), opts.modulePath);
-  // fail fast on a malformed prices.json (§11.1): a broken roster is a config
+  // fail fast on a malformed prices.json: a broken roster is a config
   // error — surface it at submit (a 400), not as a run stuck mid-drive. The
-  // roster itself is re-read once per run in initState (the §13.3 snapshot
+  // roster itself is re-read once per run in initState (the snapshot
   // doctrine: submit-time values govern the run).
   loadRoster(dataDir);
   const blueprint = await loadBlueprintModule(modulePath);
@@ -241,7 +241,7 @@ export async function prepareBlueprintRun(
   return { runId, blueprint, cwd, scripts, moduleDir, maxVisits: opts.maxVisits, delayMs: opts.delayMs };
 }
 
-// ── run/phase rows, events, snapshot (§4, §13.3) ─────────────────────────────
+// ── run/phase rows, events, snapshot ─────────────────────────────
 
 interface InitOptions {
   blueprint: Blueprint;
@@ -261,20 +261,20 @@ interface LoopState extends InitOptions {
   phaseIds: Map<string, string>;
   phaseVisits: Map<string, number>;
   phaseSpend: Map<string, number>;
-  /** the §11.1 price roster from {data_dir}/prices.json — the estimate path */
+  /** the price roster from {data_dir}/prices.json — the estimate path */
   roster: Roster;
   rawFile: RawOutputFile;
   sink: EventSink;
   /** the pause & control surface (T04) — pauses suspend here, verbs dispatch here */
   control: RunControl;
-  /** true when this drive is a §12 resume (from interrupted) — the run's
+  /** true when this drive is a resume (from interrupted) — the run's
    * needs_review flag survives a clean finish (the T04 pin: ANY resume from
-   * interrupted flags it for a human glance, §19) */
+   * interrupted flags it for a human glance) */
   resumed: boolean;
   emit: (type: EventType, data: unknown, ids?: EventIds) => void;
 }
 
-/** Create the run row, pending phase rows, §6 run events, and the §13.3 snapshot. */
+/** Create the run row, pending phase rows, run events, and the snapshot. */
 function createRunRows(
   db: Database,
   dataDir: string,
@@ -293,7 +293,7 @@ function createRunRows(
     started_at: nowIso(),
     ended_at: null,
   });
-  // §6 #1 (F2): run_submitted fires at ACCEPTANCE — the run row + snapshot
+  // (F2): run_submitted fires at ACCEPTANCE — the run row + snapshot
   // exist here, before any driving (the pool may still have the run queued;
   // the submitted→running transition lands at drive start in driveState).
   insertEvent(db, {
@@ -319,7 +319,7 @@ function createRunRows(
       ended_at: null,
     });
   }
-  // §13.3: the rendered configuration is snapshotted at submit time, so later
+  // the rendered configuration is snapshotted at submit time, so later
   // edits to the blueprint never mutate an in-flight run
   snapshotBlueprint(runDir, opts.blueprint, opts.maxVisits ?? DEFAULT_MAX_VISITS, opts.modulePath ?? null, opts.args);
   return runId;
@@ -337,12 +337,12 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
     // rows are created by createRunRows; ids are their own — look them up
     const row = findPhaseRow(db, runId, phase.name);
     phaseIds.set(phase.name, row?.id ?? randomUUID());
-    // §12 resume: the interrupted phase's recorded visits ARE the visit to
+    // resume: the interrupted phase's recorded visits ARE the visit to
     // resume (same --session-id); fresh rows have visits=0 → visit 1 as before
     phaseVisits.set(phase.name, row?.visits ?? 0);
   }
   const phaseSpend = new Map<string, number>();
-  // §11.1: the price roster is loaded once per run (a broken prices.json is a
+  // the price roster is loaded once per run (a broken prices.json is a
   // config error and throws here — before any run rows are driven to a state)
   const roster = loadRoster(dataDir);
   const rawFile = new RawOutputFile(join(runDir, "raw_output.jsonl"));
@@ -393,7 +393,7 @@ function findPhaseRow(db: Database, runId: string, name: string) {
     .get(runId, name) ?? null;
 }
 
-/** The §13.3 snapshot: the rendered configuration, stored for drill-in. */
+/** The snapshot: the rendered configuration, stored for drill-in. */
 export function snapshotBlueprint(
   runDir: string,
   blueprint: Blueprint,
@@ -438,7 +438,7 @@ type VisitOutcome =
   | { kind: "hook_failed"; reason: string; corrections: number }
   | { kind: "crash"; reason: string; corrections: number };
 
-/** The §12 resume spec: drive the loop from the interrupted phase's recorded
+/** The resume spec: drive the loop from the interrupted phase's recorded
  * visit, reusing its --session-id and leading with a continue instruction.
  * `handoff` is the predecessor's last accepted envelope (reconstructed from
  * the run's raw record) — phases already success are never re-entered. */
@@ -446,18 +446,18 @@ export interface ResumeSpec {
   phase: string;
   /** the recorded visit of the interrupted phase — re-visited as-is (same session id) */
   visit: number;
-  /** the §12.3 continue instruction (sent as the resumed visit's first prompt) */
+  /** the continue instruction (sent as the resumed visit's first prompt) */
   continueInstruction: string;
   /** the predecessor's accepted envelope, reconstructed from runDir/envelope.json */
   handoff: Handoff | null;
-  /** R2: who requested the resume — mirrors the §6 #11 human_action "resume" by */
+  /** R2: who requested the resume — mirrors the human_action "resume" by */
   by?: string;
 }
 
 async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResult> {
   const bp = state.blueprint;
   const indexByName = new Map(bp.phases.map((p, i) => [p.name, i]));
-  // §12.3: a resumed run starts at the interrupted phase — everything before
+  // a resumed run starts at the interrupted phase — everything before
   // it (status success) is not re-run; phases after it stay pending.
   let pending: string | null = resume?.phase ?? bp.phases[0]?.name ?? null;
   let handoff: Handoff | null = resume?.handoff ?? null;
@@ -475,15 +475,15 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
     }
 
     // per-phase visit loop (T04): a human restart-fresh re-enters it with a new visit
-    let phaseApproved = false; // §5.2 step 1 — one approval per phase entry
-    // §5.2 step 3 pin (T13): the guard bypass is ONE-SHOT. A human restart/steer
+    let phaseApproved = false; // step 1 — one approval per phase entry
+    // step 3 pin (T13): the guard bypass is ONE-SHOT. A human restart/steer
     // from a guard_exhausted pause earns exactly ONE more visit, then the guard
     // re-asserts (visits >= max_visits → pause) — restart-fresh can never
     // silently exceed max_visits, and guard_exhausted stays reachable through
     // the pause menu. A restart from any OTHER pause (budget/blocked/hook)
     // never bypasses the guard at all.
     let guardBypass = false;
-    // §12.3: the interrupted phase already earned its approval (it spawned) —
+    // the interrupted phase already earned its approval (it spawned) —
     // a resume must not re-pause on require_approval
     if (resume !== undefined && resume.phase === phase.name) phaseApproved = true;
 
@@ -493,7 +493,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         return finalizeRun(state, "failed", false, "failed by human");
       }
 
-      // 1. require_approval? (§5.2 step 1) — pause before spawn; approve → spawn
+      // 1. require_approval? — pause before spawn; approve → spawn
       if (phase.require_approval && !phaseApproved) {
         const action = await pauseAt(state, {
           kind: "approval",
@@ -509,10 +509,10 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         phaseApproved = true;
       }
 
-      // 2. materialize the predecessor handoff (§9.3: envelope + artifacts)
+      // 2. materialize the predecessor handoff (envelope + artifacts)
       materializeInputs(state, phase.name, handoff);
 
-      // 3. visit guard (§5.2 step 3, §19): visits >= max_visits → pause. The
+      // 3. visit guard: visits >= max_visits → pause. The
       // RESUME visit is exempt — it re-visits the recorded visit, it does not
       // add one. A pending guardBypass (a restart/steer from a guard pause)
       // is consumed by exactly one visit, then the guard re-asserts.
@@ -539,7 +539,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
       const visit = isResumeVisit ? currentVisits : currentVisits + 1;
 
       // R2: the cause of THIS visit — a resumed visit is a human continue
-      // (§12, mirrors the pause-control layer's human_action action "resume");
+      // (mirrors the pause-control layer's human_action action "resume");
       // a pending on_fail jump is consumed once; otherwise it is plain
       // forward execution (flow)
       let cause: PhaseStartCause;
@@ -554,7 +554,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
       pendingCause = undefined;
 
       const result = await driveVisit(state, phase, visit, handoff, {
-        // §12.3: the resumed visit leads with the continue instruction
+        // the resumed visit leads with the continue instruction
         continueInstruction: isResumeVisit ? resume!.continueInstruction : null,
         cause,
       });
@@ -577,7 +577,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
           continue;
         }
         handoff = { envelope: result.envelope, raw: result.raw, fromPhase: phase.name };
-        // §10: the accepted envelope lands in the run's raw record, verbatim
+        // the accepted envelope lands in the run's raw record, verbatim
         recordAcceptedEnvelope(state.runDir, result.raw);
         const idx = indexByName.get(phase.name)!;
         pending = idx + 1 < bp.phases.length ? bp.phases[idx + 1]!.name : null;
@@ -585,7 +585,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
       }
 
       if (result.kind === "blocked") {
-        // §3.2: never routed through on_fail; the phase stays in_progress on the human
+        // never routed through on_fail; the phase stays in_progress on the human
         const action = await pauseAt(state, {
           kind: "blocked",
           phase: phase.name,
@@ -619,7 +619,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
       }
 
       if (result.kind === "failed") {
-        // budget exhausted (§5.2): on_fail routes a failed phase, else the human menu
+        // budget exhausted: on_fail routes a failed phase, else the human menu
         await endPhase(state, phase, "failed", visit, result.corrections);
         if (phase.on_fail) {
           pending = phase.on_fail.to;
@@ -642,12 +642,12 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
           // R2: the human's restart/steer is why the next visit starts
           pendingCause = { kind: "human", action: d.action, by: action.by };
           // NOT a guard bypass: a restart from a budget pause re-asserts the
-          // guard on the next iteration (visits >= max_visits → pause, §5.2)
+          // guard on the next iteration (visits >= max_visits → pause)
           continue;
         }
         if (action.kind === "override") {
           // T03's dispatch already overrode the failed gates and recorded the
-          // acceptance (§6 #8) — the envelope becomes the phase's accepted handoff
+          // acceptance — the envelope becomes the phase's accepted handoff
           if (!action.envelope || action.raw === null || action.raw === undefined) {
             return finalizeRun(state, "failed", true, "override continuation lost the envelope", "paused");
           }
@@ -662,7 +662,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
       }
 
       if (result.kind === "crash") {
-        // stream died before agent_settled (§8.3): needs_review for a human
+        // stream died before agent_settled: needs_review for a human
         await endPhase(state, phase, "failed", visit, result.corrections);
         if (abortCheck(state) === "fail") {
           // a mid-visit human fail (the control stopped the driver) — not a crash
@@ -681,7 +681,7 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
 
 /** Drive one visit: phase_start → spawn session → prompt → corrections → settle.
  *
- * `continueInstruction` (T07, §12.3): when set, the initial prompt is the
+ * `continueInstruction` (T07): when set, the initial prompt is the
  * CONTINUE instruction — the interrupted phase's pi session is relaunched with
  * the SAME --session-id and told to carry on (pi rebuilds the context from the
  * session JSONL); the full composed prompt is only used on a fresh visit.
@@ -706,7 +706,7 @@ async function driveVisit(
   const phaseRow = findPhaseRow(db, state.runId, phase.name);
 
   ctxEmit(state, "phase_start", { phase: phase.name, agent: phase.agent.name, visit, budget, cause: opts.cause }, { phase_id: phaseId });
-  // R1 (§ lifecycle): every visit re-opens the row — status in_progress,
+  // R1: every visit re-opens the row — status in_progress,
   // ended_at NULL (the invariant: a phases row is NEVER in_progress with a
   // non-null ended_at), corrections reset to 0 (they count re-prompts issued
   // IN THE CURRENT VISIT), and started_at kept as the row's lifetime start.
@@ -719,7 +719,7 @@ async function driveVisit(
   });
   state.phaseVisits.set(phase.name, visit);
 
-  // hooks (§14): onPhaseStart, with ctx.shell(). A thrown hook is NOT a run
+  // hooks: onPhaseStart, with ctx.shell(). A thrown hook is NOT a run
   // crash — the phase ends failed, the failure is audited as a human_action
   // hook_error event, and the loop parks the run at the hook_failed menu.
   if (state.blueprint.onPhaseStart) {
@@ -740,7 +740,7 @@ async function driveVisit(
   const outputsDir = outputsDirFor(state.runDir, phase.name);
   mkdirSync(outputsDir, { recursive: true });
 
-  // ── the session driver seam (§8, T02) ─────────────────────────────────────
+  // ── the session driver seam (T02) ─────────────────────────────────────
   // SHOWRUNNER_SMOKE=1 drives the real pi binary; the default build drives
   // scripted FakePi sessions. Both speak the same SessionDriver interface, so
   // this block never touches the child process directly — spawn, RPC command
@@ -761,8 +761,8 @@ async function driveVisit(
   });
 
   let settleCount = 0;
-  // every raw line is handed to the tracer verbatim (append-before-parse, §10);
-  // the driver watches the same lines for agent_settled (§8.3)
+  // every raw line is handed to the tracer verbatim (append-before-parse);
+  // the driver watches the same lines for agent_settled
   const feedLine = (line: string, final = false): void => {
     tracer.onLine(line, { final });
     if (isSettledLine(line)) settleCount += 1;
@@ -820,10 +820,10 @@ async function driveVisit(
   writeAgentMap(state.runDir, phase.name, { pi_session_id: piSessionId, pid, visit, model: phase.agent.model });
   ctxEmit(state, "agent_start", { agent: phase.agent.name, pi_session_id: piSessionId, pid, model: phase.agent.model }, { phase_id: phaseId, agent_session_id: agentSessionId });
   // T04: the live session is reachable through the control surface — steer
-  // writes the RPC steer to THIS driver (§8.4), fail stops it (§8.3)
+  // writes the RPC steer to THIS driver, fail stops it
   state.control.setLiveSession({ driver, piSessionId, agentSessionId });
 
-  // stderr is captured per run by the driver (§8.3) and written to stderr.log
+  // stderr is captured per run by the driver and written to stderr.log
   // on visit end — same convention T01a/T01b used, same byte shape downstream.
 
   // ── command writers over the same seam ────────────────────────────────────
@@ -837,7 +837,7 @@ async function driveVisit(
     try {
       res = await driver.send({ type: "prompt", message }, FIRST_PROMPT_ACK_TIMEOUT_MS);
     } catch (err) {
-      // ack timeout (the model catalog may refresh on the first command, §8.1)
+      // ack timeout (the model catalog may refresh on the first command)
       // or a dead stream — neither crashes the run: a dead stream rejects the
       // settle waiter below, and a slow-but-alive agent still settles on its own
       if (driver.exitCode !== null) throw err;
@@ -848,7 +848,7 @@ async function driveVisit(
     }
   };
 
-  // ── the correction loop (§5.2 steps 4–9) ───────────────────────────────────
+  // ── the correction loop (steps 4–9) ───────────────────────────────────
   let corrections = 0;
   let outcome: VisitOutcome;
   try {
@@ -857,9 +857,9 @@ async function driveVisit(
         ? opts.continueInstruction
         : composePrompt(state, phase, handoff),
     );
-    // §5.3 pin (T13, #8): deliver steers queued while the run was paused —
+    // pin (T13, #8): deliver steers queued while the run was paused —
     // the menu says 'then the visit continues', so the queued messages ride
-    // this session's RPC stream (queued between turns, no message id, §8.4).
+    // this session's RPC stream (queued between turns, no message id).
     // The drain is per-spawn: a live steer was delivered immediately and never
     // enters the queue, so nothing here double-sends; a queued steer whose
     // continuation spawned no session (gate override) rides the NEXT spawn.
@@ -901,13 +901,13 @@ async function driveVisit(
           kind: "failed",
           reason: "budget_exhausted",
           corrections,
-          // a rejected-by-gates last attempt is the override target (§5.3)
+          // a rejected-by-gates last attempt is the override target
           lastEnvelopeId: stage.kind === "violations" ? stage.envelopeId : undefined,
         };
         break;
       }
       corrections += 1;
-      // §16.8: the correction that followed this attempt lives on its envelope row
+      // the correction that followed this attempt lives on its envelope row
       updateEnvelope(db, stage.envelopeId, { correction: message });
       updatePhase(db, phaseId, { corrections });
       ctxEmit(state, "correction", { phase: phase.name, visit, reason, message }, { phase_id: phaseId, agent_session_id: agentSessionId });
@@ -920,10 +920,10 @@ async function driveVisit(
 
   // reap the session and finalize its accounting (agent_end, sessions row, processes)
   if (outcome.kind !== "crash") {
-    await driver.close(); // stdin EOF → the process reaps itself (exit 0, §8.3)
+    await driver.close(); // stdin EOF → the process reaps itself (exit 0)
   } else if (driver.exitCode === null) {
     // the stream died on an internal error while the child is still alive —
-    // never orphan it (fail-run semantics: SIGTERM, SIGKILL after 1s, §8.3)
+    // never orphan it (fail-run semantics: SIGTERM, SIGKILL after 1s)
     await driver.stop();
   }
   tracer.onEnd({ exitCode: driver.exitCode }, { settled: outcome.kind !== "crash" && settleCount > 0 });
@@ -936,7 +936,7 @@ async function driveVisit(
   return outcome;
 }
 
-/** phase_end + row finalization; returns a hook error when onPhaseEnd threw (§14). */
+/** phase_end + row finalization; returns a hook error when onPhaseEnd threw. */
 async function endPhase(
   state: LoopState,
   phase: BlueprintPhase,
@@ -950,7 +950,7 @@ async function endPhase(
       await state.blueprint.onPhaseEnd(hookContext(state, phase.name));
     } catch (err) {
       hookError = messageOf(err);
-      // §14: the failure is audited like a human action — the phase_end below
+      // the failure is audited like a human action — the phase_end below
       // carries status failed and the loop parks at the hook_failed menu
       ctxEmit(
         state,
@@ -978,7 +978,7 @@ async function finalizeRun(
   from: RunStatus = "running",
 ): Promise<RunResult> {
   ctxEmit(state, "run_status", { from, to: status, reason }, { phase_id: null, agent_session_id: null });
-  // §19/T04 pin: a run driven from interrupted keeps its needs_review flag
+  // T04 pin: a run driven from interrupted keeps its needs_review flag
   // even on a clean finish — the human glance was requested and success
   // does not silently clear it
   const effectiveReview = needsReview || state.resumed;
@@ -992,9 +992,9 @@ async function finalizeRun(
   return { status, needs_review: effectiveReview };
 }
 
-// ── the pause layer (T04, spec §5.3) ─────────────────────────────────────────
+// ── the pause layer (T04) ─────────────────────────────────────────
 
-/** Persist + surface a pause (§5.1): run_status + row, then suspend the loop on
+/** Persist + surface a pause: run_status + row, then suspend the loop on
  * the run's control. `done` resolves here (a paused run is a stable state,
  * T01b compat); the run KEEPS its pool slot (F1) — the pool releases on
  * `terminal`, which stays pending until the run reaches a terminal state. */
@@ -1013,7 +1013,7 @@ function resumeFromPause(state: LoopState, reason: string): void {
   updateRun(state.db, state.runId, { status: "running" });
 }
 
-/** The shared §5.3 continuation for steer / restart-fresh: re-drive the phase
+/** The shared continuation for steer / restart-fresh: re-drive the phase
  * (steer queues its message on the control — delivered on the next
  * continuation, T07; restart-fresh makes a NEW visit/session). */
 function menuDirective(
@@ -1078,9 +1078,9 @@ function abortCheck(state: LoopState): "fail" | null {
   return state.control.takeAbort();
 }
 
-// ── context & handoff (§9 full protocol — the implementation lives in handoff.ts) ──
+// ── context & handoff (full protocol — the implementation lives in handoff.ts) ──
 
-/** §9.3 materialization (handoff.ts): the predecessor's accepted envelope.json
+/** materialization (handoff.ts): the predecessor's accepted envelope.json
  * and EVERY file it listed in `artifacts` land in <runDir>/<phase>/inputs/
  * — the zero-friction handoff. The first phase has no predecessor.
  */
@@ -1088,7 +1088,7 @@ export function materializeInputs(state: LoopState, phaseName: string, handoff: 
   materializeHandoff(state.runDir, phaseName, handoff);
 }
 
-/** Resolve context entries (§9.2): walk agent defaults then phase additions;
+/** Resolve context entries: walk agent defaults then phase additions;
  * readable files inline, everything else stays literal (handoff.ts). */
 export function resolveContextEntries(state: LoopState, phase: BlueprintPhase): string[] {
   return resolveContext(state.cwd, state.moduleDir, [...phase.agent.context, ...(phase.context ?? [])]);
@@ -1098,7 +1098,7 @@ function ctxEmit(state: LoopState, type: EventType, data: unknown, ids?: EventId
   state.emit(type, data, ids);
 }
 
-/** FINDING-1 (§8.2, §13.3): the run's `--prompt` user instruction. The CLI
+/** FINDING-1: the run's `--prompt` user instruction. The CLI
  * sends it as `args: ["--prompt", <text>]`; the submit-time snapshot records
  * it verbatim in blueprint.json. The composed prompt renders it as the
  * [User request] section — the agent's actual goal. Null when the run was
@@ -1123,7 +1123,7 @@ function userPromptFromSnapshot(state: LoopState): string | null {
   return null;
 }
 
-/** The composed prompt (§8.2): workspace + phase + agent + context + handoff + envelope contract. */
+/** The composed prompt: workspace + phase + agent + context + handoff + envelope contract. */
 export function composePrompt(
   state: LoopState,
   phase: BlueprintPhase,
@@ -1144,7 +1144,7 @@ export function composePrompt(
   if (userPrompt !== null) {
     lines.push("", "[User request]", userPrompt);
   }
-  // §9.1: this run's workspace lives in the RUN RECORD DIR, never the repo —
+  // this run's workspace lives in the RUN RECORD DIR, never the repo —
   // the harness writes nothing under the run's cwd. The agent works wherever
   // the run's cwd points (the project); its inputs and outputs live under the
   // named run dir, addressed relative to it.
@@ -1156,9 +1156,9 @@ export function composePrompt(
     `  ${slug}/inputs/    — what the harness materialized for you (read-only)`,
     `  ${slug}/outputs/   — where YOU write your files: envelope.json plus anything you list in artifacts`,
   );
-  // §8.2 [Context] = the §9.2 context entries plus the §9.3 materialized handoff
+  // [Context] = the context entries plus the materialized handoff
   // inputs — each inputs/ path named with its contents inlined, so the agent
-  // never hunts for the predecessor's envelope or artifacts (§9.3).
+  // never hunts for the predecessor's envelope or artifacts.
   const contextLines: string[] = [...context];
   if (handoff !== null) {
     for (const { rel, contents } of readHandoffInputs(state.runDir, phase.name)) {
@@ -1190,20 +1190,20 @@ function hookContext(state: LoopState, phaseName: string): PhaseHookContext {
   };
 }
 
-/** §3.7 shell(): one subprocess one-liner, full result. Runs TRULY async
+/** shell(): one subprocess one-liner, full result. Runs TRULY async
  * (spawn, promisified — never spawnSync): a hook command must not block the
- * daemon's event loop (§19 backpressure; the FINDING-1 freeze was the hook
+ * daemon's event loop (backpressure; the FINDING-1 freeze was the hook
  * shell AND the gate shell both blocking on spawnSync). The 30s cap is kept
  * — a hook that exceeds it returns code -1 (the hook decides how to fail). */
 async function runShell(cwd: string, cmd: string): Promise<ShellResult> {
   return createShell(cwd, { timeoutMs: 30_000 })(cmd);
 }
 
-// ── agent_map.json (§10) ─────────────────────────────────────────────────────
+// ── agent_map.json ─────────────────────────────────────────────────────
 // writeAgentMap/readAgentMap live in handoff.ts (T05): per-visit overwrite
 // (a revisited phase records its LATEST session), restart-fresh per run dir.
 
-// ── the §3.5 / §8.2 schema rendering (human + snapshot + prompt) ─────────────
+// ── the schema rendering (human + snapshot + prompt) ─────────────
 
 export function renderSchema(schema: z.ZodTypeAny): string {
   try {
@@ -1352,10 +1352,10 @@ export async function submitBlueprintRun(
   return drivePreparedRun(db, dataDir, prepared);
 }
 
-// ── §12 resume (T07): continue an interrupted run from the last completed phase ─
+// ── resume (T07): continue an interrupted run from the last completed phase ─
 
 /**
- * The §12.3 continue instruction — what the resumed visit's pi session hears
+ * The continue instruction — what the resumed visit's pi session hears
  * instead of the full composed prompt. The session was relaunched with the
  * SAME --session-id, so pi has already rebuilt the context from the session
  * JSONL; this nudge names the phase, the interrupted state, and the envelope
@@ -1374,20 +1374,20 @@ export function composeContinuePrompt(blueprint: Blueprint, phase: BlueprintPhas
   ].join("\n");
 }
 
-/** The prepared-resume bundle: the rebuilt PreparedRun plus the §12 resume spec. */
+/** The prepared-resume bundle: the rebuilt PreparedRun plus the resume spec. */
 export interface PreparedResume {
   prepared: PreparedRun;
   resume: ResumeSpec;
 }
 
 /**
- * Prepare the §12 resume of an INTERRUPTED run: record the attempt + the
+ * Prepare the resume of an INTERRUPTED run: record the attempt + the
  * needs_review pin (T04's resumeInterruptedRun), re-import the blueprint
- * module from the §13.3 snapshot (the run record is self-contained — the
+ * module from the snapshot (the run record is self-contained — the
  * snapshot carries the module path and max_visits), re-resolve the scripted
  * sessions, and compute the resume point: the first phase whose recorded
  * status is not `success` is the interrupted one, and its recorded visit is
- * re-visited as-is (the SAME --session-id, §12.3). The predecessor's last
+ * re-visited as-is (the SAME --session-id). The predecessor's last
  * accepted envelope (runDir/envelope.json) becomes the handoff — phases
  * already success are never re-run. Throws on a non-interrupted run or when
  * the snapshot/module cannot be rebuilt (the run stays interrupted — the
@@ -1425,7 +1425,7 @@ export async function prepareResume(
   const moduleDir = dirname(snap.module);
   const scripts = resolveScriptedSessions(blueprint, join(moduleDir, FAKE_SESSION_DIR));
 
-  // T04 pin: the resume attempt is audited + needs_review is flagged (§19)
+  // T04 pin: the resume attempt is audited + needs_review is flagged
   resumeInterruptedRun(db, runId, opts.by);
   // the continuation is real — the run leaves interrupted before driving
   updateRun(db, runId, { status: "running" });
@@ -1499,9 +1499,9 @@ function driveState(
   opts: InitOptions & { runId: string; scripts: ScriptMap },
   resume?: ResumeSpec,
 ): BlueprintRun {
-  // §13 hardening (T13, #12): a synchronous initState throw — e.g. a
+  // hardening (T13, #12): a synchronous initState throw — e.g. a
   // prices.json that became malformed between submit (validated at the 400)
-  // and drive (the §11.1 roster is re-read once per run, §13.3 snapshot
+  // and drive (the roster is re-read once per run, snapshot
   // doctrine) — must NOT strand the run in "running" with nothing driving it.
   let state: LoopState;
   try {
@@ -1510,19 +1510,19 @@ function driveState(
     return failRunNoState(db, opts.runId, `internal error: ${messageOf(err)}`);
   }
   if (resume !== undefined) {
-    // §12.3: a resumed run is NOT re-submitted — it leaves `interrupted` and
-    // re-enters `running` (the §6 #1 run_submitted event belongs to the
+    // a resumed run is NOT re-submitted — it leaves `interrupted` and
+    // re-enters `running` (the run_submitted event belongs to the
     // original submission only)
     state.resumed = true;
     state.emit(
       "run_status",
-      { from: "interrupted", to: "running", reason: "resumed by human (continue verb, §12)" },
+      { from: "interrupted", to: "running", reason: "resumed by human (continue verb)" },
       { phase_id: null, agent_session_id: null },
     );
     updateRun(db, opts.runId, { status: "running" });
   } else {
-    // §6 #2: the submitted→running transition fires when the run STARTS
-    // driving. The §6 #1 run_submitted event fired earlier, at ACCEPTANCE
+    // the submitted→running transition fires when the run STARTS
+    // driving. The run_submitted event fired earlier, at ACCEPTANCE
     // (createRunRows) — F2: a pool-queued run is submitted before it drives.
     state.emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
   }
@@ -1547,7 +1547,7 @@ function driveState(
 
 /**
  * Finalize a run whose loop state could not be constructed (an initState
- * throw — §13, T13 #12). The run row already exists with run_submitted on
+ * throw — T13 #12). The run row already exists with run_submitted on
  * record (createRunRows), so the honest terminal state is failed, not a
  * zombie "running": a run_status event records the reason and needs_review is
  * flagged (a human should see why the drive could not start). There is no

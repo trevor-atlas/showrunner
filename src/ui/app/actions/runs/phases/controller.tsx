@@ -27,20 +27,20 @@ import { renderRunDetail } from "../controller.tsx";
 import { DrillInPage, NotFoundPage } from "./drill-in-page.tsx";
 
 /**
- * Phase drill-in (T11, issue #16) — `/runs/:runId/phases/:phase` (spec §16.8).
+ * Phase drill-in (T11, issue #16) — `/runs/:runId/phases/:phase`.
  * Server-side only: every surface is fetched from the daemon through the typed
- * §13 client; the browser never talks to the daemon. The CONFIG card reads the
- * §13.3 blueprint snapshot file (there is no daemon endpoint for it) — what
+ * client; the browser never talks to the daemon. The CONFIG card reads the
+ * blueprint snapshot file (there is no daemon endpoint for it) — what
  * actually ran, never the live module.
  *
- * Missing run OR missing phase → 404 with a back-link (§16.10). Read-only
+ * Missing run OR missing phase → 404 with a back-link. Read-only
  * page: no mutation controls (the override control is T10b's ticket; the
  * override DATA renders as badges here).
  *
  * T10b adds the phase-scoped control VERBS (the pause menu's override gate +
- * restart-fresh): the forms live on the RUN DETAIL page (§16.9) and post
+ * restart-fresh): the forms live on the RUN DETAIL page and post
  * here. Each validates with data-schema (no zod in the UI), posts to the
- * §13.2 daemon endpoint server-side, and on success redirects (303) to the
+ * daemon endpoint server-side, and on success redirects (303) to the
  * fresh run detail page — the re-render comes from daemon state. A validation
  * failure or a daemon 409/4xx re-renders run detail with the error on the
  * form that submitted it (the override/restart forms are run-detail mounts).
@@ -85,7 +85,7 @@ export default createController(routes.runs.phases, {
       // the phase's outputs/ dir — what the agent actually wrote (for the
       // ENVELOPE card's artifact existence check + FINDINGS.md content). The
       // workspace lives under the RUN's record dir ({data_dir}/runs/<run_id>/<phase>/outputs),
-      // never the run cwd (§9.1).
+      // never the run cwd.
       const runDir = runDirFor(resolveDataDir(), runId);
       const outputs = readOutputsDir(runDir, phaseName);
 
@@ -122,7 +122,7 @@ export default createController(routes.runs.phases, {
     },
     /**
      * The envelopes.json proxy (R5) — GET .../phases/:phase/envelopes.json
-     * through the §13 api core in-process, returned as JSON (mirrors the
+     * through the api core in-process, returned as JSON (mirrors the
      * events.json cursor proxy pattern: the browser never talks to the
      * daemon). The run-detail panel fetches a selected phase's envelope
      * history here lazily on selection; the initial selection's data is
@@ -157,7 +157,7 @@ export default createController(routes.runs.phases, {
       }
     },
 
-    /** §16.9 override — POST .../phases/:phase/override → the daemon §13.2 verb. */
+    /** override — POST .../phases/:phase/override → the daemon verb. */
     async override(context) {
       const runId = context.params.runId;
       const phase = context.params.phase;
@@ -177,7 +177,7 @@ export default createController(routes.runs.phases, {
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** §16.9 restart phase fresh — POST .../phases/:phase/restart-fresh (no data). */
+    /** restart phase fresh — POST .../phases/:phase/restart-fresh (no data). */
     async restart(context) {
       const runId = context.params.runId;
       const phase = context.params.phase;
@@ -198,7 +198,7 @@ export default createController(routes.runs.phases, {
 const RAW_TAIL_LINES = 100;
 
 /**
- * Collect the run's §6 #12 spend events by sweeping the §4.3 cursor query to
+ * Collect the run's spend events by sweeping the cursor query to
  * the TRUE tail (polish, T10b): the drill-in token totals are honest for very
  * long runs (>5000 spend events) instead of silently capping at 10×500. A
  * hard safety cap (200 pages = 100k events) still bounds pathological runs,
@@ -298,7 +298,7 @@ function readOutputsDir(
   return { files, findingsMd };
 }
 
-/** A §13 ApiError 404 (run/phase missing) — the drill-in's "missing" case. */
+/** A ApiError 404 (run/phase missing) — the drill-in's "missing" case. */
 function isApi404(err: unknown): boolean {
   return (
     typeof err === "object" &&

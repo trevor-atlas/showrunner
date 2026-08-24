@@ -26,23 +26,23 @@ import { NotFoundPage, RunDetailPage } from "./run-detail-page.tsx";
 
 /**
  * Run-detail group (T10a + T10b, issues #15/#20): `/runs/:runId`, the
- * events.json cursor proxy, and the §16.9 control verbs — the pause menu's
+ * events.json cursor proxy, and the control verbs — the pause menu's
  * steer / approve / fail and the resume HEADER action.
  *
- * `show` fetches the §13 detail endpoint SERVER-SIDE, the FULL event history
- * (the §4.3 cursor query IS the read transport), and — when the run is paused
- * — the §13 pause viewer (kind/phase/actions/queued steers) + the failed gate
+ * `show` fetches the detail endpoint SERVER-SIDE, the FULL event history
+ * (the cursor query IS the read transport), and — when the run is paused
+ * — the pause viewer (kind/phase/actions/queued steers) + the failed gate
  * names for the override select. The browser then polls the proxy from the
  * hydrated live region; it NEVER talks to the daemon.
  *
- * The control actions (§16.9): each validates its form with data-schema (no
- * zod in the UI), posts to the §13.2 api core in-process, then REDIRECTS
+ * The control actions: each validates its form with data-schema (no
+ * zod in the UI), posts to the api core in-process, then REDIRECTS
  * (303) to the fresh run detail page on success — the re-render comes from
  * daemon state, never from a client-side flip. A validation failure or a
  * daemon 409/4xx re-renders the page with the error on the form that
  * submitted it (no silent drop).
  *
- * `events` is the proxy: GET /runs/:id/events?cursor=N through the §13 api
+ * `events` is the proxy: GET /runs/:id/events?cursor=N through the api
  * core in-process, returned as JSON { events, next_cursor }.
  *
  * Missing run → 404 (HTML for the page, JSON for the proxy). A control 409/
@@ -54,7 +54,7 @@ export default createController(routes.runs, {
       return renderRunDetail(context, context.params.runId);
     },
 
-    /** §16.9 steer — POST /runs/:runId/steer → daemon POST /runs/:id/steer. */
+    /** steer — POST /runs/:runId/steer → daemon POST /runs/:id/steer. */
     async steer(context) {
       const runId = context.params.runId;
       const formData = await context.request.formData();
@@ -71,11 +71,11 @@ export default createController(routes.runs, {
         throw err;
       }
       // success: the daemon audited + queued the steer; the poll loop resumes
-      // automatically on the re-rendered page (§16.9 — no optimistic mutation)
+      // automatically on the re-rendered page (no optimistic mutation)
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** §16.9 resume — POST /runs/:runId/resume → daemon POST /runs/:id/resume. */
+    /** resume — POST /runs/:runId/resume → daemon POST /runs/:id/resume. */
     async resume(context) {
       const runId = context.params.runId;
       try {
@@ -89,7 +89,7 @@ export default createController(routes.runs, {
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** §16.9 fail — POST /runs/:runId/fail → daemon POST /runs/:id/fail. */
+    /** fail — POST /runs/:runId/fail → daemon POST /runs/:id/fail. */
     async fail(context) {
       const runId = context.params.runId;
       try {
@@ -103,7 +103,7 @@ export default createController(routes.runs, {
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** §16.9 approve — POST /runs/:runId/approve → daemon POST /runs/:id/approve. */
+    /** approve — POST /runs/:runId/approve → daemon POST /runs/:id/approve. */
     async approve(context) {
       const runId = context.params.runId;
       try {
@@ -134,7 +134,7 @@ export default createController(routes.runs, {
     },
 
     /** R6: the timeline.json refetch proxy — GET /runs/:id/timeline.json
-     * through the §13 api core in-process, returned as the R3 TimelineView
+     * through the api core in-process, returned as the R3 TimelineView
      * JSON. Mirrors `events` (the same run-gone 404): the live region polls
      * this alongside events.json each tick and replaces the chart's timeline
      * snapshot, so the open bubble extends to now and new segments appear
@@ -183,7 +183,7 @@ export async function renderRunDetail(
     throw err;
   }
 
-  // §16.5: the initial load fetches the full history — the clientEntry's
+  // the initial load fetches the full history — the clientEntry's
   // first poll starts from the last rowid and only ever sees what's new.
   const history = await collectEvents(runId);
 
@@ -205,7 +205,7 @@ export async function renderRunDetail(
     initialGates = gates.gates;
   }
 
-  // §16.9: the pause menu's content comes from the §13 pause viewer; the
+  // the pause menu's content comes from the pause viewer; the
   // override select needs the FAILED gate names on the paused phase (fetched
   // only when the menu offers override — one cheap local call).
   let pause = null;
@@ -255,13 +255,13 @@ function failedGateNames(gates: readonly { gate: string; pass: number }[]): stri
   return names;
 }
 
-/** The proxy page size (the daemon caps the cursor query at 500, §4.3). */
+/** The proxy page size (the daemon caps the cursor query at 500). */
 const EVENTS_PAGE_LIMIT = 500;
 
 /** Safety cap on the initial full-history sweep (500 × 20 = 10k events). */
 const MAX_EVENT_PAGES = 20;
 
-/** Sweep the §4.3 cursor query from 0 to the tail — the full history. */
+/** Sweep the cursor query from 0 to the tail — the full history. */
 async function collectEvents(runId: string): Promise<{ events: EventRow[]; cursor: number }> {
   const events: EventRow[] = [];
   let cursor = 0;
@@ -284,7 +284,7 @@ function parseCursor(raw: string | null): number {
   return Number.isSafeInteger(n) && n >= 0 ? n : 0;
 }
 
-/** A §13 client 404 (run missing) — the detail page's "missing run" case. */
+/** A client 404 (run missing) — the detail page's "missing run" case. */
 function isApi404(err: unknown): boolean {
   return (
     typeof err === "object" &&

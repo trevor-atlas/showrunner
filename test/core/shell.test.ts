@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { createShell, runCommand } from "../../src/core/index.ts";
 
 /**
- * The §3.7 shell seam — `createShell(cwd)` returns `(cmd) => Promise<ShellResult>`.
+ * The shell seam — `createShell(cwd)` returns `(cmd) => Promise<ShellResult>`.
  *
- * The §19 backpressure doctrine ("the tracer's stdout read loop must never
+ * The backpressure doctrine ("the tracer's stdout read loop must never
  * block on ... gate execution") and the capstone finding that command gates
  * froze the daemon's event loop (spawnSync): the shell MUST be truly async —
  * a shell command running must not block unrelated timers/IO in the process.
@@ -57,7 +57,7 @@ test("a command that exceeds the timeout cap is killed: code -1, no hang", async
   }
 });
 
-test("§19 backpressure: the event loop stays responsive WHILE a shell command runs (no spawnSync)", async () => {
+test("backpressure: the event loop stays responsive WHILE a shell command runs (no spawnSync)", async () => {
   const cwd = tmpCwd("async");
   try {
     const t0 = Date.now();

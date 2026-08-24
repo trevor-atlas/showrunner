@@ -143,7 +143,7 @@ export function computeTimelineLayout(timeline: TimelineView, now = Date.now()):
 
   const rows: TimelineRow[] = timeline.phases.map((phase) => {
     // the visit total the labels read: the phase row's count, at least the
-    // segments' max visit (the §12 resume fold collapses two same-visit
+    // segments' max visit (the resume fold collapses two same-visit
     // starts into one segment, so segments.length can under-report)
     const visitCount = Math.max(phase.visits, ...phase.segments.map((s) => s.visit));
     const boxes: SegmentBox[] = phase.segments.map((segment, index) => {

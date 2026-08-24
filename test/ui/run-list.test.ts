@@ -52,7 +52,7 @@ async function fetchHome(): Promise<{ status: number; html: string }> {
 }
 
 /** Direct DB seed so every status pill has a deterministic row (no FakePi
- * timing). The `running` row is seeded AFTER daemon start: §12.2
+ * timing). The `running` row is seeded AFTER daemon start:
  * reconciliation marks pre-start `running` rows as interrupted. */
 function seedRuns(dir: string, withRunning = false): string[] {
   const db = openDb(dbPathFor(dir));
@@ -103,13 +103,13 @@ describe("run list (T09) — server-side daemon data", () => {
     try {
       const seeded = seedRuns(dir);
       daemon = await startDaemon({ dataDir: dir, port: 0 });
-      // a genuinely in-flight run — inserted after daemon start so §12.2
+      // a genuinely in-flight run — inserted after daemon start so
       // startup reconciliation does not flip it to interrupted
       const runningId = insertRunning(dir);
       seeded.unshift(runningId);
       const client = new DaemonClient({ baseUrl: daemon.baseUrl });
 
-      // a REAL FakePi run through the daemon pipeline (spec §17)
+      // a REAL FakePi run through the daemon pipeline
       const fx = await client.submitRun({ fixture: "happy", cwd: dir });
       await waitFor(async () => {
         const { runs } = await client.listRuns();

@@ -1,6 +1,6 @@
 # @showrunner/starter-kit
 
-The out-of-the-box Showrunner content (spec §15). Six agent modules,
+The out-of-the-box Showrunner content. Six agent modules,
 a shared gates library, the `poll` tool, ten blueprint modules, and ten skill
 files — **all of it a replace-this surface**.
 
@@ -16,7 +16,7 @@ src/blueprints/             the ten blueprint modules the skills wrap
 src/blueprints/fake-pi/     scripted FakePi sessions for the CLI path (generated — see below)
 src/tools/poll.ts           the poll tool (a pi extension; install like the skills)
 skills/                     the ten skill files (install by copying into ~/.pi/agent/skills)
-test/                       STARTER tests — replace them with yours (spec §17)
+test/                       STARTER tests — replace them with yours
                             (they live at the repo root: test/starter-kit/)
 ```
 
@@ -133,7 +133,7 @@ an obvious file:
 | the output contracts | `src/envelopes.ts` (the gates and prompts follow) |
 | the gates' commands | the defaults in `src/gates/index.ts` or per-phase options |
 | a blueprint's wiring | its file in `src/blueprints/` (phases, gates, budgets, `on_fail`, `require_approval`) |
-| the shipped tests | `test/starter-kit/` — they prove the machinery (spec §17 fixtures), not your project |
+| the shipped tests | `test/starter-kit/` — they prove the machinery, not your project |
 
 ## Dev
 

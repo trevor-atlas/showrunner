@@ -2,7 +2,7 @@ import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../src/core/in
 
 /**
  * A one-phase blueprint with require_approval — the run pauses BEFORE the
- * phase spawns (§5.2 step 1); the approve action proceeds to spawn, and the
+ * phase spawns; the approve action proceeds to spawn, and the
  * build phase succeeds on its first turn (fake-pi/build.json).
  */
 const builder = defineAgent({

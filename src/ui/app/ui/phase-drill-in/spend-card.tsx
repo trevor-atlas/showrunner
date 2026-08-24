@@ -5,8 +5,8 @@ import { fmtMoney, fmtTokens } from "../format.ts";
 import { Card, mono } from "./card.tsx";
 
 /**
- * SPEND card (§16.8) — per-phase token usage (in/out/cache r+w) and USD, from
- * the §6 #12 spend events. USD splits reported vs estimated (§11.1): the
+ * SPEND card — per-phase token usage (in/out/cache r+w) and USD, from
+ * the spend events. USD splits reported vs estimated: the
  * daemon's spend endpoint reports per-phase `spend_usd` and
  * `estimated_spend_usd` (the roster-derived half, flagged `estimated: true` in
  * the events) — the card marks the estimate so reported dollars are never

@@ -18,21 +18,21 @@ import { inputsDirFor, outputsDirFor } from "./handoff.ts";
 import type { EventIds } from "./queue.ts";
 
 /**
- * The envelope/gate stage of the run loop (§5.2 steps 6–9) — deliberately a
+ * The envelope/gate stage of the run loop (steps 6–9) — deliberately a
  * small, clearly-named module with a tiny API: T03 extends it (attempt
  * history, overrides, gate-crash-as-violation hardening) without touching the
  * loop.
  *
  * Owned here:
- *  - reading envelope.json (the agent's typed result, §9.1)
+ *  - reading envelope.json (the agent's typed result)
  *  - zod validation against the phase's schema
- *  - the `blocked` short-circuit (§3.2: pre-gate, burns no corrections, never
+ *  - the `blocked` short-circuit (pre-gate, burns no corrections, never
  *    routed through on_fail)
- *  - gate execution with §5.5 semantics: a THROWN gate is caught and treated
+ *  - gate execution: a THROWN gate is caught and treated
  *    as a violation (error text) — a crashing gate never crashes the daemon
- *  - recording envelope rows + gate_results rows per the §4 schema, and the
- *    `envelope` / `gate_result` events (§6 #8, #9)
- *  - the gate-override mechanism (§5.3): who + why + when audited next to the
+ *  - recording envelope rows + gate_results rows per the schema, and the
+ *    `envelope` / `gate_result` events
+ *  - the gate-override mechanism: who + why + when audited next to the
  *    KEPT original gate_results row; T04's pause menu and T08's HTTP verb call
  *    these functions
  *
@@ -41,11 +41,11 @@ import type { EventIds } from "./queue.ts";
  * row carries `valid` (0/1), the `violations` that rejected it, and the
  * `correction` message issued after it (filled by the loop once the correction
  * is actually sent; null when none followed — accepted, blocked, or budget
- * exhausted). The drill-in (§16.8) renders per-attempt valid/invalid,
+ * exhausted). The drill-in renders per-attempt valid/invalid,
  * violations, and the correction that followed straight from these columns.
  * `attempt` = corrections issued before this attempt (0 = first attempt of the
- * visit, §4). The `envelope` EVENT fires only on acceptance (valid + gates
- * passed or overridden), which is what §6 #8 means by "accepted".
+ * visit). The `envelope` EVENT fires only on acceptance (valid + gates
+ * passed or overridden), which is what `accepted` means.
  */
 
 export type EnvelopeOutcome =
@@ -72,7 +72,7 @@ export interface EnvelopeStageOptions {
   /** the run's cwd (the project the agent works on) — what gates call the workspace */
   cwd: string;
   /** the run's record dir ({data_dir}/runs/<run_id>) — where the per-phase
-   * inputs/outputs workspace lives (§9.1). Never the same tree as cwd. */
+   * inputs/outputs workspace lives. Never the same tree as cwd. */
   runDir: string;
   /** absolute path to <runDir>/<phase>/outputs/envelope.json */
   envelopePath: string;
@@ -87,7 +87,7 @@ export async function runEnvelopeStage(opts: EnvelopeStageOptions): Promise<Enve
   const raw = readEnvelopeFile(opts.envelopePath);
   if (raw === null) {
     // an attempt that produced no readable envelope.json is still an attempt
-    // (§16.8 "1 ✗ invalid (envelope.json missing) → corrected")
+    // "1 ✗ invalid (envelope.json missing) → corrected"
     const envelopeId = recordAttemptRow(opts, null, "");
     return { kind: "invalid", error: `no envelope.json written at ${opts.envelopePath}`, envelopeId };
   }
@@ -118,7 +118,7 @@ export async function runEnvelopeStage(opts: EnvelopeStageOptions): Promise<Enve
   if (!passed) {
     return { kind: "violations", envelope, violations, envelopeId, gateResults };
   }
-  // accepted: the §6 #8 event
+  // accepted: the event
   opts.emit(
     "envelope",
     { phase: opts.phaseName, visit: opts.visit, attempt: opts.attempt, valid: true },
@@ -175,7 +175,7 @@ function recordAttemptRow(
 
 /**
  * Run every gate; record a gate_results row + `gate_result` event per gate.
- * A throwing gate becomes a violation with the error text (§5.5) — the daemon
+ * A throwing gate becomes a violation with the error text — the daemon
  * never crashes because a gate crashed.
  */
 async function runGates(
@@ -204,7 +204,7 @@ async function runGates(
         ? { gate: name, pass: true, violations: [] }
         : { gate: name, pass: false, violations: result.violations };
     } catch (err) {
-      // §5.5: a thrown gate is a violation, never a daemon crash
+      // a thrown gate is a violation, never a daemon crash
       const message = err instanceof Error ? err.message : String(err);
       run = { gate: name, pass: false, violations: [`gate "${name}" crashed: ${message}`] };
     }
@@ -227,13 +227,13 @@ async function runGates(
   return runs;
 }
 
-/** The gate name for the §6 #9 event / §4 gate_results row: fn name, else index. */
+/** The gate name for the event / gate_results row: fn name, else index. */
 export function gateName(gate: Gate, index: number): string {
   const n = (gate as { name?: string }).name;
   return typeof n === "string" && n !== "" ? n : `gate:${index}`;
 }
 
-// ── gate overrides (§5.3): the mechanism T04's pause menu and T08's HTTP verb call ─
+// ── gate overrides: the mechanism T04's pause menu and T08's HTTP verb call ─
 
 export interface OverrideGateOptions {
   db: Database;
@@ -253,19 +253,19 @@ export interface GateOverrideResult {
   gate: string;
   envelope_id: string;
   /** true once every failed gate of this envelope is overridden — "treated as
-   * passed" (§5.3); the resume path then records acceptance and continues */
+   * passed"; the resume path then records acceptance and continues */
   approved: boolean;
 }
 
 /**
  * Mark a failed gate result as overridden. The original gate_results row is
  * KEPT (pass stays 0 — the audit trail is the point); an audited marker
- * (who + reason + when) is added, and a §6 #11 human_action event is emitted.
+ * (who + reason + when) is added, and a human_action event is emitted.
  * Throws when the result is missing, already passed, or already overridden.
  *
  * This is the mechanism T08's HTTP verb and T04's pause-menu action call. It
  * does NOT advance the run — after `approved`, the resume path calls
- * recordEnvelopeAcceptance() to record the acceptance (§6 #8) and continues.
+ * recordEnvelopeAcceptance() to record the acceptance and continues.
  */
 export function overrideGateResult(opts: OverrideGateOptions): GateOverrideResult {
   const { db, gateResultId } = opts;
@@ -309,7 +309,7 @@ export function overrideGateResult(opts: OverrideGateOptions): GateOverrideResul
 }
 
 /**
- * "Gate treated as passed" (§5.3): an envelope is approved when every gate
+ * "Gate treated as passed": an envelope is approved when every gate
  * result for it either passed or has an override marker. An envelope with no
  * gate results is approved (nothing failed). The resume path consults this
  * before continuing a previously-rejected envelope as accepted.
@@ -336,7 +336,7 @@ export interface RecordEnvelopeAcceptanceOptions {
 }
 
 /**
- * Record the §6 #8 acceptance for an envelope that was rejected but has since
+ * Record the acceptance for an envelope that was rejected but has since
  * been approved by overrides (or whose gates pass outright) — the step the
  * resume path runs after `isEnvelopeApproved` and before advancing the run.
  * Throws when the envelope is missing, invalid, or still has un-overridden

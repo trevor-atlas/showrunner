@@ -34,11 +34,11 @@ import type { BlueprintRun, ScriptMap, ScriptedTurn } from "../../src/daemon/ind
 import type { DaemonHandle } from "../../src/daemon/index.ts";
 
 /**
- * The pause & control surface (spec §5.3, T04) — human-in-the-loop machinery
+ * The pause & control surface (T04) — human-in-the-loop machinery
  * on top of the T01b loop and T03's override seam: pause states (budget,
  * guard, blocked, approval, hook), the menu actions (steer / approve / override
- * / restart-fresh / fail), the needs_review pin (§19), and the F1 pool-slot
- * hold (§5.4). FakePi only — deterministic, no pi, no tokens.
+ * / restart-fresh / fail), the needs_review pin, and the F1 pool-slot
+ * hold. FakePi only — deterministic, no pi, no tokens.
  */
 
 const QualityEnvelope = EnvelopeBase.extend({ quality: z.number().min(0).max(10) });
@@ -166,7 +166,7 @@ test("budget exhaustion pauses the run (persisted, visible); done resolves pause
     expect(row.status).toBe("paused");
     expect(row.ended_at).toBeNull(); // resumable — never a terminal end
 
-    // §6 events: corrections issued + run_status with from/to/reason
+    // events: corrections issued + run_status with from/to/reason
     const events = cursorEvents(env.db, run.run_id, 0, 10_000);
     const corrections = events.filter((e) => e.type === "correction");
     expect(corrections.length).toBeGreaterThanOrEqual(1);
@@ -226,7 +226,7 @@ test("restart-fresh re-drives the phase as a NEW visit with session id v<visit+1
     // the restarted visit also fails its budget → pauses again
     await waitFor(() => getControl(run.run_id)?.paused === true, 8000, "second pause");
 
-    // a NEW visit: the new session is v2 with the §8.1 id
+    // a NEW visit: the new session is v2 with the id
     const sessions = listAgentSessions(env.db, run.run_id);
     expect(sessions).toHaveLength(2);
     expect(sessions.map((s) => s.pi_session_id).sort()).toEqual([
@@ -235,7 +235,7 @@ test("restart-fresh re-drives the phase as a NEW visit with session id v<visit+1
     ]);
     expect(sessions.map((s) => s.visit)).toEqual([1, 2]);
 
-    // audited: the restart writes a human_action (§6 #11)
+    // audited: the restart writes a human_action
     expect(humanActions(env.db, run.run_id)).toContainEqual(
       expect.objectContaining({ action: "restart", by: "operator", detail: expect.stringContaining("build") }),
     );
@@ -262,7 +262,7 @@ test("approve proceeds the require_approval pause to a real spawn; audited", asy
       scripts: { ship: session([settledTurn()]) },
     });
     expect((await run.done).status).toBe("paused");
-    // before approval: no spawn, phase still pending (§5.2 step 1)
+    // before approval: no spawn, phase still pending
     expect(listAgentSessions(env.db, run.run_id)).toHaveLength(0);
     expect(listPhases(env.db, run.run_id)[0]!.status).toBe("pending");
 
@@ -320,7 +320,7 @@ test("override gate continues the run from the rejected envelope (row kept, acce
     expect(result).toEqual({ status: "success", needs_review: false });
     expect(listPhases(env.db, run.run_id)[0]!.status).toBe("success");
 
-    // audit: the override human_action + the §6 #8 acceptance event
+    // audit: the override human_action + the acceptance event
     const actions = humanActions(env.db, run.run_id);
     expect(actions).toContainEqual(
       expect.objectContaining({ action: "override_gate", by: "reviewer", detail: expect.stringContaining("alwaysFailGate") }),
@@ -336,7 +336,7 @@ test("override gate continues the run from the rejected envelope (row kept, acce
     expect(gates[0]!.overridden).toBe(1);
     expect(gates[0]!.override_reason).toBe("manual review accepts quality 9");
 
-    // the accepted envelope landed in the run's raw record (§10)
+    // the accepted envelope landed in the run's raw record
     const rawEnvelope = JSON.parse(
       readFileSync(join(env.dir, "runs", run.run_id, "envelope.json"), "utf8"),
     ) as { quality: number };
@@ -373,7 +373,7 @@ test("fail mid-run stops the live child (SIGTERM → SIGKILL) and reaches termin
     expect(result).toEqual({ status: "failed", needs_review: false }); // deliberate, not a crash
     const row = getRun(env.db, run.run_id)!;
     expect(row.ended_at).toBeTruthy();
-    // the child was killed (§8.3: SIGTERM, SIGKILL after 1s via SessionDriver.stop())
+    // the child was killed (SIGTERM, SIGKILL after 1s via SessionDriver.stop())
     await waitFor(() => !pidAlive(pid), 5000, "child death");
     expect(humanActions(env.db, run.run_id)).toContainEqual(
       expect.objectContaining({ action: "fail", by: "operator" }),
@@ -385,7 +385,7 @@ test("fail mid-run stops the live child (SIGTERM → SIGKILL) and reaches termin
   }
 }, { timeout: 30_000 }); // #9: the slow turn + child death needs more than the 5s default
 
-// ── needs_review pin (§19): mid-tool-call death, and ANY resume from interrupted ─
+// ── needs_review pin: mid-tool-call death, and ANY resume from interrupted ─
 
 test("needs_review pin 1/2: mid-tool-call death (unsettled stream) flags needs_review", async () => {
   const env = openEnv("pause-review-death");
@@ -413,7 +413,7 @@ test("needs_review pin 1/2: mid-tool-call death (unsettled stream) flags needs_r
     const result = await run.terminal;
     expect(result).toEqual({ status: "failed", needs_review: true });
     expect(getRun(env.db, run.run_id)!.needs_review).toBe(1);
-    // the open tool call was flushed truncated (§7.2)
+    // the open tool call was flushed truncated
     const truncated = cursorEvents(env.db, run.run_id, 0, 10_000).filter(
       (e) => e.type === "tool_call" && (e.data as { truncated?: boolean }).truncated,
     );
@@ -426,7 +426,7 @@ test("needs_review pin 1/2: mid-tool-call death (unsettled stream) flags needs_r
 test("needs_review pin 2/2: daemon restart surfaces a running run as interrupted; ANY resume flags needs_review", async () => {
   const env = openEnv("pause-review-resume");
   try {
-    // a run left 'running' by a dead daemon (no live children) — what §12 recovery sees
+    // a run left 'running' by a dead daemon (no live children) — what recovery sees
     const runId = crypto.randomUUID();
     insertRun(env.db, {
       id: runId,
@@ -500,7 +500,7 @@ test("steer mid-run reaches the SAME session between turns and shows in the feed
     const result = await run.terminal;
     expect(result).toEqual({ status: "success", needs_review: false });
 
-    // audited + in the feed (§6 #11)
+    // audited + in the feed
     expect(humanActions(env.db, run.run_id)).toContainEqual(
       expect.objectContaining({ action: "steer", by: "operator", detail: "focus on the acceptance criteria" }),
     );
@@ -520,7 +520,7 @@ test("steer mid-run reaches the SAME session between turns and shows in the feed
   }
 }, { timeout: 30_000 }); // #9: the slow turn + steer window needs more than the 5s default
 
-test("steer on a paused run: audited + queued, the run stays paused (§5.3)", async () => {
+test("steer on a paused run: audited + queued, the run stays paused", async () => {
   const env = openEnv("pause-steer-paused");
   try {
     const blueprint = defineBlueprint({
@@ -555,7 +555,7 @@ test("steer on a paused run: audited + queued, the run stays paused (§5.3)", as
   }
 }, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
-test("FakeSessionDriver speaks the RPC steer command: queued turns, no message id (§8.4)", async () => {
+test("FakeSessionDriver speaks the RPC steer command: queued turns, no message id", async () => {
   const env = openEnv("pause-steer-driver");
   try {
     const settles: string[] = [];
@@ -573,7 +573,7 @@ test("FakeSessionDriver speaks the RPC steer command: queued turns, no message i
       },
     });
     // a steer command with NO message id is accepted and queued (FIFO) —
-    // each queued steer advances the session one turn, like pi's §8.4 queue
+    // each queued steer advances the session one turn, like pi's queue
     const first = await driver.send({ type: "steer", message: "first" });
     expect(first.success).toBe(true);
     await waitFor(() => settles.length >= 1, 5000, "first steered turn");
@@ -586,7 +586,7 @@ test("FakeSessionDriver speaks the RPC steer command: queued turns, no message i
   }
 }, { timeout: 30_000 }); // #9: the 5s default trips under parallel load
 
-// ── F1 (§5.4): a paused run KEEPS its pool slot until terminal ──────────────
+// ── F1: a paused run KEEPS its pool slot until terminal ──────────────
 
 test("F1 (pool): a paused run holds its slot; the next queued run spawns only after terminal", async () => {
   const env = openEnv("pause-f1-pool");
@@ -668,9 +668,9 @@ test("F1 (pool): a paused run holds its slot; the next queued run spawns only af
   }
 }, { timeout: 30_000 }); // the internal waits total >5s — the 5s default trips under parallel load
 
-// ── HTTP surface (the daemon's §13.2 control endpoints behind the CLI verbs) ─
+// ── HTTP surface (the daemon's control endpoints behind the CLI verbs) ─
 
-/** Raw §13 probe over the daemon's merged HTTP server: every path below is
+/** Raw probe over the daemon's merged HTTP server: every path below is
  * `/api`-prefixed (the web server dispatches /api/* to the api core). */
 function api(
   baseUrl: string,
@@ -805,7 +805,7 @@ test("HTTP: approve + the pause viewer + steer land on a require_approval pause"
   }
 });
 
-test("F1 (server): a paused run blocks the next queued spawn while holding the slot (§5.4)", async () => {
+test("F1 (server): a paused run blocks the next queued spawn while holding the slot", async () => {
   const dir = tmpDataDir("pause-f1-srv");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-f1-cwd-"));
   let daemon: DaemonHandle | null = null;
@@ -824,7 +824,7 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
     const b = await api(baseUrl, "POST", "/runs", { blueprint: happyBp, cwd: runCwd, delayMs: 0 });
     const bId = (b.json as { run_id: string }).run_id;
     // B is queued behind paused A: its row exists (status 'running') and the
-    // §6 #1 run_submitted event fired at ACCEPTANCE (F2) — but NO phase has
+    // run_submitted event fired at ACCEPTANCE (F2) — but NO phase has
     // started, so the cursor holds exactly that one event
     await new Promise((r) => setTimeout(r, 60));
     const bQueued = (await api(baseUrl, "GET", `/runs/${bId}`)).json as {
@@ -870,7 +870,7 @@ test("F1 (server): a paused run blocks the next queued spawn while holding the s
 });
 
 test(
-  "§12 over HTTP: a daemon restart interrupts a running run; resume relaunches it to success (T07)",
+  " over HTTP: a daemon restart interrupts a running run; resume relaunches it to success (T07)",
   async () => {
     const dir = tmpDataDir("pause-restart-http");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-restart-cwd-"));
@@ -908,12 +908,12 @@ test(
       }
     }, 10_000, "daemon down");
 
-    // restart: §12 recovery surfaces the run as interrupted
+    // restart: recovery surfaces the run as interrupted
     boot();
     baseUrl = await waitForDaemonUp(dir, 10_000);
     await waitForStatus(baseUrl, runId, "interrupted");
 
-    // resume: the §19 pin — any resume from interrupted flags needs_review;
+    // resume: the pin — any resume from interrupted flags needs_review;
     // and the continuation is REAL (T07) — the interrupted phase's session is
     // relaunched with the same --session-id and the run drives to success
     const resume = await api(baseUrl, "POST", `/runs/${runId}/resume`, { by: "operator" });
@@ -927,7 +927,7 @@ test(
     expect(detail.run.status).toBe("success");
     // T04 pin: the resumed run KEEPS needs_review — success does not clear it
     expect(detail.run.needs_review).toBe(1);
-    // §12.3: the resumed visit reused the SAME session id — the crashed visit's
+    // the resumed visit reused the SAME session id — the crashed visit's
     // row (never ended) plus the resumed incarnation, both `..._build_v1` (no v2)
     const sessionIds = detail.sessions.map((s) => s.pi_session_id);
     expect(sessionIds).toHaveLength(2);

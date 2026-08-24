@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 
 import { RunPool } from "../../src/daemon/index.ts";
 
-test("the pool runs at most `slots` runs concurrently and queues the rest (§5.4)", async () => {
+test("the pool runs at most `slots` runs concurrently and queues the rest", async () => {
   const pool = new RunPool(2);
   const started: string[] = [];
   const finished: string[] = [];

@@ -2,7 +2,7 @@ import { clientEntry, css, on } from "remix/ui";
 import type { Handle, SerializableProps } from "remix/ui";
 
 /**
- * The run-list toolbar: status filter + refresh (spec §16.6). A plain GET
+ * The run-list toolbar: status filter + refresh. A plain GET
  * form — `refresh` re-fetches GET /runs server-side and the status select
  * narrows the list — progressively enhanced: with the client runtime on,
  * changing the status submits the form (auto-submit on change) and the

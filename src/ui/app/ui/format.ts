@@ -1,14 +1,14 @@
 /**
- * Shared formatting helpers (spec §16.10) — reused by the run list today and
+ * Shared formatting helpers — reused by the run list today and
  * by the run-detail/drill-in tickets later. Pure functions, no UI.
  */
 
-/** Short run id — the first 6 chars of the run's uuid (§16.6 mockup). */
+/** Short run id — the first 6 chars of the run's uuid. */
 export function fmtRunId(id: string): string {
   return id.slice(0, 6);
 }
 
-/** USD spend, "$0.42" — two decimals, `$` prefix (§16.6 SPEND column). */
+/** USD spend, "$0.42" — two decimals, `$` prefix. */
 export function fmtMoney(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
@@ -29,7 +29,7 @@ export function fmtTokens(n: number): string {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-/** Started-at timestamp rendered as local clock time, "14:02:11" (§16.6). */
+/** Started-at timestamp rendered as local clock time, "14:02:11". */
 export function fmtStartedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;

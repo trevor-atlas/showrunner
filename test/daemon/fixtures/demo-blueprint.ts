@@ -4,13 +4,13 @@ import type { Envelope, Gate } from "../../../src/core/index.ts";
 
 /**
  * The demo blueprint (T01b): a two-phase play — plan, then build — driven by
- * scripted FakePi sessions (spec §17; no pi binary). The scripted sessions
+ * scripted FakePi sessions (; no pi binary). The scripted sessions
  * live next to this module under fake-pi/<phase>.json and are resolved by the
  * daemon at submit time; each turn ends with the agent "writing" an envelope.
  *
  * The plan phase's first turn writes a low-quality envelope (gate fail), the
  * daemon issues one correction, and the second turn passes — so the run shows
- * the full §5.2 loop: gate fail → correction → success, same session id.
+ * the full loop: gate fail → correction → success, same session id.
  *
  * Run it with: showrunner run packages/daemon/test/fixtures/demo-blueprint.ts
  */

@@ -3,7 +3,7 @@ import type { DaemonClient } from "../daemon/client.ts";
 
 export interface WatchOptions {
   runId: string;
-  /** the typed §13 client (http; base URL from the pidfile port) */
+  /** the typed client (http; base URL from the pidfile port) */
   client: DaemonClient;
   intervalMs?: number;
   maxPolls?: number;
@@ -13,7 +13,7 @@ export interface WatchOptions {
 const TERMINAL = new Set(["success", "failed", "paused", "interrupted"]);
 
 /**
- * Stream a run's folded events via the one cursor query (§2.3, §4.3): poll
+ * Stream a run's folded events via the one cursor query: poll
  * GET /runs/:id/events?cursor=<rowid> at ~500ms, printing every new event,
  * until the run reaches a terminal state and the cursor is caught up.
  * Replay-then-tail: full history and live view are the same loop.

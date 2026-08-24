@@ -13,7 +13,7 @@ import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import { daemonEntryPath } from "../../src/daemon/index.ts";
 
 /**
- * The capstone FINDING 1 regression seam (§19 "Backpressure" at the HTTP
+ * The capstone FINDING 1 regression seam ("Backpressure" at the HTTP
  * layer): command gates run IN the daemon process, so a synchronous gate
  * (spawnSync) freezes the daemon's event loop — every HTTP response
  * (health/runs/show/watch/UI) hangs for the gate's whole duration. These
@@ -22,7 +22,7 @@ import { daemonEntryPath } from "../../src/daemon/index.ts";
  *  1. while a gate sleeps 2.5s, /health and /runs must resolve in well under
  *     the gate's duration (the event loop stays responsive);
  *  2. a gate whose command exceeds its timeout cap becomes a violation with
- *     the error text (§5.5) and the daemon stays healthy afterwards.
+ *     the error text and the daemon stays healthy afterwards.
  *
  * The daemon runs as a CHILD PROCESS (like the smoke) so a frozen event loop
  * in the daemon cannot blind the test's own HTTP probe.
@@ -31,7 +31,7 @@ const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const SLEEP_GATE_BP = join(fixturesDir, "sleep-gate-blueprint.ts");
 const TIMEOUT_GATE_BP = join(fixturesDir, "timeout-gate-blueprint.ts");
 
-/** Raw §13 probe over the daemon's merged HTTP server: every path below is
+/** Raw probe over the daemon's merged HTTP server: every path below is
  * `/api`-prefixed (the web server dispatches /api/* to the api core). */
 function api(
   baseUrl: string,
@@ -168,7 +168,7 @@ function teardown(h: BootedDaemon): void {
   cleanupDir(h.dir);
 }
 
-test("§19/F1: HTTP resolves DURING a sleeping gate (2.5s) — the event loop never blocks on gate execution", async () => {
+test("F1: HTTP resolves DURING a sleeping gate (2.5s) — the event loop never blocks on gate execution", async () => {
   const h = bootDaemon("gate-async");
   try {
     await waitForHealth(h.dir);
@@ -203,7 +203,7 @@ test("§19/F1: HTTP resolves DURING a sleeping gate (2.5s) — the event loop ne
   }
 }, { timeout: 30_000 });
 
-test("§5.5: a gate that exceeds its cap → violation with the error text; the daemon stays healthy after", async () => {
+test("a gate that exceeds its cap → violation with the error text; the daemon stays healthy after", async () => {
   const h = bootDaemon("gate-timeout");
   try {
     await waitForHealth(h.dir);

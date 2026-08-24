@@ -1,16 +1,16 @@
 # showrunner — the dashboard
 
-The remix@next (v3 beta) dashboard. Not a React project (spec §16.1): `remix` is the only runtime framework dependency, pinned exactly to `3.0.0-beta.10`.
+The remix@next (v3 beta) dashboard. Not a React project: `remix` is the only runtime framework dependency, pinned exactly to `3.0.0-beta.10`.
 
 ## What's here
 
-- `GET /` — the run list: run (short id, links to the run-detail route), blueprint, `StatusPill`, started time, spend. Sorted started desc, filterable by status, with a refresh control. All daemon reads are server-side (`app/lib/daemon.ts` calls the §13 api core in-process); the browser sees rendered HTML only.
+- `GET /` — the run list: run (short id, links to the run-detail route), blueprint, `StatusPill`, started time, spend. Sorted started desc, filterable by status, with a refresh control. All daemon reads are server-side (`app/lib/daemon.ts` calls the api core in-process); the browser sees rendered HTML only.
 - States: `EmptyState` ("no runs yet — `showrunner run <blueprint>`").
 - Run detail + phase drill-in (timeline chart, detail panel, live feed, attempts, gates, spend, raw), the pause-menu controls, and the events/timeline/envelopes/gates JSON proxies.
 
 ## Run it
 
-There is ONE web server: the daemon serves the §13 API (under `/api/*`) and the
+There is ONE web server: the daemon serves the API (under `/api/*`) and the
 dashboard together on a single TCP listener. In production that is the daemon
 itself — same process, no env needed:
 
