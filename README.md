@@ -66,6 +66,42 @@ Paused runs (approval / budget / guard / blocked) surface with `showrunner pause
 and `fail`. Interrupted runs (a daemon crash) continue with `showrunner resume
 <run_id>`.
 
+### Daemon lifecycle: start, stop, restart, reset
+
+The daemon is ONE long-lived process (owns SQLite, pi spawns, and the web
+server). Every `showrunner` command auto-spawns it if it isn't already running
+(`ensureDaemon`); the pidfile lives at `<data_dir>/daemon.pid` — two lines:
+pid, then the bound port.
+
+```bash
+showrunner daemon            # run the daemon in the foreground (Ctrl-C stops it)
+showrunner stop              # SIGTERM it gracefully: stops children, removes the pidfile
+showrunner status            # is it up? pool utilization + run counts
+```
+
+- **Restart (pick up new code).** The daemon runs the code that was on disk
+  when it started — there is no hot reload in production mode. To apply code
+  changes: `showrunner stop`, then `showrunner daemon` again (or
+  `bun --watch src/daemon/daemon.ts` while developing). Equivalent foreground
+  invocations: `bun src/cli/index.ts daemon` or `bun src/daemon/daemon.ts`.
+- **Reset (wipe all runs).** Stop the daemon, delete the data, start again:
+
+  ```bash
+  showrunner stop
+  rm -rf ~/.showrunner/showrunner.db* ~/.showrunner/runs   # keep prices.json (your config)
+  showrunner daemon
+  ```
+
+  `rm -rf ~/.showrunner` for a completely clean slate (drops `prices.json`
+  too).
+- **Find the process / port.** `lsof -iTCP:44100` shows the listener; the
+  pidfile's second line is the bound port (ephemeral when `SHOWRUNNER_PORT=0`).
+- **Dashboard.** http://localhost:44100 — the first hit may 503 for a few
+  seconds while the remix router import warms up, then 200.
+- **Restart caveat.** Runs left `running` when the daemon died are reconciled
+  to `interrupted` on the next start (§12) and need `showrunner resume <run_id>`
+  to continue; completed runs are untouched.
+
 ### The starter kit
 
 Six agents, a shared gates library (`testsPass`, `lintClean`, `matchesPlan`,
@@ -138,7 +174,7 @@ single tsconfig, a single node_modules, a single cwd.
 ## Development
 
 ```bash
-bun test                              # 270 tests across one package (FakePi; no pi binary, no tokens)
+bun test                              # 315 tests across one package (FakePi; no pi binary, no tokens)
 bunx tsc --noEmit   # one package, one typecheck
 SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts
                                       # the capstone smoke: real pi, real repo, real tokens (T13)
