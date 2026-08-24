@@ -163,11 +163,9 @@ single tsconfig, a single node_modules, a single cwd.
 ## Docs
 
 - [CONTEXT.md](./CONTEXT.md) — glossary / ubiquitous language
-- [docs/spec](./docs/spec/) — the implementation contract, split by subsystem
-  (index: [README.md](./docs/spec/README.md); **the UI is remix@next, NOT
-  React** — see §16)
 - [docs/implementation-record.md](./docs/implementation-record.md) — build
-  history + known limitations
+  history + known limitations (the `docs/spec/` contract was removed — it had
+  drifted; this README and the implementation record are the living docs)
 - [docs/diagrams/run-loop.md](./docs/diagrams/run-loop.md) — the run lifecycle
 
 ## Development

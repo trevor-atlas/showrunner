@@ -1,11 +1,11 @@
 # Showrunner UI — Agent Guide
 
 The Showrunner dashboard (`@showrunner/ui`): the remix@next (v3 beta) dashboard.
-Built on the `remix` package only — **not React** (spec §16.1). See
-`docs/spec/05-ui-dashboard.md` §16 and the guides at https://guides.remix.run
-(§16.2: read start-here, request-handling, routing-and-controllers,
-rendering-ui, streaming-ui-with-frames, data-and-validation, files-and-assets,
-interactivity before touching this package).
+Built on the `remix` package only — **not React**. See the guides at
+https://guides.remix.run (read start-here, request-handling,
+routing-and-controllers, rendering-ui, streaming-ui-with-frames,
+data-and-validation, files-and-assets, interactivity before touching this
+package).
 
 ## Commands
 
