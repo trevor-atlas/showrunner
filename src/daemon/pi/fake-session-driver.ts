@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fakeSessionEntryPath } from "./harness/fixtures.ts";
 import { LineSplitter } from "../linesplit.ts";
+import { classifyLine, SETTLED_KIND } from "./raw-lines.ts";
 import { DEFAULT_STDERR_CAP } from "./session-driver.ts";
 import type { SessionDriver } from "./session-driver.ts";
 import type { RpcCommand, RpcResponse } from "./rpc-types.ts";
@@ -251,15 +252,8 @@ export class FakeSessionDriver implements SessionDriver {
 
   private handleLine(line: string, final: boolean): void {
     this.onLine(line, final);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (typeof parsed !== "object" || parsed === null) return;
-    const evt = parsed as Record<string, unknown>;
-    if (evt.type === "agent_settled") {
+    const c = classifyLine(line);
+    if (c.kind === SETTLED_KIND) {
       // latch FIRST (G1): a settle with no waiter registered is remembered
       this.settleSeq += 1;
       const w = this.settleWaiter;

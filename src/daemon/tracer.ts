@@ -5,6 +5,7 @@ import {
 } from "../core/index.ts";
 import { estimateUsd } from "./roster.ts";
 import type { Roster } from "./roster.ts";
+import { classifyLine, SETTLED_KIND } from "./pi/raw-lines.ts";
 
 /**
  * The tracer (spec §7): folds a raw pi JSONL stream into the three harness
@@ -113,32 +114,26 @@ export class Tracer {
   /** Handle one raw JSONL line (already split on `\n`, no trailing newline). */
   onLine(raw: string, opts: { final?: boolean } = {}): void {
     this.opts.rawAppend?.(raw, opts.final === true);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return; // non-JSON line: recorded verbatim, skipped for folding
-    }
-    if (typeof parsed !== "object" || parsed === null) return;
-    const evt = parsed as Record<string, unknown>;
-    switch (evt.type) {
+    const { kind, evt } = classifyLine(raw);
+    if (kind === "unknown") return; // non-JSON / non-object / unrecognized: recorded verbatim, skipped
+    switch (kind) {
       case "tool_execution_start":
-        this.onToolStart(evt);
+        this.onToolStart(evt!);
         break;
       case "tool_execution_update":
-        this.onToolUpdate(evt);
+        this.onToolUpdate(evt!);
         break;
       case "tool_execution_end":
-        this.onToolEnd(evt);
+        this.onToolEnd(evt!);
         break;
-      case "agent_settled":
+      case SETTLED_KIND:
         // §7.4: agent_end with willRetry is not done; agent_settled is.
         this.settled = true;
         break;
       case "message_update":
       case "message_end":
       case "turn_end":
-        this.snapshotUsage(evt);
+        this.snapshotUsage(evt!);
         break;
       default:
         break; // machinery and other events: recorded raw only (§7.4)
