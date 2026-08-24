@@ -4,7 +4,7 @@ import { ScoutEnvelope } from "../envelopes.ts";
 import { findingsReported } from "../gates/index.ts";
 
 /**
- * scout — read-only recon (PLAN §14). Nothing changes: the scout explores,
+ * scout — read-only recon. Nothing changes: the scout explores,
  * reports findings, and the run ends. Reach for it before any code moves.
  *
  * Replace-this: the agent, envelope, and gates are the point of this file.

@@ -13,7 +13,7 @@ import { reviewer } from "./reviewer.ts";
 import { scout } from "./scout.ts";
 import { ship } from "./ship.ts";
 
-/** The six agents by name — the starter kit's roster of doers (PLAN §14). */
+/** The six agents by name — the starter kit's roster of doers. */
 export const AGENTS: Record<string, Agent> = {
   planner,
   builder,

@@ -7,14 +7,14 @@ import type { PhaseHookContext } from "./run.ts";
 /**
  * Blueprint types (spec §3.5). A blueprint is a TypeScript module defining a
  * play of phases; phases reference imported agents and gates directly - no
- * string registries (ADR-0001).
+ * string registries.
  */
 
 export interface BlueprintPhase {
   /** phase name - on_fail.to targets these; unique within a blueprint */
   name: string;
   agent: Agent; // imported module, not a string
-  /** zod schema extended from EnvelopeBase (ADR-0002) */
+  /** zod schema extended from EnvelopeBase */
   envelope: z.ZodTypeAny;
   gates: Gate[];
   /** max corrections per visit (default ~3) */

@@ -6,7 +6,7 @@ import { BuildEnvelope, PlanEnvelope, ShipEnvelope } from "../envelopes.ts";
 import { envelopeShape, matchesPlan } from "../gates/index.ts";
 
 /**
- * plan_build — small, well-understood work (PLAN §14): plan, build against
+ * plan_build — small, well-understood work: plan, build against
  * the plan, then ship. The build phase's matchesPlan gate refuses an envelope
  * that does not reference the plan document, and the ship phase pauses for a
  * human before any commit/PR is made (require_approval).

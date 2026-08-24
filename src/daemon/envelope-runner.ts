@@ -25,7 +25,7 @@ import type { EventIds } from "./queue.ts";
  *
  * Owned here:
  *  - reading envelope.json (the agent's typed result, §9.1)
- *  - zod validation against the phase's schema (ADR-0002)
+ *  - zod validation against the phase's schema
  *  - the `blocked` short-circuit (§3.2: pre-gate, burns no corrections, never
  *    routed through on_fail)
  *  - gate execution with §5.5 semantics: a THROWN gate is caught and treated

@@ -51,7 +51,7 @@ afterEach(() => {
   for (const d of cleanups.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-test("the starter kit ships exactly the ten skills from PLAN §14's table", () => {
+test("the starter kit ships exactly the ten skills", () => {
   const skills = readSkills();
   expect(skills.map((s) => s.dir)).toEqual([
     "build",
@@ -83,7 +83,7 @@ test("every skill's frontmatter is valid per the Agent Skills standard (name, de
 test("every skill's blueprint name resolves to a real starter blueprint module", () => {
   const blueprintsDir = join(import.meta.dir, "..", "..", "src", "starter-kit", "blueprints");
   const blueprintFiles = new Set(readdirSync(blueprintsDir).filter((f) => f.endsWith(".ts") && f !== "index.ts"));
-  // skill → blueprint name (PLAN §14 table); name → module file
+  // skill → blueprint name; name → module file
   const moduleFor: Record<string, string> = {
     prompt: "prompt.ts",
     scout: "scout.ts",

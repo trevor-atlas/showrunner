@@ -107,7 +107,7 @@ showrunner status            # is it up? pool utilization + run counts
 Six agents, a shared gates library (`testsPass`, `lintClean`, `matchesPlan`,
 …), ten blueprint modules, ten skill files, and the `poll` tool live in
 [`src/starter-kit`](src/starter-kit/README.md) — a replace-this
-surface by design (PLAN §14): the tests it ships prove the machinery, not your
+surface by design: the tests it ships prove the machinery, not your
 project. `showrunner run` takes a blueprint **module path**. `--prompt "<goal>"` is the
 instruction the agent works against — it is composed into the run's first
 prompt as the `[User request]` section (and snapshotted verbatim into the
@@ -155,26 +155,25 @@ single tsconfig, a single node_modules, a single cwd.
   spawns pi, folds the raw stream into events (tracer, §7), runs the envelope
   and gate stages, the pause/control surface, and the merged web server
   (`src/daemon/web.ts`): ONE TCP listener on `127.0.0.1:44100` serving the §13
-  JSON API under `/api/*` AND the remix@next dashboard in-process (§16). See
-  [ADR-0003: daemon owns spawn and the SQLite write path](docs/adr/0003-daemon-owns-spawn-and-sqlite-write-path.md).
+  JSON API under `/api/*` AND the remix@next dashboard in-process (§16).
 - **`src/cli`** — `showrunner`: a thin typed client over the daemon's HTTP API.
 - **`src/starter-kit`** — the replace-this content (agents, gates, blueprints, skills, poll tool).
 - **`src/ui`** — the remix@next dashboard (served by the daemon via `src/daemon/web.ts`; `bun --watch src/ui/server.ts` boots the whole daemon in-process for UI dev).
 
 ## Docs
 
-- [PLAN.md](./PLAN.md) — the settled design
 - [CONTEXT.md](./CONTEXT.md) — glossary / ubiquitous language
 - [docs/spec](./docs/spec/) — the implementation contract, split by subsystem
   (index: [README.md](./docs/spec/README.md); **the UI is remix@next, NOT
   React** — see §16)
-- [docs/adr](./docs/adr/) — architecture decisions
+- [docs/implementation-record.md](./docs/implementation-record.md) — build
+  history + known limitations
 - [docs/diagrams/run-loop.md](./docs/diagrams/run-loop.md) — the run lifecycle
 
 ## Development
 
 ```bash
-bun test                              # 315 tests across one package (FakePi; no pi binary, no tokens)
+bun test                              # the full suite (FakePi; no pi binary, no tokens)
 bunx tsc --noEmit   # one package, one typecheck
 SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts
                                       # the capstone smoke: real pi, real repo, real tokens (T13)

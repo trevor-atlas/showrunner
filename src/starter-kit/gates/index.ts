@@ -4,7 +4,7 @@ import type { Gate, GateContext, GateResult } from "../../core/index.ts";
 import { createShell } from "../../core/index.ts";
 
 /**
- * Shared gates library (PLAN §14, spec §3.4). Each export is a curried gate
+ * Shared gates library (spec §3.4). Each export is a curried gate
  * factory: `testsPass()` returns a Gate you drop into a phase's `gates` array.
  * Gates are workspace-aware via ctx (cwd, phase, visit) and use `ctx.shell()`
  * where a command must run — falling back to core's `createShell` when the

@@ -1,12 +1,12 @@
 # showrunner — the dashboard
 
-The remix@next (v3 beta) run-list UI. Not a React project (spec §16.1): `remix` is the only runtime framework dependency, pinned exactly to `3.0.0-beta.10` (ADR-0004).
+The remix@next (v3 beta) dashboard. Not a React project (spec §16.1): `remix` is the only runtime framework dependency, pinned exactly to `3.0.0-beta.10`.
 
 ## What's here
 
 - `GET /` — the run list: run (short id, links to the run-detail route), blueprint, `StatusPill`, started time, spend. Sorted started desc, filterable by status, with a refresh control. All daemon reads are server-side (`app/lib/daemon.ts` calls the §13 api core in-process); the browser sees rendered HTML only.
 - States: `EmptyState` ("no runs yet — `showrunner run <blueprint>`").
-- Run detail + phase drill-in (gantt, live feed, attempts, gates, spend, raw) and the pause-menu controls.
+- Run detail + phase drill-in (timeline chart, detail panel, live feed, attempts, gates, spend, raw), the pause-menu controls, and the events/timeline/envelopes/gates JSON proxies.
 
 ## Run it
 

@@ -3,7 +3,7 @@ import type { Agent, Blueprint, Gate } from "../../core/index.ts";
 import { planner } from "../agents/planner.ts";
 
 /**
- * prompt — "one agent, one prompt, NAME picks who" (PLAN §14). A single-phase
+ * prompt — "one agent, one prompt, NAME picks who". A single-phase
  * blueprint around whichever agent you want: the skill's `{prompt}` argument
  * is the goal, and you pick the agent by editing this module (or using the
  * factory below).

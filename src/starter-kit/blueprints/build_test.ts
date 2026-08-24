@@ -4,7 +4,7 @@ import { BuildEnvelope } from "../envelopes.ts";
 import { lintClean, testsPass } from "../gates/index.ts";
 
 /**
- * build_test — a suite to satisfy (PLAN §14): builder, gates on (test, lint),
+ * build_test — a suite to satisfy: builder, gates on (test, lint),
  * and a bounded fix loop. `build` must pass the test suite and a clean
  * typecheck; when its correction budget runs out it routes to `fix`, and
  * `fix` (same gates) routes back to `build` — so the loop always terminates
