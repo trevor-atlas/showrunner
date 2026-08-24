@@ -24,7 +24,7 @@ import type { PhaseRow, RunRow } from "../../src/daemon/db.ts";
 import { RunPool } from "../../src/daemon/pool.ts";
 import { ApiError, apiTimeline, handleApiRequest } from "../../src/daemon/server.ts";
 import type { ApiState } from "../../src/daemon/server.ts";
-import type { TimelineView } from "../../src/daemon/client.ts";
+import type { TimelineView } from "../../src/daemon/contract.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
@@ -153,7 +153,8 @@ function envelopeRow(
 }
 
 function timeline(state: ApiState, runId: string): TimelineView {
-  return apiTimeline(state, runId) as unknown as TimelineView;
+  // apiTimeline's return type IS the TimelineView contract (issue #23) — no bridge
+  return apiTimeline(state, runId);
 }
 
 // ── the R7 acceptance shape ──────────────────────────────────────────────────

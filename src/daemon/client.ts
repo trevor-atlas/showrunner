@@ -1,9 +1,5 @@
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
-import type { EventRow } from "../core/index.ts";
-import type { PhaseStatus, RunStatus } from "../core/run.ts";
-
-import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride, PhaseRow, RunRow } from "./db.ts";
 
 /**
  * The typed HTTP client for the daemon's API — ships for the CLI and the
@@ -15,173 +11,67 @@ import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride, PhaseRow, Ru
  * the API under `/api/*` on ONE listener (default 127.0.0.1:44100, port
  * overridable via SHOWRUNNER_PORT). The unix socket is gone; `baseUrl`
  * defaults to http://127.0.0.1:${SHOWRUNNER_PORT ?? 44100}.
+ *
+ * The wire shapes and ApiError live in contract.ts — the client re-exports
+ * them here so the CLI (cli/index.ts, cli/daemon-lifecycle.ts, cli/watch.ts)
+ * compiles unchanged.
  */
 
-export class ApiError extends Error {
-  readonly status: number;
+// The one error class — shared with the server core and the UI.
+import { ApiError } from "./contract.ts";
+// The one wire contract — imported locally (the class body uses them)
+// and re-exported so consumers (the CLI, the UI) keep their imports.
+import type {
+  ControlResult,
+  DaemonStatus,
+  EventsPage,
+  EventsQuery,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  PhaseSummary,
+  RawQuery,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  SegmentCause,
+  SpendBreakdown,
+  SteerBody,
+  SubmitRunBody,
+  SubmitRunResult,
+  TimelinePhase,
+  TimelineSegment,
+  TimelineView,
+} from "./contract.ts";
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+export { ApiError };
+export type {
+  ControlResult,
+  DaemonStatus,
+  EventsPage,
+  EventsQuery,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  PhaseSummary,
+  RawQuery,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  SegmentCause,
+  SpendBreakdown,
+  SteerBody,
+  SubmitRunBody,
+  SubmitRunResult,
+  TimelinePhase,
+  TimelineSegment,
+  TimelineView,
+};
 
 /** Distinguish "the daemon is down" (connection errors) from API errors. */
 export function isDaemonDown(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
   return code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EADDRNOTAVAIL";
-}
-
-// ── response shapes (the wire contract the server honors) ────────────────
-
-export interface RunListItem extends RunRow {
-  spend_usd: number;
-  /** 1-based spawn-queue position for pool-queued runs; null when not queued */
-  queue_position: number | null;
-  phase_counts: Record<string, number>;
-}
-
-export interface PhaseSummary extends PhaseRow {
-  estimated_spend_usd: number;
-}
-
-export interface RunDetail {
-  run: RunRow;
-  spend_usd: number;
-  estimated_spend_usd: number;
-  envelope_count: number;
-  phases: PhaseSummary[];
-  sessions: AgentSessionRow[];
-  event_count: number;
-}
-
-export interface EventsPage {
-  events: EventRow[];
-  /** the last rowid returned (or the requested cursor when the page is
-   * empty) — pass this as `cursor` on the next poll; the query is idempotent */
-  next_cursor: number;
-}
-
-export interface PhaseEnvelopes {
-  run_id: string;
-  phase: string;
-  phase_id: string;
-  /** ALL attempts (valid and rejected), ordered visit → attempt (T03) */
-  envelopes: EnvelopeRow[];
-}
-
-export interface PhaseGates {
-  run_id: string;
-  phase: string;
-  phase_id: string;
-  /** gate results incl. the override badge (who + why + when) */
-  gates: GateResultWithOverride[];
-}
-
-export interface SpendBreakdown {
-  run_id: string;
-  spend_usd: number;
-  estimated_spend_usd: number;
-  phases: { id: string; name: string; status: string; spend_usd: number; estimated_spend_usd: number }[];
-}
-
-// ── R3: the timeline view (GET /runs/:id/timeline) ──────────────────────────
-// The server derives per-visit segments by folding the run's phase_start /
-// phase_end events (spec R3) — the derivation lives server-side, in one
-// tested place. The wire shapes below are the contract apiTimeline honors.
-
-export type SegmentCause =
-  | { kind: "flow" }
-  | { kind: "on_fail"; from_phase: string; from_visit: number }
-  | { kind: "human"; action: string; by?: string };
-
-export interface TimelineSegment {
-  visit: number;
-  started_at: string;
-  ended_at: string | null; // null = visit still open
-  outcome: "in_progress" | "success" | "failed" | "skipped" | "interrupted";
-  /** correction events in this visit */
-  corrections: number;
-  /** envelope events in this visit */
-  envelope_attempts: number;
-  /** the phase_start payload's cause verbatim; null on runs recorded before R2 */
-  cause: SegmentCause | null;
-}
-
-export interface TimelinePhase {
-  phase_id: string;
-  name: string;
-  agent: string;
-  status: PhaseStatus; // current, from the phases row
-  visits: number;
-  budget: number;
-  spend_usd: number;
-  estimated_spend_usd: number;
-  /** ordered by visit; empty for pending phases */
-  segments: TimelineSegment[];
-}
-
-export interface TimelineView {
-  run_id: string;
-  blueprint: string;
-  status: RunStatus;
-  needs_review: boolean;
-  started_at: string; // ISO-8601 UTC, like everything else
-  ended_at: string | null;
-  /** blueprint order (same order as RunDetail.phases) */
-  phases: TimelinePhase[];
-}
-
-export interface RawTail {
-  run_id: string;
-  /** the last N raw_output.jsonl lines, verbatim, newline-joined */
-  raw: string;
-  /** the FULL line count of the raw file */
-  line_count: number;
-  /** true when the tail dropped earlier lines (the file exceeds the requested N) */
-  truncated: boolean;
-}
-
-export interface PauseView {
-  run_id: string;
-  paused: boolean;
-  status: string;
-  kind?: string;
-  phase?: string;
-  reason?: string | null;
-  actions?: string[];
-  queued_steers?: string[];
-  live_session_id?: string | null;
-  note?: string;
-}
-
-export interface DaemonStatus {
-  ok: boolean;
-  pid: number;
-  data_dir: string;
-  uptime_ms: number;
-  pool: { slots: number; running: string[]; queued: string[] };
-  runs: Record<string, number>;
-}
-
-export interface SubmitRunResult {
-  run_id: string;
-  queue_position: number | null;
-  blueprint?: string; // blueprint runs
-  phase_id?: string; // fixture runs
-  agent_session_id?: string;
-  fixture?: string;
-}
-
-export interface ControlResult {
-  run_id: string;
-  ok: boolean;
-  status: string;
-  needs_review?: number;
-  queued_steers?: number;
-  message?: string;
-  verb?: string;
 }
 
 // ── the client ───────────────────────────────────────────────────────────────
@@ -361,9 +251,7 @@ export class DaemonClient {
   }
 }
 
-export type SubmitRunBody =
-  | { blueprint: string; cwd?: string; args?: string[] }
-  | { fixture: string; cwd?: string; delayMs?: number; agent?: string; model?: string; phase?: string };
+// SubmitRunBody is re-exported from contract.ts above.
 
 function errorMessage(body: unknown, fallback: string): string {
   if (typeof body === "object" && body !== null && "error" in body) {

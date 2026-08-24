@@ -196,9 +196,9 @@ export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
 // HTTP API
 export { createWebServer } from "./web.ts";
 // The api core: exported per-endpoint functions the wire dispatcher and the
-// UI actions (in-process, T4) share. ApiError carries the wire status code.
+// UI actions (in-process, T4) share. ApiError is re-exported here from
+// contract.ts (see below) — one class for the whole daemon.
 export {
-  ApiError,
   apiApprove,
   apiEvents,
   apiFailRun,
@@ -221,28 +221,40 @@ export {
 } from "./server.ts";
 export type { ApiState } from "./server.ts";
 
-// The typed client (ships for the CLI and the UI; http-only — the daemon
-// serves the API under /api/* on one TCP listener). Its ApiError lives in
-// client.ts (the server core has its own — same shape, different module).
-export {
-  DaemonClient,
-  isDaemonDown,
-} from "./client.ts";
+// The one shared wire contract — the shapes server.ts (producer),
+// client.ts (consumer), and the UI all import from the same module.
+export { ApiError } from "./contract.ts";
 export type {
-  DaemonClientOptions,
+  ControlResult,
   DaemonStatus,
   EventsPage,
+  EventsQuery,
   PauseView,
   PhaseEnvelopes,
   PhaseGates,
   PhaseSummary,
+  RawQuery,
   RawTail,
   RunDetail,
   RunListItem,
+  SegmentCause,
   SpendBreakdown,
+  SteerBody,
   SubmitRunBody,
   SubmitRunResult,
+  TimelinePhase,
+  TimelineSegment,
+  TimelineView,
+} from "./contract.ts";
+
+// The typed client (ships for the CLI and the UI; http-only — the daemon
+// serves the API under /api/* on one TCP listener). The shapes it moves
+// are the contract's — re-exported above; client.ts carries the transport.
+export {
+  DaemonClient,
+  isDaemonDown,
 } from "./client.ts";
+export type { DaemonClientOptions } from "./client.ts";
 
 // Daemon lifecycle
 export { daemonEntryPath, installSignalHandlers, startDaemon } from "./daemon.ts";

@@ -10,7 +10,6 @@ import { runDirFor } from "../../src/core/index.ts";
 
 import { CURSOR_SQL } from "../../src/daemon/db.ts";
 import {
-  ApiError,
   DaemonClient,
   insertPhase,
   insertRun,
@@ -20,6 +19,21 @@ import {
   startDaemon,
 } from "../../src/daemon/index.ts";
 import type { DaemonHandle, SubmitRunBody } from "../../src/daemon/index.ts";
+import type {
+  ControlResult,
+  EventsPage,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  SpendBreakdown,
+  SubmitRunResult,
+  TimelineView,
+} from "../../src/daemon/contract.ts";
+import { ApiError as ClientApiError } from "../../src/daemon/client.ts";
+import { ApiError as ServerApiError, apiTimeline } from "../../src/daemon/server.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
@@ -92,13 +106,16 @@ async function waitFor(fn: () => boolean | Promise<boolean>, timeoutMs = 20_000,
 async function waitForStatus(baseUrl: string, runId: string, status: string, timeoutMs = 20_000): Promise<void> {
   await waitFor(async () => {
     const { json } = await api(baseUrl, "GET", `/runs/${runId}`);
-    return (json as { run: { status: string } }).run.status === status;
+    return (json as RunDetail).run.status === status;
   }, timeoutMs, `run ${runId} → ${status}`);
 }
 
 async function runEvents(baseUrl: string, runId: string): Promise<{ id: number; type: string; data: Record<string, unknown> }[]> {
   const { json } = await api(baseUrl, "GET", `/runs/${runId}/events?cursor=0&limit=500`);
-  return (json as { events: { id: number; type: string; data: Record<string, unknown> }[] }).events;
+  // the EventsPage contract types the page; the event `data` column is
+  // `unknown` (core's EventRow), so widen that one field for the payload
+  // assertions below (the data slices are typed where they are asserted)
+  return (json as EventsPage).events.map((e) => ({ id: e.id, type: e.type, data: e.data as Record<string, unknown> }));
 }
 
 function scratchCwd(label: string): string {
@@ -116,11 +133,11 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: DEMO, cwd, delayMs: 0 });
     expect(sub.status).toBe(201);
-    const { run_id } = sub.json as { run_id: string };
+    const { run_id } = sub.json as SubmitRunResult;
     await waitForStatus(baseUrl, run_id, "success");
 
     // GET /runs — list with id/blueprint/status/started/ended/spend + queue position
-    const list = ((await api(baseUrl, "GET", "/runs")).json as { runs: Record<string, unknown>[] }).runs;
+    const list = ((await api(baseUrl, "GET", "/runs")).json as { runs: RunListItem[] }).runs;
     expect(list).toHaveLength(1);
     const listed = list[0]!;
     expect(listed.id).toBe(run_id);
@@ -132,13 +149,7 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     expect(listed.queue_position).toBeNull(); // not queued
 
     // GET /runs/:id — detail: phases (status/visits/corrections/spend), envelope count, needs_review
-    const detail = ((await api(baseUrl, "GET", `/runs/${run_id}`)).json as {
-      run: { status: string; needs_review: number };
-      envelope_count: number;
-      event_count: number;
-      phases: { name: string; status: string; visits: number; corrections: number; spend_usd: number }[];
-      sessions: unknown[];
-    });
+    const detail = (await api(baseUrl, "GET", `/runs/${run_id}`)).json as RunDetail;
     expect(detail.run.status).toBe("success");
     expect(detail.run.needs_review).toBe(0);
     expect(detail.envelope_count).toBe(3); // plan ×2 attempts + build ×1
@@ -151,12 +162,7 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     for (const p of detail.phases) expect(p.spend_usd).toBeTypeOf("number");
 
     // GET /runs/:id/phases/:phase/envelopes — ALL attempts, ordered visit → attempt
-    const planEnv = ((await api(baseUrl, "GET", `/runs/${run_id}/phases/plan/envelopes`)).json as {
-      run_id: string;
-      phase: string;
-      phase_id: string;
-      envelopes: { attempt: number; valid: number; violations: string; correction: string | null }[];
-    });
+    const planEnv = (await api(baseUrl, "GET", `/runs/${run_id}/phases/plan/envelopes`)).json as PhaseEnvelopes;
     expect(planEnv.run_id).toBe(run_id);
     expect(planEnv.phase).toBe("plan");
     expect(planEnv.envelopes).toHaveLength(2);
@@ -169,9 +175,7 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     expect(planEnv.envelopes[1]!.correction).toBeNull();
 
     // GET /runs/:id/phases/:phase/gates — results incl. the override badge
-    const planGates = ((await api(baseUrl, "GET", `/runs/${run_id}/phases/plan/gates`)).json as {
-      gates: { gate: string; pass: number; violations: string; overridden: number; override_by: string | null }[];
-    });
+    const planGates = (await api(baseUrl, "GET", `/runs/${run_id}/phases/plan/gates`)).json as PhaseGates;
     expect(planGates.gates).toHaveLength(2);
     expect(planGates.gates[0]).toMatchObject({ gate: "qualityGate", pass: 0 });
     expect(planGates.gates[0]!.violations).toContain("quality 4");
@@ -179,12 +183,7 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     expect(planGates.gates[0]!.override_by).toBeNull();
 
     // GET /runs/:id/spend — per-phase breakdown (+ estimated markers)
-    const spend = ((await api(baseUrl, "GET", `/runs/${run_id}/spend`)).json as {
-      run_id: string;
-      spend_usd: number;
-      estimated_spend_usd: number;
-      phases: { name: string; status: string; spend_usd: number; estimated_spend_usd: number }[];
-    });
+    const spend = (await api(baseUrl, "GET", `/runs/${run_id}/spend`)).json as SpendBreakdown;
     expect(spend.run_id).toBe(run_id);
     expect(spend.phases.map((p) => p.name)).toEqual(["plan", "build"]);
     for (const p of spend.phases) {
@@ -194,21 +193,13 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
     expect(spend.spend_usd).toBe(spend.phases.reduce((a, p) => a + p.spend_usd, 0));
 
     // GET /runs/:id/raw?lines=N — the tail semantics: last N lines, full count, truncated
-    const raw = ((await api(baseUrl, "GET", `/runs/${run_id}/raw?lines=3`)).json as {
-      run_id: string;
-      raw: string;
-      line_count: number;
-      truncated: boolean;
-    });
+    const raw = (await api(baseUrl, "GET", `/runs/${run_id}/raw?lines=3`)).json as RawTail;
     expect(raw.run_id).toBe(run_id);
     expect(raw.raw.split("\n").filter((l) => l !== "")).toHaveLength(3);
     expect(raw.line_count).toBeGreaterThan(3);
     expect(raw.truncated).toBe(true);
     // ?n= is kept as an alias; a full read is not truncated
-    const full = ((await api(baseUrl, "GET", `/runs/${run_id}/raw?n=99999`)).json as {
-      truncated: boolean;
-      line_count: number;
-    });
+    const full = (await api(baseUrl, "GET", `/runs/${run_id}/raw?n=99999`)).json as RawTail;
     expect(full.truncated).toBe(false);
     expect(full.line_count).toBe(raw.line_count);
 
@@ -261,32 +252,20 @@ test("cursor contract: limit honored (500 cap, default), next_cursor advances, i
 
     // default limit is 500 and the cap is honored (limit=1000 still yields 500)
     for (const qs of ["", "&limit=1000"]) {
-      const page = ((await api(baseUrl, "GET", `/runs/${runId}/events?cursor=0${qs}`)).json as {
-        events: { id: number }[];
-        next_cursor: number;
-      });
+      const page = (await api(baseUrl, "GET", `/runs/${runId}/events?cursor=0${qs}`)).json as EventsPage;
       expect(page.events).toHaveLength(500);
       expect(page.next_cursor).toBe(page.events[499]!.id);
     }
 
     // next_cursor advances: the second page starts strictly after the first
-    const first = ((await api(baseUrl, "GET", `/runs/${runId}/events?cursor=0&limit=500`)).json as {
-      events: { id: number }[];
-      next_cursor: number;
-    });
-    const second = ((await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${first.next_cursor}&limit=500`)).json as {
-      events: { id: number }[];
-      next_cursor: number;
-    });
+    const first = (await api(baseUrl, "GET", `/runs/${runId}/events?cursor=0&limit=500`)).json as EventsPage;
+    const second = (await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${first.next_cursor}&limit=500`)).json as EventsPage;
     expect(second.events).toHaveLength(100);
     for (const e of second.events) expect(e.id).toBeGreaterThan(first.events[499]!.id);
     expect(second.next_cursor).toBe(second.events[99]!.id);
 
     // the query is idempotent at the tail: empty page echoes the requested cursor
-    const tail = ((await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${second.next_cursor}`)).json as {
-      events: unknown[];
-      next_cursor: number;
-    });
+    const tail = (await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${second.next_cursor}`)).json as EventsPage;
     expect(tail.events).toHaveLength(0);
     expect(tail.next_cursor).toBe(second.next_cursor);
 
@@ -294,10 +273,7 @@ test("cursor contract: limit honored (500 cap, default), next_cursor advances, i
     let cursor = 0;
     const ids: number[] = [];
     for (let i = 0; i < 20; i++) {
-      const p = ((await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${cursor}&limit=250`)).json as {
-        events: { id: number }[];
-        next_cursor: number;
-      });
+      const p = (await api(baseUrl, "GET", `/runs/${runId}/events?cursor=${cursor}&limit=250`)).json as EventsPage;
       ids.push(...p.events.map((e) => e.id));
       if (p.events.length === 0) break;
       cursor = p.next_cursor;
@@ -323,19 +299,19 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
 
     // A: approval pause holds the only slot (F1: paused runs keep their slot)
     const a = await api(baseUrl, "POST", "/runs", { blueprint: APPROVAL, cwd, delayMs: 0 });
-    const aId = (a.json as { run_id: string }).run_id;
-    expect((a.json as { queue_position: number | null }).queue_position).toBeNull(); // started immediately
+    const aId = (a.json as SubmitRunResult).run_id;
+    expect((a.json as SubmitRunResult).queue_position).toBeNull(); // started immediately
     await waitForStatus(baseUrl, aId, "paused");
 
     // B: queued behind A — the submit response carries its queue position
     const b = await api(baseUrl, "POST", "/runs", { blueprint: DEMO, cwd, delayMs: 0, args: ["--go", "fast"] });
     expect(b.status).toBe(201);
-    const bId = (b.json as { run_id: string }).run_id;
-    expect((b.json as { queue_position: number | null }).queue_position).toBe(1);
+    const bId = (b.json as SubmitRunResult).run_id;
+    expect((b.json as SubmitRunResult).queue_position).toBe(1);
 
     // GET /runs surfaces the queue position for the queued run, null for A
     const list = ((await api(baseUrl, "GET", "/runs")).json as {
-      runs: { id: string; queue_position: number | null }[];
+      runs: RunListItem[];
     }).runs;
     expect(list.find((r) => r.id === aId)!.queue_position).toBeNull();
     expect(list.find((r) => r.id === bId)!.queue_position).toBe(1);
@@ -362,7 +338,7 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
 
     // once started, B is no longer queued
     const after = ((await api(baseUrl, "GET", "/runs")).json as {
-      runs: { id: string; queue_position: number | null }[];
+      runs: RunListItem[];
     }).runs;
     expect(after.find((r) => r.id === bId)!.queue_position).toBeNull();
 
@@ -370,16 +346,16 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
     // a later one gets 2 (a slot-holding paused run + a running run)
     const c = await api(baseUrl, "POST", "/runs", { blueprint: APPROVAL, cwd, delayMs: 0 });
     expect(c.status).toBe(201);
-    const cId = (c.json as { run_id: string }).run_id;
+    const cId = (c.json as SubmitRunResult).run_id;
     // wait: poolSlots=1 — B just finished, so C starts immediately. To get a
     // position-2, submit two; the second queues behind the paused first
     await waitForStatus(baseUrl, cId, "paused");
     const d = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY, cwd, delayMs: 0 });
-    const dId = (d.json as { run_id: string }).run_id;
-    expect((d.json as { queue_position: number | null }).queue_position).toBe(1);
+    const dId = (d.json as SubmitRunResult).run_id;
+    expect((d.json as SubmitRunResult).queue_position).toBe(1);
     const e = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY, cwd, delayMs: 0 });
-    const eId = (e.json as { run_id: string }).run_id;
-    expect((e.json as { queue_position: number | null }).queue_position).toBe(2);
+    const eId = (e.json as SubmitRunResult).run_id;
+    expect((e.json as SubmitRunResult).queue_position).toBe(2);
     // clean up the parked runs so the daemon closes without pending work
     await api(baseUrl, "POST", `/runs/${cId}/fail`);
     await waitForStatus(baseUrl, dId, "success");
@@ -403,14 +379,9 @@ test("control surface: approve + audited gate override + restart-fresh + fail, w
 
     // ── approve (require_approval pause) ──
     const ap = await api(baseUrl, "POST", "/runs", { blueprint: APPROVAL, cwd, delayMs: 0 });
-    const apId = (ap.json as { run_id: string }).run_id;
+    const apId = (ap.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, apId, "paused");
-    const viewer = ((await api(baseUrl, "GET", `/runs/${apId}/pause`)).json as {
-      paused: boolean;
-      kind: string;
-      phase: string;
-      actions: string[];
-    });
+    const viewer = (await api(baseUrl, "GET", `/runs/${apId}/pause`)).json as PauseView;
     expect(viewer).toMatchObject({ paused: true, kind: "approval", phase: "build" });
     expect(viewer.actions).toContain("approve");
     const approved = await api(baseUrl, "POST", `/runs/${apId}/approve`, { by: "operator" });
@@ -421,13 +392,9 @@ test("control surface: approve + audited gate override + restart-fresh + fail, w
 
     // ── budget pause → override guardrails → audited override → success ──
     const pu = await api(baseUrl, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
-    const puId = (pu.json as { run_id: string }).run_id;
+    const puId = (pu.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, puId, "paused");
-    const budgetView = ((await api(baseUrl, "GET", `/runs/${puId}/pause`)).json as {
-      kind: string;
-      phase: string;
-      actions: string[];
-    });
+    const budgetView = (await api(baseUrl, "GET", `/runs/${puId}/pause`)).json as PauseView;
     expect(budgetView.kind).toBe("budget_exhausted");
     expect(budgetView.actions).toContain("override");
 
@@ -460,15 +427,13 @@ test("control surface: approve + audited gate override + restart-fresh + fail, w
 
     // ── restart-fresh (new visit) then fail ──
     const rf = await api(baseUrl, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
-    const rfId = (rf.json as { run_id: string }).run_id;
+    const rfId = (rf.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, rfId, "paused");
     const restarted = await api(baseUrl, "POST", `/runs/${rfId}/phases/build/restart-fresh`, { by: "human" });
     expect(restarted.status).toBe(200);
     // the new visit fails its gate again → the run re-pauses (visits=2)
     await waitForStatus(baseUrl, rfId, "paused");
-    const rfDetail = ((await api(baseUrl, "GET", `/runs/${rfId}`)).json as {
-      phases: { name: string; visits: number }[];
-    });
+    const rfDetail = (await api(baseUrl, "GET", `/runs/${rfId}`)).json as RunDetail;
     expect(rfDetail.phases[0]!.visits).toBe(2);
     const rfEvents = await runEvents(baseUrl, rfId);
     expect(rfEvents.some((e) => e.type === "human_action" && e.data.action === "restart")).toBe(true);
@@ -498,7 +463,7 @@ test("override audit: a request WITHOUT by records cli; with by:\"web\" records 
 
     // run 1: override WITHOUT by → the daemon's default ("cli") is audited
     const cliRun = await api(baseUrl, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
-    const cliId = (cliRun.json as { run_id: string }).run_id;
+    const cliId = (cliRun.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, cliId, "paused");
     const cliOver = await api(baseUrl, "POST", `/runs/${cliId}/phases/build/override`, {
       gate: "alwaysFail",
@@ -506,16 +471,14 @@ test("override audit: a request WITHOUT by records cli; with by:\"web\" records 
     });
     expect(cliOver.status).toBe(200);
     await waitForStatus(baseUrl, cliId, "success");
-    const cliGates = ((await api(baseUrl, "GET", `/runs/${cliId}/phases/build/gates`)).json as {
-      gates: { gate: string; overridden: number; override_by: string | null }[];
-    }).gates;
+    const cliGates = ((await api(baseUrl, "GET", `/runs/${cliId}/phases/build/gates`)).json as PhaseGates).gates;
     expect(cliGates.find((g) => g.overridden === 1)).toMatchObject({ gate: "alwaysFail", override_by: "cli" });
     const cliEvents = await runEvents(baseUrl, cliId);
     expect(cliEvents.some((e) => e.type === "human_action" && e.data.action === "override_gate" && e.data.by === "cli")).toBe(true);
 
     // run 2: override WITH by:"web" → the dashboard's identity is audited
     const webRun = await api(baseUrl, "POST", "/runs", { blueprint: PAUSE, cwd, delayMs: 0 });
-    const webId = (webRun.json as { run_id: string }).run_id;
+    const webId = (webRun.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, webId, "paused");
     const webOver = await api(baseUrl, "POST", `/runs/${webId}/phases/build/override`, {
       gate: "alwaysFail",
@@ -524,9 +487,7 @@ test("override audit: a request WITHOUT by records cli; with by:\"web\" records 
     });
     expect(webOver.status).toBe(200);
     await waitForStatus(baseUrl, webId, "success");
-    const webGates = ((await api(baseUrl, "GET", `/runs/${webId}/phases/build/gates`)).json as {
-      gates: { gate: string; overridden: number; override_by: string | null; override_reason: string | null }[];
-    }).gates;
+    const webGates = ((await api(baseUrl, "GET", `/runs/${webId}/phases/build/gates`)).json as PhaseGates).gates;
     expect(webGates.find((g) => g.overridden === 1)).toMatchObject({
       gate: "alwaysFail",
       override_by: "web",
@@ -560,18 +521,18 @@ test("session steer delivers between turns; resume and fail answer 409 outside t
 
     // live-session steer: a slow blueprint run holds its session long enough
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: DEMO, cwd, delayMs: 120 });
-    const runId = (sub.json as { run_id: string }).run_id;
+    const runId = (sub.json as SubmitRunResult).run_id;
     let piSessionId: string | null = null;
     await waitFor(async () => {
       const { json } = await api(baseUrl, "GET", `/runs/${runId}`);
-      const d = json as { run: { status: string }; sessions: { pi_session_id: string }[] };
+      const d = json as RunDetail;
       if (d.run.status !== "running" || d.sessions.length === 0) return false;
       piSessionId = d.sessions[0]!.pi_session_id;
       return true;
     }, 15_000, "live session");
     const steered = await api(baseUrl, "POST", `/sessions/${piSessionId}/steer`, { message: "check the tests too", by: "reviewer" });
     expect(steered.status).toBe(200);
-    expect((steered.json as { ok: boolean }).ok).toBe(true);
+    expect((steered.json as ControlResult).ok).toBe(true);
     await waitForStatus(baseUrl, runId, "success");
     const evts = await runEvents(baseUrl, runId);
     expect(evts.some((e) => e.type === "human_action" && e.data.action === "steer" && e.data.by === "reviewer")).toBe(true);
@@ -624,11 +585,9 @@ test("resume over HTTP: an interrupted run relaunches from its recorded phase an
 
     const resumed = await api(baseUrl, "POST", `/runs/${runId}/resume`, { by: "operator" });
     expect(resumed.status).toBe(200);
-    expect((resumed.json as { needs_review: number }).needs_review).toBe(1); // any resume flags it (T04 pin)
+    expect((resumed.json as ControlResult).needs_review).toBe(1); // any resume flags it (T04 pin)
     await waitForStatus(baseUrl, runId, "success");
-    const done = ((await api(baseUrl, "GET", `/runs/${runId}`)).json as {
-      run: { status: string; needs_review: number };
-    });
+    const done = (await api(baseUrl, "GET", `/runs/${runId}`)).json as RunDetail;
     expect(done.run.status).toBe("success");
     expect(done.run.needs_review).toBe(1);
     const evts = await runEvents(baseUrl, runId);
@@ -650,7 +609,7 @@ test("hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseEnd)",
     daemon = await startDaemon({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK, cwd, delayMs: 0 });
-    const runId = (sub.json as { run_id: string }).run_id;
+    const runId = (sub.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, runId, "success");
     const log = readFileSync(join(cwd, "hooks.log"), "utf8").trim().split("\n");
     // the shell's $PWD is the REAL path (macOS /var → /private/var)
@@ -670,15 +629,10 @@ test("a throwing onPhaseStart audits + parks the run at the hook_failed menu (ne
     daemon = await startDaemon({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK_START_FAIL, cwd, delayMs: 0 });
-    const runId = (sub.json as { run_id: string }).run_id;
+    const runId = (sub.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, runId, "paused");
 
-    const viewer = ((await api(baseUrl, "GET", `/runs/${runId}/pause`)).json as {
-      kind: string;
-      phase: string;
-      reason: string;
-      actions: string[];
-    });
+    const viewer = (await api(baseUrl, "GET", `/runs/${runId}/pause`)).json as PauseView & { actions: string[] };
     expect(viewer.kind).toBe("hook_failed");
     expect(viewer.phase).toBe("build");
     expect(viewer.reason).toContain("hook start boom");
@@ -721,10 +675,10 @@ test("a throwing onPhaseEnd records the phase FAILED + audits, then parks at the
     daemon = await startDaemon({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK_END_FAIL, cwd, delayMs: 0 });
-    const runId = (sub.json as { run_id: string }).run_id;
+    const runId = (sub.json as SubmitRunResult).run_id;
     await waitForStatus(baseUrl, runId, "paused");
 
-    const viewer = ((await api(baseUrl, "GET", `/runs/${runId}/pause`)).json as { kind: string; reason: string });
+    const viewer = (await api(baseUrl, "GET", `/runs/${runId}/pause`)).json as PauseView;
     expect(viewer.kind).toBe("hook_failed");
     expect(viewer.reason).toContain("hook end boom");
 
@@ -808,3 +762,22 @@ test("typed client over the merged HTTP server; ApiError carries 404/409/400", a
     rmSync(cwd, { recursive: true, force: true });
   }
 }, { timeout: 40_000 });
+
+// ── the one shared wire contract (issue #23): the compiler, not a structural
+// test, enforces conformance — these pins fail `tsc --noEmit` on drift ────────
+
+/** Standard Equal helper — true exactly when A and B are the same type. */
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
+
+// apiTimeline (server producer) and DaemonClient.getTimeline (client
+// consumer) both honor the TimelineView contract.
+type _ServerTimelinePin = Assert<Equal<ReturnType<typeof apiTimeline>, TimelineView>>;
+type _ClientTimelinePin = Assert<Equal<Awaited<ReturnType<DaemonClient["getTimeline"]>>, TimelineView>>;
+type _NeedsReviewPin = Assert<Equal<TimelineView["needs_review"], boolean>>;
+
+test("server and client re-export the SAME ApiError class (one wire contract)", () => {
+  // the class identity is the contract: in-process calls throw the real one,
+  // and the UI's `instanceof ApiError` cannot miss across the boundary
+  expect(ServerApiError).toBe(ClientApiError);
+});

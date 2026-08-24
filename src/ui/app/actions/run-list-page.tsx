@@ -1,7 +1,7 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { RunListItem } from "../../../daemon/client.ts";
+import type { RunListItem } from "../../../daemon/contract.ts";
 import { routes } from "../routes.ts";
 import { EmptyState } from "../ui/empty-state.tsx";
 import { fmtMoney, fmtRunId, fmtStartedAt } from "../ui/format.ts";

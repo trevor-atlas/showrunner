@@ -30,6 +30,7 @@ import {
   apiSteerRun,
   apiTimeline,
 } from "../../../daemon/server.ts";
+import { ApiError } from "../../../daemon/contract.ts";
 import { requireWebState } from "../../../daemon/web-state.ts";
 import type {
   ControlResult,
@@ -42,43 +43,43 @@ import type {
   RunListItem,
   SpendBreakdown,
   TimelineView,
-} from "../../../daemon/client.ts";
+} from "../../../daemon/contract.ts";
 
 /** The run list rows — in-process against the daemon's state. */
 export async function listRuns(): Promise<{ runs: RunListItem[] }> {
-  return apiListRuns(requireWebState()) as { runs: RunListItem[] };
+  return apiListRuns(requireWebState());
 }
 
 /** The run detail — phases, spend, envelope count, sessions. */
 export async function getRunDetail(runId: string): Promise<RunDetail> {
-  return apiRunDetail(requireWebState(), runId) as unknown as RunDetail;
+  return apiRunDetail(requireWebState(), runId);
 }
 
 /** GET /runs/:id/phases/:phase/envelopes — a phase's envelope history. */
 export async function getPhaseEnvelopes(runId: string, phase: string): Promise<PhaseEnvelopes> {
-  return apiPhaseEnvelopes(requireWebState(), runId, phase) as unknown as PhaseEnvelopes;
+  return apiPhaseEnvelopes(requireWebState(), runId, phase);
 }
 
 /** GET /runs/:id/phases/:phase/gates — gate results incl. overridden. */
 export async function getPhaseGates(runId: string, phase: string): Promise<PhaseGates> {
-  return apiPhaseGates(requireWebState(), runId, phase) as unknown as PhaseGates;
+  return apiPhaseGates(requireWebState(), runId, phase);
 }
 
 /** GET /runs/:id/spend — per-phase spend breakdown (+ estimated markers). */
 export async function getSpend(runId: string): Promise<SpendBreakdown> {
-  return apiSpend(requireWebState(), runId) as unknown as SpendBreakdown;
+  return apiSpend(requireWebState(), runId);
 }
 
 /** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
 export async function getTimeline(runId: string): Promise<TimelineView> {
-  return apiTimeline(requireWebState(), runId) as unknown as TimelineView;
+  return apiTimeline(requireWebState(), runId);
 }
 
 /** GET /runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */
 export async function getRaw(runId: string, opts: { lines?: number } = {}): Promise<RawTail> {
   const query = new URLSearchParams();
   if (opts.lines !== undefined) query.set("lines", String(Math.max(1, Math.floor(opts.lines))));
-  return apiRaw(requireWebState(), runId, query) as unknown as RawTail;
+  return apiRaw(requireWebState(), runId, query);
 }
 
 /** GET /runs/:id/events — the cursor page (drill-in sums spend). */
@@ -86,12 +87,12 @@ export async function getRunEvents(runId: string, opts: { cursor?: number; limit
   const query = new URLSearchParams();
   if (opts.cursor !== undefined) query.set("cursor", String(opts.cursor));
   if (opts.limit !== undefined) query.set("limit", String(opts.limit));
-  return apiEvents(requireWebState(), runId, query) as EventsPage;
+  return apiEvents(requireWebState(), runId, query);
 }
 
 /** GET /runs/:id/pause — the pause viewer (kind, phase, actions, queued steers). */
 export async function getPause(runId: string): Promise<PauseView> {
-  return apiPause(requireWebState(), runId) as unknown as PauseView;
+  return apiPause(requireWebState(), runId);
 }
 
 // ── control verbs (T10b) ───────────────────────────────────────────────
@@ -102,22 +103,22 @@ export async function getPause(runId: string): Promise<PauseView> {
 
 /** POST /runs/:id/steer — the pause menu's steer (run-keyed; queues on a paused run). */
 export async function controlSteer(runId: string, message: string): Promise<ControlResult> {
-  return apiSteerRun(requireWebState(), runId, { message }) as unknown as ControlResult;
+  return apiSteerRun(requireWebState(), runId, { message });
 }
 
 /** POST /runs/:id/resume — continue an interrupted run. */
 export async function controlResume(runId: string): Promise<ControlResult> {
-  return apiResume(requireWebState(), runId, {}) as unknown as ControlResult;
+  return apiResume(requireWebState(), runId, {});
 }
 
 /** POST /runs/:id/fail — fail the run and kill its children. */
 export async function controlFail(runId: string): Promise<ControlResult> {
-  return apiFailRun(requireWebState(), runId, {}) as unknown as ControlResult;
+  return apiFailRun(requireWebState(), runId, {});
 }
 
 /** POST /runs/:id/approve — approve a require_approval pause. */
 export async function controlApprove(runId: string): Promise<ControlResult> {
-  return apiApprove(requireWebState(), runId, {}) as unknown as ControlResult;
+  return apiApprove(requireWebState(), runId, {});
 }
 
 /** POST /runs/:id/phases/:phase/override — override a failed gate (audited).
@@ -130,27 +131,21 @@ export async function controlOverrideGate(
   reason: string,
   by: string = "web",
 ): Promise<ControlResult> {
-  return apiOverrideGate(requireWebState(), runId, phase, { gate, reason, by }) as unknown as ControlResult;
+  return apiOverrideGate(requireWebState(), runId, phase, { gate, reason, by });
 }
 
 /** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */
 export async function controlRestartFresh(runId: string, phase: string): Promise<ControlResult> {
-  return apiRestartFresh(requireWebState(), runId, phase, {}) as unknown as ControlResult;
+  return apiRestartFresh(requireWebState(), runId, phase, {});
 }
 
 /**
- * Is the thrown error a ApiError? The control actions translate
+ * Is the thrown error an ApiError? The control actions translate
  * 409/4xx into an inline form error (from ApiError.status/message) instead of
- * pretending success. The server-side ApiError (src/daemon/server.ts)
- * keeps the same `{ name: "ApiError", status, message }` shape as the typed
- * client's, so this single check covers both.
+ * pretending success. ONE class since the contract: the server core
+ * and the typed client re-export the same ApiError (contract.ts), and
+ * in-process calls throw the real one — `instanceof` is the whole check.
  */
-export function isApiError(err: unknown): err is { status: number; message: string } {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { name?: unknown }).name === "ApiError" &&
-    typeof (err as { status?: unknown }).status === "number" &&
-    typeof (err as { message?: unknown }).message === "string"
-  );
+export function isApiError(err: unknown): err is ApiError {
+  return err instanceof ApiError;
 }

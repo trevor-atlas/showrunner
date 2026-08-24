@@ -2,7 +2,7 @@ import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
 import type { GateResultWithOverride, PhaseRow } from "../../../../../daemon/db.ts";
-import type { RawTail } from "../../../../../daemon/client.ts";
+import type { RawTail } from "../../../../../daemon/contract.ts";
 import type { SnapshotPhase } from "../../../lib/blueprint-snapshot.ts";
 import { routes } from "../../../routes.ts";
 import { fmtRunId } from "../../../ui/format.ts";

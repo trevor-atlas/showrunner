@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { RawTail } from "../../../../daemon/client.ts";
+import type { RawTail } from "../../../../daemon/contract.ts";
 import { Card, Pre } from "./card.tsx";
 
 /**

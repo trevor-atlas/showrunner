@@ -19,7 +19,7 @@
  * layout math is testable without a DOM (test/ui/timeline-model.test.ts).
  */
 
-import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../daemon/client.ts";
+import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../daemon/contract.ts";
 import { fmtDuration, fmtTime } from "./format.ts";
 
 /** The fixed pixel height of one phase row (the chart + the arrow overlay

@@ -2,7 +2,7 @@ import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
-import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../daemon/client.ts";
+import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../daemon/contract.ts";
 import { routes } from "../../routes.ts";
 import { fmtDuration, fmtMoney, fmtTime } from "./format.ts";
 import { lifetime, outcomeLabel } from "./timeline-model.ts";

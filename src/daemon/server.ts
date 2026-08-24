@@ -7,6 +7,8 @@ import {
   runDirFor,
   type EventRow,
   type PhaseStartCause,
+  type PhaseStatus,
+  type RunStatus,
 } from "../core/index.ts";
 
 import {
@@ -24,6 +26,21 @@ import {
   sumRunSpend,
 } from "./db.ts";
 import type { PhaseRow, RunRow } from "./db.ts";
+import {
+  ApiError,
+  type ControlResult,
+  type DaemonStatus,
+  type EventsPage,
+  type PauseView,
+  type PhaseEnvelopes,
+  type PhaseGates,
+  type RawTail,
+  type RunDetail,
+  type RunListItem,
+  type SpendBreakdown,
+  type TimelineSegment,
+  type TimelineView,
+} from "./contract.ts";
 import { submitFixture } from "./driver.ts";
 import type { SubmitOptions, SubmittedRun } from "./driver.ts";
 import {
@@ -64,22 +81,9 @@ export interface ApiState {
 
 const MAX_EVENTS_LIMIT = 500;
 
-/**
- * Server-side error: carries the HTTP status code the client sees.
- * Keeps the same `{ name: "ApiError", status, message }` shape as the typed
- * client's ApiError (src/daemon/client.ts) so UI actions and tests can
- * detect it by name — the server core must NOT import client.ts (wrong
- * layering: the server never talks to itself over a socket).
- */
-export class ApiError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+// The one error class lives in contract.ts (shared with client.ts and
+// the UI); re-exported so daemon/index.ts's public surface keeps working.
+export { ApiError };
 
 function intParam(v: string | null, fallback: number, max: number): number {
   if (v === null || v === "") return fallback;
@@ -124,7 +128,7 @@ export function apiHealth(_state: ApiState): { ok: true } {
   return { ok: true };
 }
 
-export function apiStatus(state: ApiState): Record<string, unknown> {
+export function apiStatus(state: ApiState): DaemonStatus {
   // status verb (T07): health + pool utilization + run status counts
   const runs = listRuns(state.db);
   const byStatus: Record<string, number> = { total: runs.length };
@@ -139,7 +143,7 @@ export function apiStatus(state: ApiState): Record<string, unknown> {
   };
 }
 
-export function apiListRuns(state: ApiState): { runs: unknown[] } {
+export function apiListRuns(state: ApiState): { runs: RunListItem[] } {
   const runs = listRuns(state.db).map((r) => ({
     ...r,
     phase_counts: phaseStatusCounts(state.db, r.id),
@@ -227,7 +231,7 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
   throw new ApiError(400, "request body must include a fixture name or a blueprint module path");
 }
 
-export function apiRunDetail(state: ApiState, runId: string): Record<string, unknown> {
+export function apiRunDetail(state: ApiState, runId: string): RunDetail {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   // spend splits reported vs estimated — the estimated half comes
@@ -248,7 +252,7 @@ export function apiRunDetail(state: ApiState, runId: string): Record<string, unk
 }
 
 // per-phase spend breakdown (+ estimated markers).
-export function apiSpend(state: ApiState, runId: string): Record<string, unknown> {
+export function apiSpend(state: ApiState, runId: string): SpendBreakdown {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const estimatedByPhase = sumEstimatedPhaseSpend(state.db, runId);
   let estimatedSpend = 0;
@@ -270,22 +274,9 @@ export function apiSpend(state: ApiState, runId: string): Record<string, unknown
 // ── R3: the timeline view (GET /runs/:id/timeline) — per-visit segments ─────
 // The server derives the segments by folding the run's phase_start/phase_end
 // events (the derivation lives in ONE tested place instead of in every
-// client). The wire shapes (TimelineView et al.) live in client.ts — the
+// client). The wire shapes (TimelineView et al.) live in contract.ts — the
 // server builds the same shape without importing the client (layering, like
 // apiRunDetail).
-
-type TimelineSegmentOutcome = "in_progress" | "success" | "failed" | "skipped" | "interrupted";
-
-/** The server-side segment shape — structurally TimelineSegment in client.ts. */
-interface TimelineSegmentShape {
-  visit: number;
-  started_at: string;
-  ended_at: string | null; // null = visit still open
-  outcome: TimelineSegmentOutcome;
-  corrections: number;
-  envelope_attempts: number;
-  cause: PhaseStartCause | null;
-}
 
 /** The event payload slices the fold reads (rows are zod-validated at insert). */
 interface PhaseStartPayload {
@@ -310,9 +301,9 @@ interface CorrectionPayload {
 /**
  * GET /runs/:id/timeline (R3) — per-visit segments folded from the run's
  * phase_start/phase_end events, in blueprint order. 404 when the run is
- * missing (apiSpend's semantics). The returned object honors TimelineView.
+ * missing (apiSpend's semantics). Returns the TimelineView contract.
  */
-export function apiTimeline(state: ApiState, runId: string): Record<string, unknown> {
+export function apiTimeline(state: ApiState, runId: string): TimelineView {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
 
@@ -334,7 +325,9 @@ export function apiTimeline(state: ApiState, runId: string): Record<string, unkn
   return {
     run_id: runId,
     blueprint: run.blueprint,
-    status: run.status,
+    // the runs table stores only validated statuses (single-writer daemon) —
+    // the narrow cast to the contract's RunStatus/PhaseStatus is honest
+    status: run.status as RunStatus,
     needs_review: run.needs_review !== 0,
     started_at: run.started_at,
     ended_at: run.ended_at,
@@ -342,7 +335,7 @@ export function apiTimeline(state: ApiState, runId: string): Record<string, unkn
       phase_id: p.id,
       name: p.name,
       agent: p.agent,
-      status: p.status,
+      status: p.status as PhaseStatus,
       visits: p.visits,
       budget: p.budget,
       spend_usd: p.spend_usd,
@@ -421,8 +414,8 @@ function foldPhaseSegments(
   run: RunRow,
   events: readonly EventRow[],
   envelopeAttempts: Map<string, Map<number, number>>,
-): Map<string, TimelineSegmentShape[]> {
-  const segments = new Map<string, TimelineSegmentShape[]>();
+): Map<string, TimelineSegment[]> {
+  const segments = new Map<string, TimelineSegment[]>();
   for (const ev of events) {
     const phaseId = ev.phase_id;
     if (phaseId === null) continue;
@@ -491,9 +484,9 @@ function foldPhaseSegments(
 
 /** The last segment of a phase whose visit matches (visits ascend per phase). */
 function segmentForVisit(
-  segs: readonly TimelineSegmentShape[] | undefined,
+  segs: readonly TimelineSegment[] | undefined,
   visit: number | undefined,
-): TimelineSegmentShape | undefined {
+): TimelineSegment | undefined {
   if (segs === undefined || visit === undefined) return undefined;
   for (let i = segs.length - 1; i >= 0; i--) {
     if (segs[i]!.visit === visit) return segs[i]!;
@@ -504,7 +497,7 @@ function segmentForVisit(
 /** The segment outcome from a phase_end payload status (the runner writes
  * "success" | "failed"; anything unexpected reads as failed — a terminal
  * status that is not a pass). */
-function phaseEndOutcome(status: string | undefined): TimelineSegmentOutcome {
+function phaseEndOutcome(status: string | undefined): TimelineSegment["outcome"] {
   if (status === "success" || status === "failed" || status === "skipped" || status === "interrupted") {
     return status;
   }
@@ -621,7 +614,7 @@ function requirePhaseOrThrow(state: ApiState, runId: string, phaseName: string):
 
 // ── phase-scoped read endpoints (envelope history, gate results). ──────
 
-export function apiPhaseEnvelopes(state: ApiState, runId: string, phaseName: string): Record<string, unknown> {
+export function apiPhaseEnvelopes(state: ApiState, runId: string, phaseName: string): PhaseEnvelopes {
   const phase = requirePhaseOrThrow(state, runId, phaseName);
   // envelope history for a phase: ALL attempts (valid and rejected,
   // per T03's model), ordered visit → attempt
@@ -633,7 +626,7 @@ export function apiPhaseEnvelopes(state: ApiState, runId: string, phaseName: str
   };
 }
 
-export function apiPhaseGates(state: ApiState, runId: string, phaseName: string): Record<string, unknown> {
+export function apiPhaseGates(state: ApiState, runId: string, phaseName: string): PhaseGates {
   const phase = requirePhaseOrThrow(state, runId, phaseName);
   // gate results incl. overridden: each row carries the override
   // badge (who + why + when) when the original row was overridden — the
@@ -646,7 +639,7 @@ export function apiPhaseGates(state: ApiState, runId: string, phaseName: string)
   };
 }
 
-export function apiEvents(state: ApiState, runId: string, query: URLSearchParams): { events: unknown[]; next_cursor: number } {
+export function apiEvents(state: ApiState, runId: string, query: URLSearchParams): EventsPage {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const cursor = intParam(query.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
   const limit = intParam(query.get("limit"), MAX_EVENTS_LIMIT, MAX_EVENTS_LIMIT);
@@ -655,7 +648,7 @@ export function apiEvents(state: ApiState, runId: string, query: URLSearchParams
   return { events, next_cursor: nextCursor };
 }
 
-export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): Record<string, unknown> {
+export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): RawTail {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   // tail semantics: ?lines=N (alias: ?n=) returns the LAST N raw
   // output lines (default 200, capped 5000) — the drill-in feed into the
@@ -673,7 +666,7 @@ export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): 
 // in-process registry — a paused run after a daemon restart has none, and
 // those verbs answer 409 (the continuation surface is T07/T08). ───────────────
 
-export function apiPause(state: ApiState, runId: string): Record<string, unknown> {
+export function apiPause(state: ApiState, runId: string): PauseView {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   const control = getControl(runId);
@@ -706,7 +699,7 @@ export function apiPause(state: ApiState, runId: string): Record<string, unknown
   };
 }
 
-export function apiSteerRun(state: ApiState, runId: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiSteerRun(state: ApiState, runId: string, body: Record<string, unknown>): ControlResult {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   const control = getControl(runId);
@@ -734,7 +727,7 @@ export function apiSteerRun(state: ApiState, runId: string, body: Record<string,
   };
 }
 
-export function apiSessionSteer(state: ApiState, piSessionId: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiSessionSteer(state: ApiState, piSessionId: string, body: Record<string, unknown>): ControlResult {
   const control = getControlByLiveSession(piSessionId);
   if (control === null) {
     throw new ApiError(409, `no live session ${piSessionId} on the daemon (a paused run has no live process)`);
@@ -749,7 +742,7 @@ export function apiSessionSteer(state: ApiState, piSessionId: string, body: Reco
   return { run_id: control.runId, ok: true, status: "running" };
 }
 
-export function apiApprove(state: ApiState, runId: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiApprove(state: ApiState, runId: string, body: Record<string, unknown>): ControlResult {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   const control = getControl(runId);
@@ -764,7 +757,7 @@ export function apiApprove(state: ApiState, runId: string, body: Record<string, 
   return { run_id: runId, ok: true, status: getRun(state.db, runId)!.status };
 }
 
-export function apiFailRun(state: ApiState, runId: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiFailRun(state: ApiState, runId: string, body: Record<string, unknown>): ControlResult {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   const by = typeof body.by === "string" && body.by !== "" ? body.by : undefined;
@@ -781,7 +774,7 @@ export function apiFailRun(state: ApiState, runId: string, body: Record<string, 
   return { run_id: runId, ok: true, status: getRun(state.db, runId)!.status };
 }
 
-export async function apiResume(state: ApiState, runId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function apiResume(state: ApiState, runId: string, body: Record<string, unknown>): Promise<ControlResult> {
   if (!getRun(state.db, runId)) {
     // 404 semantics: a missing run 404s before any resume logic
     throw new ApiError(404, `run ${runId} not found`);
@@ -826,7 +819,7 @@ function requirePausedControl(state: ApiState, runId: string, phase: string, ver
   return control;
 }
 
-export function apiOverrideGate(state: ApiState, runId: string, phase: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiOverrideGate(state: ApiState, runId: string, phase: string, body: Record<string, unknown>): ControlResult {
   const control = requirePausedControl(state, runId, phase, "override");
   try {
     const gate = typeof body.gate === "string" && body.gate !== "" ? body.gate : "";
@@ -842,7 +835,7 @@ export function apiOverrideGate(state: ApiState, runId: string, phase: string, b
   return { run_id: runId, ok: true, verb: "override", status: getRun(state.db, runId)!.status };
 }
 
-export function apiRestartFresh(state: ApiState, runId: string, phase: string, body: Record<string, unknown>): Record<string, unknown> {
+export function apiRestartFresh(state: ApiState, runId: string, phase: string, body: Record<string, unknown>): ControlResult {
   const control = requirePausedControl(state, runId, phase, "restart-fresh");
   try {
     control.restartFresh(typeof body.by === "string" && body.by !== "" ? body.by : undefined);

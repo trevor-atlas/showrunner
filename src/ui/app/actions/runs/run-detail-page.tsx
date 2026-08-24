@@ -2,7 +2,7 @@ import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
-import type { PauseView, RunDetail, TimelineView } from "../../../../daemon/client.ts";
+import type { PauseView, RunDetail, TimelineView } from "../../../../daemon/contract.ts";
 import { routes } from "../../routes.ts";
 import { fmtMoney, fmtRunId, fmtStartedAt } from "../../ui/format.ts";
 import { NeedsReviewBanner } from "../../ui/needs-review-banner.tsx";
