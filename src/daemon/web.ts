@@ -16,7 +16,10 @@ import { setWebState } from "./web-state.ts";
  * The dashboard router is imported through a dynamic import so the daemon
  * process never loads the UI graph unless a browser actually asks for a page
  * — and `/api/*` is dispatched BEFORE the router promise is ever touched, so
- * the JSON API keeps answering even while the UI import is slow.
+ * the JSON API keeps answering even while the UI import is slow. A dashboard
+ * request AWAITS that import (it never 503s); in production the daemon warms
+ * the import + entry assets at boot (src/daemon/daemon.ts) so the first
+ * request is already a cache hit.
  */
 
 export function isApiPath(url: string | null | undefined): boolean {
@@ -28,25 +31,17 @@ export function isApiPath(url: string | null | undefined): boolean {
 type RouterModule = typeof import("../ui/app/router.ts");
 
 let routerPromise: Promise<RouterModule> | null = null;
-let routerPending = false;
 
-/** Cached lazy import of the remix dashboard router. While the import is in
- * flight `routerPending` stays true and the dashboard answers 503 — the API
- * path never waits on it. A failed import is reset so the next request
- * retries. */
-function getRouter(): Promise<RouterModule> {
+/** Cached lazy import of the remix dashboard router. The dashboard listener
+ * awaits this promise — a slow import delays the page, it never 503s. A failed
+ * import is reset so the next request retries. Exported so the daemon can warm
+ * it at boot in production. */
+export function getRouter(): Promise<RouterModule> {
   if (routerPromise === null) {
-    routerPending = true;
-    routerPromise = import("../ui/app/router.ts")
-      .then((mod) => {
-        routerPending = false;
-        return mod;
-      })
-      .catch((err) => {
-        routerPending = false;
-        routerPromise = null; // allow a retry on the next request
-        throw err;
-      });
+    routerPromise = import("../ui/app/router.ts").catch((err) => {
+      routerPromise = null; // allow a retry on the next request
+      throw err;
+    });
   }
   return routerPromise;
 }
@@ -63,12 +58,8 @@ export function createWebServer(state: ApiState): Server {
     if (isApiPath(request.url)) {
       return handleApiRequest(state, request);
     }
-    const router = getRouter();
-    if (routerPending) {
-      return new Response("dashboard warming up", { status: 503 });
-    }
     try {
-      const mod = await router;
+      const mod = await getRouter();
       return await mod.router.fetch(request);
     } catch (err) {
       console.error(err);

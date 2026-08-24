@@ -7,6 +7,7 @@
   "scripts": {
     "test": "bun test test/",
     "typecheck": "tsc --noEmit",
+    "build": "NODE_ENV=production bun scripts/build.ts",
     "gen:fixtures": "bun scripts/generate-fake-pi-sessions.ts",
     "dev": "NODE_ENV=development bun --watch src/ui/server.ts",
     "hmr": "NODE_ENV=development bun src/ui/hmr.ts",

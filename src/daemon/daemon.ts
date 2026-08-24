@@ -8,7 +8,7 @@ import { openDb } from "./db.ts";
 import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "./pause-control.ts";
 import { backfillMissedEvents } from "./backfill.ts";
 import { RunPool } from "./pool.ts";
-import { createWebServer } from "./web.ts";
+import { createWebServer, getRouter } from "./web.ts";
 
 /**
  * The long-lived daemon: owns SQLite and serves BOTH the JSON
@@ -116,6 +116,30 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
   } else {
     // two lines: pid, then the bound port (T3 reads the port from here)
     writeFileSync(pidFile, `${process.pid}\n${boundPort}\n`);
+    // Production boot-time asset warm: eagerly import the dashboard router and
+    // compile the entry asset graph so the FIRST GET / is a cache hit rather
+    // than paying the compile cost on the request path. Remix's asset compile
+    // cache is in-memory PER PROCESS (AssetServer exposes only
+    // fetch/getHref/getPreloads/close —
+    // node_modules/@remix-run/assets/dist/lib/asset-server.d.ts — backed by an
+    // in-memory ModuleStore, .../lib/module-store.d.ts), so the warm MUST run
+    // in this process; the `build` script cannot precompile for it. Fired after
+    // bind (never awaited before it) so it cannot deadlock the listener. A warm
+    // failure is logged and does NOT kill the daemon — the first request then
+    // surfaces the error and retries. Development stays lazy (needs watch+hmr).
+    if ((process.env.NODE_ENV ?? "development") === "production") {
+      void (async () => {
+        try {
+          await getRouter();
+          const { warmEntryAssets } = await import("../ui/app/actions/document.tsx");
+          await warmEntryAssets();
+        } catch (err) {
+          console.error(
+            `showrunner daemon: boot-time asset warm failed (${err instanceof Error ? err.message : String(err)}) — the first request will retry`,
+          );
+        }
+      })();
+    }
   }
 
   return {
