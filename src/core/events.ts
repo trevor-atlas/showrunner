@@ -38,11 +38,34 @@ export const RunStatusData = z.object({
 });
 
 /** 3 — phase begins (after approval, before spawn) */
+
+/** R2 — why a visit started. `cause` is a pointer, not the evidence: the
+ * flow / on_fail / human distinction names the path that entered the phase,
+ * and the on_fail variant names the phase + visit that failed and jumped
+ * here (the full audit trail lives in the events feed). */
+export const PhaseStartCauseFlow = z.object({ kind: z.literal("flow") });
+export const PhaseStartCauseOnFail = z.object({
+  kind: z.literal("on_fail"),
+  /** the phase whose budget exhaustion triggered the jump */
+  from_phase: z.string(),
+  /** the failed visit of that phase (the outcome's visit at the jump site) */
+  from_visit: z.number().int().nonnegative(),
+});
+export const PhaseStartCauseHuman = z.object({
+  kind: z.literal("human"),
+  /** the §6 #11 human_action verb that redrove the phase: restart | steer | resume */
+  action: z.string(),
+  by: z.string().optional(),
+});
+export const PhaseStartCause = z.union([PhaseStartCauseFlow, PhaseStartCauseOnFail, PhaseStartCauseHuman]);
+
 export const PhaseStartData = z.object({
   phase: z.string(),
   agent: z.string(),
   visit: z.number().int().nonnegative(),
   budget: z.number().int().nonnegative(),
+  /** R2: optional so pre-R2 rows (no cause) still validate */
+  cause: PhaseStartCause.optional(),
 });
 
 /** 4 — phase terminal */
@@ -135,6 +158,12 @@ export type AgentEnd = z.infer<typeof AgentEndData>;
 export type PhaseEnd = z.infer<typeof PhaseEndData>;
 export type RunStatusEvent = z.infer<typeof RunStatusData>;
 export type AgentStart = z.infer<typeof AgentStartData>;
+
+/** R2 — the inferred phase_start cause types (the timeline endpoint imports these). */
+export type PhaseStartCauseFlow = z.infer<typeof PhaseStartCauseFlow>;
+export type PhaseStartCauseOnFail = z.infer<typeof PhaseStartCauseOnFail>;
+export type PhaseStartCauseHuman = z.infer<typeof PhaseStartCauseHuman>;
+export type PhaseStartCause = z.infer<typeof PhaseStartCause>;
 
 /** Index of data schemas by event type. */
 export const EVENT_DATA_SCHEMAS: Record<EventType, z.ZodTypeAny> = {

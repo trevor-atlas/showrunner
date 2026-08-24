@@ -120,6 +120,43 @@ export default createController(routes.runs.phases, {
         />,
       );
     },
+    /**
+     * The envelopes.json proxy (R5) — GET .../phases/:phase/envelopes.json
+     * through the §13 api core in-process, returned as JSON (mirrors the
+     * events.json cursor proxy pattern: the browser never talks to the
+     * daemon). The run-detail panel fetches a selected phase's envelope
+     * history here lazily on selection; the initial selection's data is
+     * server-rendered by renderRunDetail instead.
+     */
+    async envelopes(context) {
+      const runId = context.params.runId;
+      const phase = context.params.phase;
+      try {
+        const envelopes = await getPhaseEnvelopes(runId, phase);
+        return Response.json(envelopes);
+      } catch (err) {
+        if (isApi404(err)) {
+          return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
+        }
+        throw err;
+      }
+    },
+
+    /** The gates.json proxy (R5) — mirror of `envelopes`, for gate results. */
+    async gates(context) {
+      const runId = context.params.runId;
+      const phase = context.params.phase;
+      try {
+        const gates = await getPhaseGates(runId, phase);
+        return Response.json(gates);
+      } catch (err) {
+        if (isApi404(err)) {
+          return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
+        }
+        throw err;
+      }
+    },
+
     /** §16.9 override — POST .../phases/:phase/override → the daemon §13.2 verb. */
     async override(context) {
       const runId = context.params.runId;

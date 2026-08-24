@@ -16,6 +16,7 @@ import type {
   Envelope,
   EventType,
   PhaseHookContext,
+  PhaseStartCause,
   RunStatus,
   ShellResult,
   Spend,
@@ -103,6 +104,13 @@ export interface ScriptedTurn {
 
 export interface ScriptedSession {
   turns: ScriptedTurn[];
+  /** per-visit turn override (R7 fixture seam, strictly additive):
+   * byVisit[visit] replaces `turns` for THAT visit — the same
+   * ScriptedTurn[] shape. Visits without a key fall back to `turns`
+   * (byte-identical to the pre-extension session for every existing
+   * script), so a phase can behave differently across its visits (e.g.
+   * review v1 exhausts its budget while review v2 passes). */
+  byVisit?: Record<number, ScriptedTurn[]>;
   /** emit the very last event without a trailing newline (§10 byte-identical raw) */
   unterminatedFinalLine?: boolean;
   /** after the last scripted turn, the session dies instead of waiting (crash tests) */
@@ -378,8 +386,8 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
 
 function findPhaseRow(db: Database, runId: string, name: string) {
   return db
-    .query<{ id: string; visits: number }, [string, string]>(
-      "SELECT id, visits FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
+    .query<{ id: string; visits: number; started_at: string | null }, [string, string]>(
+      "SELECT id, visits, started_at FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
     )
     .get(runId, name) ?? null;
 }
@@ -441,6 +449,8 @@ export interface ResumeSpec {
   continueInstruction: string;
   /** the predecessor's accepted envelope, reconstructed from runDir/envelope.json */
   handoff: Handoff | null;
+  /** R2: who requested the resume — mirrors the §6 #11 human_action "resume" by */
+  by?: string;
 }
 
 async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResult> {
@@ -450,6 +460,12 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
   // it (status success) is not re-run; phases after it stay pending.
   let pending: string | null = resume?.phase ?? bp.phases[0]?.name ?? null;
   let handoff: Handoff | null = resume?.handoff ?? null;
+  // R2: why the NEXT driveVisit starts — decided at the site that knows (an
+  // on_fail jump, a human redrive) and consumed at the visit-start call
+  // below; normal forward execution leaves it unset (the call defaults to
+  // flow). A human redrive OVERRIDES a pending on_fail cause (a guard pause
+  // can sit between the jump and its target).
+  let pendingCause: PhaseStartCause | undefined;
 
   while (pending !== null) {
     const phase = bp.phases.find((p) => p.name === pending);
@@ -511,15 +527,35 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
+        // R2: the human's restart/steer is why the bypassed visit starts — and
+        // it OVERRIDES a pending on_fail cause (the guard pause sat between an
+        // on_fail jump and its target)
+        pendingCause = { kind: "human", action: d.action, by: action.by };
         guardBypass = true; // one new visit, then the guard fires again
         continue;
       }
       guardBypass = false; // consumed — the visit below is the bypassed one
       const visit = isResumeVisit ? currentVisits : currentVisits + 1;
 
+      // R2: the cause of THIS visit — a resumed visit is a human continue
+      // (§12, mirrors the pause-control layer's human_action action "resume");
+      // a pending on_fail jump is consumed once; otherwise it is plain
+      // forward execution (flow)
+      let cause: PhaseStartCause;
+      if (isResumeVisit) {
+        cause =
+          resume!.by !== undefined
+            ? { kind: "human", action: "resume", by: resume!.by }
+            : { kind: "human", action: "resume" };
+      } else {
+        cause = pendingCause ?? { kind: "flow" };
+      }
+      pendingCause = undefined;
+
       const result = await driveVisit(state, phase, visit, handoff, {
         // §12.3: the resumed visit leads with the continue instruction
         continueInstruction: isResumeVisit ? resume!.continueInstruction : null,
+        cause,
       });
 
       if (result.kind === "success") {
@@ -534,6 +570,8 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
           if (d.directive === "fail") {
             return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
           }
+          // R2: the human redrive is why the next visit starts
+          pendingCause = { kind: "human", action: d.action, by: action.by };
           // NOT a guard bypass: the guard re-asserts on the next iteration
           continue;
         }
@@ -556,6 +594,8 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
+        // R2: the human redrive is why the next visit starts
+        pendingCause = { kind: "human", action: d.action, by: action.by };
         // NOT a guard bypass: the guard re-asserts on the next iteration
         continue;
       }
@@ -571,6 +611,8 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         if (d.directive === "fail") {
           return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
         }
+        // R2: the human redrive is why the next visit starts
+        pendingCause = { kind: "human", action: d.action, by: action.by };
         // NOT a guard bypass: the guard re-asserts on the next iteration
         continue;
       }
@@ -580,6 +622,9 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         await endPhase(state, phase, "failed", visit, result.corrections);
         if (phase.on_fail) {
           pending = phase.on_fail.to;
+          // R2: the jump target's next visit starts because THIS phase failed —
+          // `visit` is the failed visit's number, in scope at the jump site
+          pendingCause = { kind: "on_fail", from_phase: phase.name, from_visit: visit };
           break;
         }
         const action = await pauseAt(state, budgetPauseInfo(state, phase, result));
@@ -588,7 +633,13 @@ async function driveLoop(state: LoopState, resume?: ResumeSpec): Promise<RunResu
         }
         if (action.kind === "restart_fresh" || action.kind === "steer") {
           const d = menuDirective(state, action);
-          void d;
+          if (d.directive === "fail") {
+            // unreachable — the fail branch above handled it; defensive like the
+            // original `void d` (never spin past a fail action)
+            return finalizeRun(state, "failed", false, `failed by ${action.by ?? "human"}`, "paused");
+          }
+          // R2: the human's restart/steer is why the next visit starts
+          pendingCause = { kind: "human", action: d.action, by: action.by };
           // NOT a guard bypass: a restart from a budget pause re-asserts the
           // guard on the next iteration (visits >= max_visits → pause, §5.2)
           continue;
@@ -639,7 +690,7 @@ async function driveVisit(
   phase: BlueprintPhase,
   visit: number,
   handoff: Handoff | null,
-  opts: { continueInstruction?: string | null } = {},
+  opts: { continueInstruction?: string | null; cause?: PhaseStartCause } = {},
 ): Promise<VisitOutcome> {
   const db = state.db;
   const phaseId = state.phaseIds.get(phase.name)!;
@@ -648,9 +699,23 @@ async function driveVisit(
   const budget = phase.budget ?? DEFAULT_BUDGET;
   const now = state.now;
   const startedAt = now();
+  // R1: the row's started_at is the phase's LIFETIME start (set on the FIRST
+  // visit, never overwritten) — read it so a NULL one is stamped and a set
+  // one survives a revisit
+  const phaseRow = findPhaseRow(db, state.runId, phase.name);
 
-  ctxEmit(state, "phase_start", { phase: phase.name, agent: phase.agent.name, visit, budget }, { phase_id: phaseId });
-  updatePhase(db, phaseId, { status: "in_progress", visits: visit, started_at: startedAt });
+  ctxEmit(state, "phase_start", { phase: phase.name, agent: phase.agent.name, visit, budget, cause: opts.cause }, { phase_id: phaseId });
+  // R1 (§ lifecycle): every visit re-opens the row — status in_progress,
+  // ended_at NULL (the invariant: a phases row is NEVER in_progress with a
+  // non-null ended_at), corrections reset to 0 (they count re-prompts issued
+  // IN THE CURRENT VISIT), and started_at kept as the row's lifetime start.
+  updatePhase(db, phaseId, {
+    status: "in_progress",
+    visits: visit,
+    corrections: 0,
+    started_at: phaseRow?.started_at ?? startedAt,
+    ended_at: null,
+  });
   state.phaseVisits.set(phase.name, visit);
 
   // hooks (§14): onPhaseStart, with ctx.shell(). A thrown hook is NOT a run
@@ -724,12 +789,20 @@ async function driveVisit(
       // script presence is validated at submit; this guards the direct-API path
       return { kind: "crash", reason: `no scripted session for phase "${phase.name}"`, corrections: 0 };
     }
+    // per-visit scripting (R7 fixture seam): byVisit[visit] replaces the
+    // default turns for THIS visit — the same ScriptedTurn[] shape, so a
+    // phase can behave differently on its first visit vs a redrive (review
+    // v1 fails twice, review v2 passes). Strictly additive: absent byVisit
+    // (or a missing visit key) falls back to `turns`, and when it does the
+    // ORIGINAL session object is passed through untouched — byte-identical
+    // to the pre-extension session file for every existing script.
+    const turns = script.byVisit?.[visit] ?? script.turns;
     // the scripted session file lives in the run dir — the run record is self-contained
     const sessionFile = join(state.runDir, "sessions", `${slug}-v${visit}.json`);
     driver = new FakeSessionDriver({
       sessionId: piSessionId,
       cwd: state.cwd,
-      script,
+      script: turns === script.turns ? script : { ...script, turns },
       sessionFile,
       outputsDir,
       delayMs: state.delayMs,
@@ -950,10 +1023,16 @@ function resumeFromPause(state: LoopState, reason: string): void {
 /** The shared §5.3 continuation for steer / restart-fresh: re-drive the phase
  * (steer queues its message on the control — delivered on the next
  * continuation, T07; restart-fresh makes a NEW visit/session). */
-function menuDirective(state: LoopState, action: ControlAction): { directive: "fail" | "redrive" } {
+function menuDirective(
+  state: LoopState,
+  action: ControlAction,
+): { directive: "fail" } | { directive: "redrive"; action: "restart" | "steer" } {
   if (action.kind === "fail") return { directive: "fail" };
   resumeFromPause(state, action.kind === "restart_fresh" ? "phase restarted fresh" : "steered");
-  return { directive: "redrive" };
+  // R2: surface the human verb (mirrors the human_action event's action —
+  // RunControl.restartFresh writes "restart", steers write "steer") so the
+  // redriven visit's phase_start can stamp its cause
+  return { directive: "redrive", action: action.kind === "restart_fresh" ? "restart" : "steer" };
 }
 
 /** A phase whose rejected envelope was approved by override records success
@@ -1396,6 +1475,7 @@ export async function prepareResume(
       visit,
       continueInstruction: composeContinuePrompt(blueprint, resumePhase, runDir),
       handoff,
+      by: opts.by,
     },
   };
 }

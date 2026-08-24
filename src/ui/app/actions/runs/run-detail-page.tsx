@@ -1,23 +1,37 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { PauseView, RunDetail } from "../../../../daemon/client.ts";
+import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
+import type { PauseView, RunDetail, TimelineView } from "../../../../daemon/client.ts";
 import { routes } from "../../routes.ts";
 import { fmtMoney, fmtRunId, fmtStartedAt } from "../../ui/format.ts";
 import { NeedsReviewBanner } from "../../ui/needs-review-banner.tsx";
 import { PauseMenu, type ControlError } from "../../ui/pause-menu.tsx";
 import type { FeedEvent } from "../../ui/public/event-feed.tsx";
-import type { LivePhase, RunLiveRegionProps } from "../public/run-live-region.tsx";
+import type {
+  RunLiveRegionProps,
+  SerializableAgentSession,
+  SerializableEnvelopeRow,
+  SerializableGateResult,
+  SerializableTimelineView,
+} from "../public/run-live-region.tsx";
 import { RunLiveRegion } from "../public/run-live-region.tsx";
 import { StatusPill, isRunStatus, type RunStatus } from "../../ui/status-pill.tsx";
 import { Document } from "../document.tsx";
 
 /**
- * The run detail page (spec §16.7): header + control bar + gantt + live feed.
- * Server-rendered from the §13 detail endpoint + the FULL event history
- * (§4.3 — the cursor query IS the read transport, so a paused/completed run
- * renders its whole history here); the browser then polls the events.json
- * proxy and the hydrated live region re-renders gantt + feed (§16.5).
+ * The run detail page (spec §16.7 + R4/R5/R6): header + control bar +
+ * timeline chart + detail panel + live feed. Server-rendered from the §13
+ * detail endpoint, the R3 timeline view (per-visit segments), and the FULL
+ * event history (§4.3 — the cursor query IS the read transport, so a paused/
+ * completed run renders its whole history here); the browser then polls the
+ * events.json + timeline.json proxies and the hydrated live region re-renders
+ * the timeline's live edges + the feed (§16.5, R6 — the timeline snapshot is
+ * refetched each tick so open bubbles grow and new segments appear).
+ *
+ * R5 selection: the initial selection (the ?phase= deep link, validated, or
+ * the auto-selected phase) is resolved server-side and its envelopes/gates
+ * are server-rendered; later selections fetch through the proxies.
  *
  * T10b — the control surface: the control bar mounts the resume HEADER
  * action (only when the run is `interrupted`, §16.9) and the pause menu
@@ -34,8 +48,14 @@ export interface RunDetailPageProps {
   runId: string;
   /** the §13 detail payload for the run */
   detail: RunDetail;
-  /** the run's phases re-ordered into blueprint order (§16.7) */
-  livePhases: LivePhase[];
+  /** the R3 timeline view — the chart + panel render from it */
+  timeline: TimelineView;
+  /** the R5 initial selection: the ?phase= deep link (validated) or the
+   * auto-selected phase; null only when no phase is selectable */
+  initialSelection: string | null;
+  /** the initial selection's envelopes/gates — server-rendered (R5) */
+  initialEnvelopes: EnvelopeRow[];
+  initialGates: GateResultWithOverride[];
   /** the full event history at load (initial feed + initial cursor) */
   events: FeedEvent[];
   /** the last event rowid — the poll loop starts from here (§4.3) */
@@ -53,7 +73,10 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
     const {
       runId,
       detail,
-      livePhases,
+      timeline,
+      initialSelection,
+      initialEnvelopes,
+      initialGates,
       events,
       cursor,
       pause,
@@ -65,11 +88,24 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
     const pillStatus = isRunStatus(run.status) ? run.status : "interrupted";
     const regionProps: RunLiveRegionProps = {
       runId,
-      run: { started_at: run.started_at, ended_at: run.ended_at, status: run.status },
-      phases: livePhases,
+      // the client-entry boundary: the daemon wire values are plain JSON, so
+      // the SerializableProps widening is structural only (see the region's
+      // Serializable* types)
+      timeline: timeline as unknown as SerializableTimelineView,
+      initialSelection,
+      initialEnvelopes: initialEnvelopes as unknown as SerializableEnvelopeRow[],
+      initialGates: initialGates as unknown as SerializableGateResult[],
+      sessions: detail.sessions as unknown as SerializableAgentSession[],
       events,
       cursor,
       eventsHref: routes.runs.events.href({ runId }),
+      // R6: the live region refetches the timeline each poll tick through the
+      // timeline.json proxy (new segments + open bubbles growing to now)
+      timelineHref: routes.runs.timeline.href({ runId }),
+      // R6 pause surfacing: the §13 pause viewer's reason (fetched above when
+      // the run is paused at SSR) — the panel header renders it; mid-poll
+      // transitions ride the run_status → paused event's reason instead
+      pauseReason: pause?.reason ?? null,
     };
 
     // §16.9: resume is a HEADER action for INTERRUPTED runs only — never part

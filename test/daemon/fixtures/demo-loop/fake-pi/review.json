@@ -1,0 +1,461 @@
+{
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "agent_start",
+          "messageCount": 1,
+          "model": "fake-pi"
+        },
+        {
+          "type": "queue_update",
+          "queued": 0
+        },
+        {
+          "type": "turn_start"
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "review_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[review] Review attempt 1"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "review_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[review] Review attempt 1"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_update",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          },
+          "usage": {
+            "input": 200,
+            "output": 40,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 240,
+            "cost": {
+              "total": 0.0004
+            }
+          }
+        },
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "args": "ls review/inputs"
+        },
+        {
+          "type": "tool_execution_update",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "partialResult": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          },
+          "isError": false
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "turn_end",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "agent_end",
+          "messages": [],
+          "willRetry": false
+        },
+        {
+          "type": "agent_settled"
+        }
+      ],
+      "envelope": {
+        "summary": "Review v1 attempt 1: raised concerns.",
+        "artifacts": [],
+        "notes_for_next_agent": "Fix the review findings.",
+        "quality": 5
+      }
+    },
+    {
+      "events": [
+        {
+          "type": "agent_start",
+          "messageCount": 2,
+          "model": "fake-pi"
+        },
+        {
+          "type": "queue_update",
+          "queued": 0
+        },
+        {
+          "type": "turn_start"
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "review_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[review] Review attempt 2"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "review_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[review] Review attempt 2"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_update",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          },
+          "usage": {
+            "input": 200,
+            "output": 40,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 240,
+            "cost": {
+              "total": 0.0004
+            }
+          }
+        },
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "args": "ls review/inputs"
+        },
+        {
+          "type": "tool_execution_update",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "partialResult": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "review_t1",
+          "toolName": "bash",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          },
+          "isError": false
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "turn_end",
+          "message": {
+            "id": "review_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "review: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "agent_end",
+          "messages": [],
+          "willRetry": false
+        },
+        {
+          "type": "agent_settled"
+        }
+      ],
+      "envelope": {
+        "summary": "Review v1 attempt 2: still below the bar.",
+        "artifacts": [],
+        "notes_for_next_agent": "Re-implement per the review.",
+        "quality": 6
+      }
+    }
+  ],
+  "byVisit": {
+    "2": [
+      {
+        "events": [
+          {
+            "type": "agent_start",
+            "messageCount": 0,
+            "model": "fake-pi"
+          },
+          {
+            "type": "queue_update",
+            "queued": 0
+          },
+          {
+            "type": "turn_start"
+          },
+          {
+            "type": "message_start",
+            "message": {
+              "id": "review_m1",
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "[review] Re-review after re-implementation"
+                }
+              ]
+            }
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "id": "review_m1",
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "[review] Re-review after re-implementation"
+                }
+              ]
+            }
+          },
+          {
+            "type": "message_start",
+            "message": {
+              "id": "review_m2",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "review: working."
+                }
+              ]
+            }
+          },
+          {
+            "type": "message_update",
+            "message": {
+              "id": "review_m2",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "review: working."
+                }
+              ]
+            },
+            "usage": {
+              "input": 200,
+              "output": 40,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 240,
+              "cost": {
+                "total": 0.0004
+              }
+            }
+          },
+          {
+            "type": "tool_execution_start",
+            "toolCallId": "review_t1",
+            "toolName": "bash",
+            "args": "ls review/inputs"
+          },
+          {
+            "type": "tool_execution_update",
+            "toolCallId": "review_t1",
+            "toolName": "bash",
+            "partialResult": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ok\n"
+                }
+              ]
+            }
+          },
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "review_t1",
+            "toolName": "bash",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ok\n"
+                }
+              ]
+            },
+            "isError": false
+          },
+          {
+            "type": "message_end",
+            "message": {
+              "id": "review_m2",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "review: working."
+                }
+              ]
+            }
+          },
+          {
+            "type": "turn_end",
+            "message": {
+              "id": "review_m2",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "review: working."
+                }
+              ]
+            }
+          },
+          {
+            "type": "agent_end",
+            "messages": [],
+            "willRetry": false
+          },
+          {
+            "type": "agent_settled"
+          }
+        ],
+        "envelope": {
+          "summary": "Review v2: approved.",
+          "artifacts": [],
+          "notes_for_next_agent": "Package the deliverable.",
+          "quality": 9
+        }
+      }
+    ]
+  }
+}

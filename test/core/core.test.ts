@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, expectTypeOf } from "bun:test";
 import { z } from "zod";
 
 import {
@@ -6,13 +6,20 @@ import {
   DEFAULT_BUDGET,
   DEFAULT_DATA_DIR_NAME,
   EnvelopeBase,
+  PhaseStartData,
   defineAgent,
   defineBlueprint,
   parseEventData,
   resolveDataDir,
   validateBlueprint,
 } from "../../src/core/index.ts";
-import type { Blueprint } from "../../src/core/index.ts";
+import type {
+  Blueprint,
+  PhaseStartCause,
+  PhaseStartCauseFlow,
+  PhaseStartCauseHuman,
+  PhaseStartCauseOnFail,
+} from "../../src/core/index.ts";
 
 // ── §3.2 Envelope ────────────────────────────────────────────────────────────
 
@@ -194,6 +201,50 @@ test("parseEventData rejects malformed event data", () => {
   expect(() =>
     parseEventData("spend", { phase: "build", tokens_in: 1, tokens_out: 1, cache_read: 0, cache_write: 0, usd: null }),
   ).toThrow();
+});
+
+// ── §6 phase_start cause (R2): optional, back-compatible, typed ─────────────
+
+test("R2: an old-style phase_start payload (no cause) still validates (§6 back-compat)", () => {
+  const oldStyle = { phase: "build", agent: "builder", visit: 1, budget: 3 };
+  // through the canonical validator path AND the schema directly
+  expect(parseEventData("phase_start", oldStyle)).toEqual(oldStyle);
+  expect(PhaseStartData.parse(oldStyle)).toEqual(oldStyle);
+});
+
+test("R2: phase_start cause accepts every stamped shape (flow / on_fail / human)", () => {
+  const cases = [
+    { phase: "build", agent: "builder", visit: 1, budget: 3, cause: { kind: "flow" } },
+    { phase: "rescue", agent: "builder", visit: 1, budget: 3, cause: { kind: "on_fail", from_phase: "build", from_visit: 2 } },
+    { phase: "build", agent: "builder", visit: 2, budget: 3, cause: { kind: "human", action: "restart" } },
+    { phase: "build", agent: "builder", visit: 2, budget: 3, cause: { kind: "human", action: "restart", by: "operator" } },
+    { phase: "build", agent: "builder", visit: 1, budget: 3, cause: { kind: "human", action: "resume" } },
+  ];
+  for (const data of cases) {
+    expect(() => parseEventData("phase_start", data)).not.toThrow();
+  }
+});
+
+test("R2: malformed causes are rejected (wrong kind / missing fields / wrong types)", () => {
+  const base = { phase: "build", agent: "builder", visit: 1, budget: 3 };
+  const badCauses = [
+    { kind: "steer" }, // not a cause kind
+    { kind: "on_fail" }, // missing from_phase + from_visit
+    { kind: "on_fail", from_phase: "build" }, // missing from_visit
+    { kind: "on_fail", from_phase: "build", from_visit: "1" }, // wrong from_visit type
+    { kind: "human" }, // missing action
+    { kind: "human", action: 42 }, // wrong action type
+  ];
+  for (const cause of badCauses) {
+    expect(() => parseEventData("phase_start", { ...base, cause })).toThrow();
+  }
+});
+
+test("R2: the inferred cause types are the three-variant union the spec declares", () => {
+  expectTypeOf<PhaseStartCause>().toEqualTypeOf<PhaseStartCauseFlow | PhaseStartCauseOnFail | PhaseStartCauseHuman>();
+  expectTypeOf<PhaseStartCauseFlow>().toEqualTypeOf<{ kind: "flow" }>();
+  expectTypeOf<PhaseStartCauseOnFail>().toEqualTypeOf<{ kind: "on_fail"; from_phase: string; from_visit: number }>();
+  expectTypeOf<PhaseStartCauseHuman>().toEqualTypeOf<{ kind: "human"; action: string; by?: string }>();
 });
 
 // ── §4.1 data dir resolution ─────────────────────────────────────────────────

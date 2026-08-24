@@ -1,0 +1,155 @@
+{
+  "turns": [
+    {
+      "events": [
+        {
+          "type": "agent_start",
+          "messageCount": 0,
+          "model": "fake-pi"
+        },
+        {
+          "type": "queue_update",
+          "queued": 0
+        },
+        {
+          "type": "turn_start"
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "plan_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[plan] Plan the work"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "plan_m1",
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[plan] Plan the work"
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_start",
+          "message": {
+            "id": "plan_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "plan: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "message_update",
+          "message": {
+            "id": "plan_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "plan: working."
+              }
+            ]
+          },
+          "usage": {
+            "input": 200,
+            "output": 40,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 240,
+            "cost": {
+              "total": 0.0004
+            }
+          }
+        },
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "plan_t1",
+          "toolName": "bash",
+          "args": "ls plan/inputs"
+        },
+        {
+          "type": "tool_execution_update",
+          "toolCallId": "plan_t1",
+          "toolName": "bash",
+          "partialResult": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "plan_t1",
+          "toolName": "bash",
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "ok\n"
+              }
+            ]
+          },
+          "isError": false
+        },
+        {
+          "type": "message_end",
+          "message": {
+            "id": "plan_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "plan: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "turn_end",
+          "message": {
+            "id": "plan_m2",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "plan: working."
+              }
+            ]
+          }
+        },
+        {
+          "type": "agent_end",
+          "messages": [],
+          "willRetry": false
+        },
+        {
+          "type": "agent_settled"
+        }
+      ],
+      "envelope": {
+        "summary": "Plan complete and approved.",
+        "artifacts": [],
+        "notes_for_next_agent": "Implement per this plan.",
+        "quality": 9
+      }
+    }
+  ]
+}
