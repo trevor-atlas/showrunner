@@ -4,6 +4,7 @@ import type { Handle } from "remix/ui";
 import type { GateResultWithOverride } from "../../../../daemon/db.ts";
 import { fmtStartedAt } from "../format.ts";
 import { Badge, badGlyph, Card, mono, okGlyph } from "./card.tsx";
+import { parseViolations } from "../public/envelope-parse.ts";
 
 /**
  * GATES card (§16.8) — per gate: pass/fail, the violations list, and the
@@ -55,16 +56,6 @@ export function GatesCard(handle: Handle<GatesCardProps>) {
       </Card>
     );
   };
-}
-
-/** Parse the stored violations JSON column ('[]' when none). */
-function parseViolations(violations: string): string[] {
-  try {
-    const parsed = JSON.parse(violations) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 const gateListStyle = css({

@@ -4,6 +4,7 @@ import type { Handle } from "remix/ui";
 import type { EnvelopeRow } from "../../../../daemon/db.ts";
 import { fmtStartedAt } from "../format.ts";
 import { badGlyph, Card, mono, okGlyph, Pre } from "./card.tsx";
+import { parseEnvelope, parseViolations, type ParsedEnvelope } from "../public/envelope-parse.ts";
 
 /**
  * ENVELOPE card (§16.8) — the accepted envelope + the FULL attempt history:
@@ -116,16 +117,6 @@ function attemptLabel(e: EnvelopeRow, total: number, multiVisit: boolean): strin
   return `${e.attempt + 1} of ${total}`;
 }
 
-/** Parse the stored violations JSON column ('[]' when none). */
-export function parseViolations(violations: string): string[] {
-  try {
-    const parsed = JSON.parse(violations) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
 function prettyJson(text: string): string {
   if (text === "") return "(no envelope.json content — attempt wrote nothing)";
   try {
@@ -133,36 +124,6 @@ function prettyJson(text: string): string {
   } catch {
     return text;
   }
-}
-
-/** The accepted envelope's fields, parsed (null when unparseable). */
-function parseEnvelope(text: string): ParsedEnvelope | null {
-  try {
-    const v = JSON.parse(text) as unknown;
-    if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
-    const e = v as Record<string, unknown>;
-    return {
-      summary: str(e.summary),
-      notes: str(e.notes_for_next_agent),
-      artifacts: Array.isArray(e.artifacts) ? e.artifacts.filter((a): a is string => typeof a === "string") : [],
-      blocked: e.blocked === true,
-      blockedReason: str(e.blocked_reason),
-    };
-  } catch {
-    return null;
-  }
-}
-
-interface ParsedEnvelope {
-  summary: string;
-  notes: string;
-  artifacts: string[];
-  blocked: boolean;
-  blockedReason: string;
-}
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v : "";
 }
 
 /** The readable accepted-envelope surface: summary, handoff, artifacts (+existence), FINDINGS.md. */
