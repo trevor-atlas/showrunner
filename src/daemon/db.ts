@@ -438,6 +438,17 @@ export interface NewEvent {
   data: unknown;
 }
 
+/** The single, replaceable post-insert hook (default null). web.ts installs
+ * the live bus's `emitRunChange` here; with no hook installed `insertEvent`
+ * behaves exactly as before (no behavior change). See src/daemon/live.ts for
+ * the chokepoint invariant. */
+type EventInsertHook = (runId: string) => void;
+let eventInsertHook: EventInsertHook | null = null;
+
+export function setEventInsertHook(fn: EventInsertHook | null): void {
+  eventInsertHook = fn;
+}
+
 /**
  * Insert one event. The data payload is validated against the core event
  * schema for its type before it is serialized - a tracer bug is loud, not
@@ -449,6 +460,7 @@ export function insertEvent(db: Database, e: NewEvent): number {
     db,
     "INSERT INTO events (run_id, phase_id, agent_session_id, type, ts, data) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(e.run_id, e.phase_id, e.agent_session_id, e.type, e.ts, serializeEventData(validated));
+  if (eventInsertHook !== null) eventInsertHook(e.run_id);
   return Number(res.lastInsertRowid);
 }
 

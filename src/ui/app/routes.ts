@@ -27,6 +27,8 @@ import { get, post, route } from "remix/routes";
 export const routes = route({
   // the colocated asset server (remix/assets) — source modules under app/**/public/**
   assets: get("/assets/*path"),
+  // — the global SSE change stream (any run) — wake-ups only, no payload
+  live: get("/live.sse"),
   // — the run list
   home: get("/"),
   // — run detail, the events.json cursor proxy, the control
@@ -34,6 +36,8 @@ export const routes = route({
   runs: {
     show: get("/runs/:runId"),
     events: get("/runs/:runId/events.json"),
+    // the run-scoped SSE change stream — wake-ups only, no payload
+    live: get("/runs/:runId/events.sse"),
     // R6: the timeline.json refetch proxy — the live region polls this
     // alongside events.json every tick so the chart re-derives from daemon
     // state (new segments, closed visits, status/ended_at) between refreshes

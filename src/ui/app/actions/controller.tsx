@@ -1,7 +1,9 @@
 import { createController } from "remix/router";
 
+import { subscribeAll } from "../../../daemon/live.ts";
 import { assetServer } from "../assets.ts";
 import { listRuns } from "../lib/daemon.ts";
+import { createSseResponse, heartbeatOverrideMs } from "../lib/live.ts";
 import { routes } from "../routes.ts";
 import { RUN_STATUSES, isRunStatus } from "../ui/status-pill.tsx";
 import { RunListPage } from "./run-list-page.tsx";
@@ -20,6 +22,20 @@ export default createController(routes, {
       return (
         (await assetServer.fetch(context.request)) ?? new Response("Not Found", { status: 404 })
       );
+    },
+
+    /** live — GET /live.sse: the global change stream (any run). Wake-ups
+     * only; the browser refetches from its cursor. Teardown rides the
+     * request signal (client disconnect) and the stream cancel. The keepalive
+     * cadence is SSE_HEARTBEAT_MS in prod — the ?heartbeat_ms= override is only
+     * honored under NODE_ENV=test (see heartbeatOverrideMs), so the prod route
+     * is inert to client input. */
+    live(context) {
+      return createSseResponse({
+        subscribe: (onChange) => subscribeAll(onChange),
+        signal: context.request.signal,
+        heartbeatMs: heartbeatOverrideMs(context.url.searchParams.get("heartbeat_ms")),
+      });
     },
 
     async home(context) {

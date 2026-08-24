@@ -2,6 +2,8 @@ import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { createRequestListener } from "remix/node-fetch-server";
 
+import { setEventInsertHook } from "./db.ts";
+import { emitRunChange } from "./live.ts";
 import { handleApiRequest, type ApiState } from "./server.ts";
 import { setWebState } from "./web-state.ts";
 
@@ -53,6 +55,10 @@ export function createWebServer(state: ApiState): Server {
   // register the daemon state for in-process consumers (the UI actions call
   // the api core against it — no socket round trip, Phase 2 / T4)
   setWebState(state);
+  // wire the events-write chokepoint to the live change bus: every insertEvent
+  // now fires a per-run wake-up the SSE proxies push to the browser. With zero
+  // subscribers this is a functional no-op (the existing suite proves it).
+  setEventInsertHook(emitRunChange);
   const listener = createRequestListener(async (request) => {
     if (isApiPath(request.url)) {
       return handleApiRequest(state, request);

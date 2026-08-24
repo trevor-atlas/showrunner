@@ -18,6 +18,8 @@ import {
   getTimeline,
   isApiError,
 } from "../../lib/daemon.ts";
+import { subscribeRun } from "../../../../daemon/live.ts";
+import { createSseResponse, heartbeatOverrideMs } from "../../lib/live.ts";
 import { routes } from "../../routes.ts";
 import type { ControlError } from "../../ui/pause-menu.tsx";
 import { apiControlError, steerFormSchema, validationError } from "./control-forms.ts";
@@ -152,6 +154,32 @@ export default createController(routes.runs, {
         }
         throw err;
       }
+    },
+
+    /** live — GET /runs/:runId/events.sse: the run-scoped change stream.
+     * A ghost run 404s (JSON) BEFORE the stream opens — the same run-gone
+     * contract as `events`/`timeline`, checked via getRunEvents + isApi404
+     * so a browser never holds an open SSE against a run that never existed.
+     * Wake-ups only; teardown rides the request signal + stream cancel. */
+    async live(context) {
+      const runId = context.params.runId;
+
+      try {
+        await getRunEvents(runId, { limit: 1 });
+      } catch (err) {
+        if (isApi404(err)) {
+          return Response.json({ error: `run ${runId} not found` }, { status: 404 });
+        }
+        throw err;
+      }
+
+      return createSseResponse({
+        subscribe: (onChange) => subscribeRun(runId, onChange),
+        signal: context.request.signal,
+        // prod cadence is SSE_HEARTBEAT_MS; the ?heartbeat_ms= override is only
+        // honored under NODE_ENV=test (see heartbeatOverrideMs)
+        heartbeatMs: heartbeatOverrideMs(context.url.searchParams.get("heartbeat_ms")),
+      });
     },
   },
 });
