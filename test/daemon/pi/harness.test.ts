@@ -10,15 +10,15 @@ import {
   RawToolExecutionEnd,
   RawToolExecutionStart,
   RawToolExecutionUpdate,
-} from "../../src/core/index.ts";
+} from "../../../src/core/index.ts";
 import {
   FIXTURE_NAMES,
   FIXTURE_SCENARIOS,
   fakePiEntryPath,
   fixturePath,
   isFixtureName,
-} from "./fixtures.ts";
-import type { FixtureName } from "./fixtures.ts";
+} from "../../../src/daemon/pi/harness/fixtures.ts";
+import type { FixtureName } from "../../../src/daemon/pi/harness/fixtures.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 
@@ -166,5 +166,5 @@ test("fixture registry resolves paths and guards names", () => {
   expect(fakePiEntryPath()).toEndWith("/fake-pi.ts");
   expect(isFixtureName("happy")).toBe(true);
   expect(isFixtureName("nope")).toBe(false);
-  expect(HERE.endsWith("/test/core/")).toBe(true); // the registry lives in test/core/
+  expect(HERE.endsWith("/test/daemon/pi/")).toBe(true); // the harness suite lives in test/daemon/pi/
 });

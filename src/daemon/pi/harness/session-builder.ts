@@ -7,7 +7,7 @@
  * These are STARTER fixtures (the replace-this doctrine, spec §17): they are
  * the tests the kit ships, not the user's tests.
  */
-import type { ScriptedSession, ScriptedTurn } from "../../src/daemon/runner.ts";
+import type { ScriptedSession, ScriptedTurn } from "../../../daemon/runner.ts";
 
 export interface TurnOptions {
   model?: string;

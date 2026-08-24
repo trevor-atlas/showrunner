@@ -15,7 +15,7 @@ import planBuildTestBlueprint from "../../src/starter-kit/blueprints/plan_build_
 import documentBlueprint from "../../src/starter-kit/blueprints/document.ts";
 import everythingBlueprint from "../../src/starter-kit/blueprints/everything.ts";
 
-import { buildTurn, documentTurn, planTurn, promptTurn, reconTurn, reviewTurn, session, shipTurn } from "./session-builder.ts";
+import { buildTurn, documentTurn, planTurn, promptTurn, reconTurn, reviewTurn, session, shipTurn } from "../../src/daemon/pi/harness/session-builder.ts";
 import { failingWorkspace, passingWorkspace, rmDir, runToTerminal, tmpDir } from "./helpers.ts";
 import type { Blueprint } from "../../src/core/index.ts";
 
