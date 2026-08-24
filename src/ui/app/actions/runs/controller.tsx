@@ -2,10 +2,10 @@ import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import type { EventRow } from "../../../../core/index.ts";
 import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
 
 import {
+  MAX_EVENTS_LIMIT,
   controlApprove,
   controlFail,
   controlResume,
@@ -29,11 +29,12 @@ import { NotFoundPage, RunDetailPage } from "./run-detail-page.tsx";
  * events.json cursor proxy, and the control verbs — the pause menu's
  * steer / approve / fail and the resume HEADER action.
  *
- * `show` fetches the detail endpoint SERVER-SIDE, the FULL event history
- * (the cursor query IS the read transport), and — when the run is paused
- * — the pause viewer (kind/phase/actions/queued steers) + the failed gate
- * names for the override select. The browser then polls the proxy from the
- * hydrated live region; it NEVER talks to the daemon.
+ * `show` fetches the detail endpoint SERVER-SIDE with the FULL event
+ * history riding it (?full=1 — the SSR sweep lives in the api core, not
+ * here) and — when the run is paused — the pause viewer (kind/phase/
+ * actions/queued steers + the override target gates). The browser then
+ * polls the proxy from the hydrated live region; it NEVER talks to the
+ * daemon.
  *
  * The control actions: each validates its form with data-schema (no
  * zod in the UI), posts to the api core in-process, then REDIRECTS
@@ -123,7 +124,7 @@ export default createController(routes.runs, {
       const cursor = parseCursor(raw);
 
       try {
-        const page = await getRunEvents(runId, { cursor, limit: EVENTS_PAGE_LIMIT });
+        const page = await getRunEvents(runId, { cursor, limit: MAX_EVENTS_LIMIT });
         return Response.json({ events: page.events, next_cursor: page.next_cursor });
       } catch (err) {
         if (isApi404(err)) {
@@ -183,9 +184,10 @@ export async function renderRunDetail(
     throw err;
   }
 
-  // the initial load fetches the full history — the clientEntry's
-  // first poll starts from the last rowid and only ever sees what's new.
-  const history = await collectEvents(runId);
+  // the ?full=1 detail call carries the full history — the clientEntry's
+  // first poll starts from the last rowid and only ever sees what's new
+  // (the SSR sweep lives in the api core, not here)
+  const history = { events: detail.events ?? [], cursor: detail.next_cursor ?? 0 };
 
   // R4/R5: the timeline view (per-visit segments, blueprint order — the
   // server derives both). The initial selection comes from the ?phase= deep
@@ -205,23 +207,14 @@ export async function renderRunDetail(
     initialGates = gates.gates;
   }
 
-  // the pause menu's content comes from the pause viewer; the
-  // override select needs the FAILED gate names on the paused phase (fetched
-  // only when the menu offers override — one cheap local call).
+  // the pause menu's content comes from the pause viewer; the override
+  // select's target gates ride the SAME viewer call (override_targets —
+  // the old conditional second phase-gates fetch is gone)
   let pause = null;
   let overrideGates: string[] = [];
   if (detail.run.status === "paused") {
     pause = await getPause(runId);
-    if (pause.paused && (pause.actions ?? []).includes("override") && pause.phase !== undefined && pause.phase !== null) {
-      try {
-        const gates = await getPhaseGates(runId, pause.phase);
-        overrideGates = failedGateNames(gates.gates);
-      } catch {
-        // a phase that disappeared between the detail fetch and now → the
-        // override form simply has no options; the daemon 409s a bad override
-        overrideGates = [];
-      }
-    }
+    overrideGates = pause.override_targets ?? [];
   }
 
   return context.render(
@@ -240,41 +233,6 @@ export async function renderRunDetail(
     />,
     { status },
   );
-}
-
-/** The failed gate names on a phase (the override select options), deduped. */
-function failedGateNames(gates: readonly { gate: string; pass: number }[]): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const g of gates) {
-    if (g.pass === 0 && !seen.has(g.gate)) {
-      seen.add(g.gate);
-      names.push(g.gate);
-    }
-  }
-  return names;
-}
-
-/** The proxy page size (the daemon caps the cursor query at 500). */
-const EVENTS_PAGE_LIMIT = 500;
-
-/** Safety cap on the initial full-history sweep (500 × 20 = 10k events). */
-const MAX_EVENT_PAGES = 20;
-
-/** Sweep the cursor query from 0 to the tail — the full history. */
-async function collectEvents(runId: string): Promise<{ events: EventRow[]; cursor: number }> {
-  const events: EventRow[] = [];
-  let cursor = 0;
-  for (let page = 0; page < MAX_EVENT_PAGES; page++) {
-    const res = await getRunEvents(runId, { cursor, limit: EVENTS_PAGE_LIMIT });
-    events.push(...res.events);
-    if (res.events.length < EVENTS_PAGE_LIMIT) {
-      cursor = res.next_cursor;
-      break;
-    }
-    cursor = res.next_cursor;
-  }
-  return { events, cursor };
 }
 
 /** `cursor` is an integer rowid; anything malformed reads as 0 (the start). */

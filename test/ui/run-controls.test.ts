@@ -471,7 +471,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     }
   }, { timeout: 40_000 });
 
-  it("polish: the drill-in spend sweep pages to the TRUE tail — 5500 spend events sum fully (no silent 10-page cap)", async () => {
+  it("polish: the spend endpoint sums 5500 spend events exactly (SQL SUM — no sweep cap, no truncated)", async () => {
     const dir = tmpDir("controls-spend-sweep");
     const restore = setDataDir(dir);
     let daemon: DaemonHandle | null = null;
@@ -481,8 +481,9 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       const db = openDb(dbPathFor(dir));
       insertRun(db, { id: runId, blueprint: "spendy", status: "success", cwd: "/tmp/spendy", needs_review: 0, started_at: startedAt, ended_at: startedAt });
       insertPhase(db, { id: "ph-build", run_id: runId, name: "build", agent: "builder", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.55, started_at: startedAt, ended_at: startedAt });
-      // 5500 spend events (11 pages of 500) — the OLD sweep capped at
-      // 5000 and silently under-reported; the fix pages to the tail
+      // 5500 spend events — the spend endpoint's SQL SUM is exact (the
+      // OLD UI sweep capped at 5000 and silently under-reported; the
+      // derivation now lives in the api core, so the cap is gone)
       for (let i = 0; i < 5500; i++) {
         insertEvent(db, {
           run_id: runId,
@@ -496,10 +497,17 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       db.close();
 
       daemon = await startDaemon({ dataDir: dir, port: 0 });
+      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+
+      // the api core sums all 5500 (SQL SUM is exact — the old 10-page cap
+      // would have reported 5,000)
+      const spend = await client.getSpend(runId);
+      expect(spend.phases[0]).toMatchObject({ tokens_in: 5500 });
 
       const { status, html } = await fetchHtml(routes.runs.phases.show.href({ runId, phase: "build" }));
       expect(status).toBe(200);
-      // 1 token × 5500 events — the full sweep (a 10-page cap would show 5,000)
+      // 1 token × 5500 events — the spend endpoint's exact total (a
+      // 10-page cap would show 5,000)
       expect(html).toContain("tokens in 5,500 · out 0 · cache r/w 0/0");
       expect(html).toContain("SPEND");
       expect(html).not.toContain("older spend omitted");

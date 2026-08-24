@@ -1,6 +1,6 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 import { test, expect } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "node:http";
@@ -241,4 +241,163 @@ test("daemon.close removes the pidfile and stops the listener", async () => {
       () => "down",
     ),
   ).resolves.toBe("down");
+});
+
+test("GET /runs/:id/spend returns exact per-phase token totals (SQL SUM — no sweep cap, no truncated)", async () => {
+  const dir = tmpDataDir("server-spend-tokens");
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    const baseUrl = daemon.baseUrl;
+    const submitted = await api(baseUrl, "POST", "/api/runs", { fixture: "happy", delayMs: 0 });
+    expect(submitted.status).toBe(201);
+    const { run_id } = submitted.json as { run_id: string };
+    await waitForDone(dir, run_id, baseUrl);
+
+    const spend = await api(baseUrl, "GET", `/api/runs/${run_id}/spend`);
+    expect(spend.status).toBe(200);
+    const body = spend.json as {
+      phases: { name: string; tokens_in: number; tokens_out: number; cache_read: number; cache_write: number }[];
+    };
+    expect(body.phases).toHaveLength(1);
+    expect(body.phases[0]!.name).toBe("build");
+    // the happy run's three spend deltas sum exactly — SQL SUM is exact
+    expect(body.phases[0]).toMatchObject({ tokens_in: 1400, tokens_out: 380, cache_read: 100, cache_write: 50 });
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+  }
+});
+
+test("?full=1 run detail rides the initial sweep: 13 events + next_cursor 13; the flagless shape omits them", async () => {
+  const dir = tmpDataDir("server-full-detail");
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    const baseUrl = daemon.baseUrl;
+    const submitted = await api(baseUrl, "POST", "/api/runs", { fixture: "happy", delayMs: 0 });
+    const { run_id } = submitted.json as { run_id: string };
+    await waitForDone(dir, run_id, baseUrl);
+
+    // ?full=1: the SSR sweep rides the detail call — events + next_cursor
+    const full = await api(baseUrl, "GET", `/api/runs/${run_id}?full=1`);
+    expect(full.status).toBe(200);
+    const fullBody = full.json as { event_count: number; events: { id: number }[]; next_cursor: number };
+    expect(fullBody.event_count).toBe(13);
+    expect(fullBody.events).toHaveLength(13);
+    expect(fullBody.events.map((e) => e.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(fullBody.next_cursor).toBe(13);
+
+    // flagless: the exact current shape — no events, no next_cursor
+    const plain = await api(baseUrl, "GET", `/api/runs/${run_id}`);
+    expect(plain.status).toBe(200);
+    const plainBody = plain.json as { events?: unknown[]; next_cursor?: number };
+    expect(plainBody.events).toBeUndefined();
+    expect(plainBody.next_cursor).toBeUndefined();
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+  }
+});
+
+test("GET /runs/:id/phases/:phase/outputs lists the outputs dir + FINDINGS.md; 404 for a ghost run/phase", async () => {
+  const dir = tmpDataDir("server-phase-outputs");
+  const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    const baseUrl = daemon.baseUrl;
+    const demo = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "demo-blueprint.ts");
+    const submitted = await api(baseUrl, "POST", "/api/runs", { blueprint: demo, cwd: runCwd, delayMs: 0 });
+    expect(submitted.status).toBe(201);
+    const { run_id } = submitted.json as { run_id: string };
+    await waitForDone(dir, run_id, baseUrl);
+
+    const outputs = await api(baseUrl, "GET", `/api/runs/${run_id}/phases/build/outputs`);
+    expect(outputs.status).toBe(200);
+    const body = outputs.json as {
+      run_id: string;
+      phase: string;
+      phase_id: string;
+      files: string[];
+      findings_md: string | null;
+    };
+    expect(body.run_id).toBe(run_id);
+    expect(body.phase).toBe("build");
+    expect(body.files).toContain("envelope.json");
+    expect(body.findings_md).toBeNull();
+
+    // a FINDINGS.md the agent wrote lands on the wire verbatim
+    writeFileSync(join(dir, "runs", run_id, "build", "outputs", "FINDINGS.md"), "demo findings text");
+    const withFindings = await api(baseUrl, "GET", `/api/runs/${run_id}/phases/build/outputs`);
+    expect(withFindings.status).toBe(200);
+    const body2 = withFindings.json as { files: string[]; findings_md: string | null };
+    expect(body2.files).toContain("FINDINGS.md");
+    expect(body2.findings_md).toBe("demo findings text");
+
+    // ghost run / ghost phase → the same 404 semantics as the envelope/gate reads
+    const ghostRun = await api(baseUrl, "GET", "/api/runs/ghost/phases/build/outputs");
+    expect(ghostRun.status).toBe(404);
+    const ghostPhase = await api(baseUrl, "GET", `/api/runs/${run_id}/phases/ghost/outputs`);
+    expect(ghostPhase.status).toBe(404);
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+    rmSync(runCwd, { recursive: true, force: true });
+  }
+});
+
+test("pause viewer: override_targets = [\"neverGreen\"] on a budget pause (gate names, row order)", async () => {
+  const dir = tmpDataDir("server-pause-override-targets");
+  const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    const baseUrl = daemon.baseUrl;
+
+    // the budget-exhaustion blueprint's gate always fails → the correction
+    // budget (1) exhausts and the run pauses with the override menu
+    const controls = join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "fixtures", "controls", "controls-blueprint.ts");
+    const paused = await api(baseUrl, "POST", "/api/runs", { blueprint: controls, cwd: runCwd, delayMs: 0 });
+    expect(paused.status).toBe(201);
+    const pausedId = (paused.json as { run_id: string }).run_id;
+    await waitForDone(dir, pausedId, baseUrl);
+
+    const viewer = await api(baseUrl, "GET", `/api/runs/${pausedId}/pause`);
+    expect(viewer.status).toBe(200);
+    const view = viewer.json as { actions: string[]; override_targets?: string[] };
+    expect(view.actions).toContain("override");
+    // the failed gate's name rides the viewer — the override form's options
+    expect(view.override_targets).toEqual(["neverGreen"]);
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+    rmSync(runCwd, { recursive: true, force: true });
+  }
+});
+
+test("pause viewer: override_targets absent on an approval pause (the menu offers no override)", async () => {
+  const dir = tmpDataDir("server-pause-approval");
+  const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
+  let daemon: DaemonHandle | null = null;
+  try {
+    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    const baseUrl = daemon.baseUrl;
+
+    const approval = join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "fixtures", "approval-blueprint.ts");
+    const appr = await api(baseUrl, "POST", "/api/runs", { blueprint: approval, cwd: runCwd, delayMs: 0 });
+    expect(appr.status).toBe(201);
+    const apprId = (appr.json as { run_id: string }).run_id;
+    await waitForDone(dir, apprId, baseUrl);
+
+    const viewer = await api(baseUrl, "GET", `/api/runs/${apprId}/pause`);
+    expect(viewer.status).toBe(200);
+    const view = viewer.json as { actions: string[]; override_targets?: string[] };
+    expect(view.actions).not.toContain("override");
+    expect(view.override_targets).toBeUndefined();
+  } finally {
+    await daemon?.close();
+    cleanupDir(dir);
+    rmSync(runCwd, { recursive: true, force: true });
+  }
 });

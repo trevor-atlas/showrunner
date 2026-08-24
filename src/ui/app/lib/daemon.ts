@@ -14,6 +14,7 @@
  */
 
 import {
+  MAX_EVENTS_LIMIT,
   apiApprove,
   apiEvents,
   apiFailRun,
@@ -22,6 +23,7 @@ import {
   apiPause,
   apiPhaseEnvelopes,
   apiPhaseGates,
+  apiPhaseOutputs,
   apiRaw,
   apiRestartFresh,
   apiResume,
@@ -38,6 +40,7 @@ import type {
   PauseView,
   PhaseEnvelopes,
   PhaseGates,
+  PhaseOutputs,
   RawTail,
   RunDetail,
   RunListItem,
@@ -45,14 +48,20 @@ import type {
   TimelineView,
 } from "../../../daemon/contract.ts";
 
+/** The events-page size and the sweep batch — the one exported constant the
+ * UI's events proxy imports (no re-declared 500 in the controller). */
+export { MAX_EVENTS_LIMIT };
+
 /** The run list rows — in-process against the daemon's state. */
 export async function listRuns(): Promise<{ runs: RunListItem[] }> {
   return apiListRuns(requireWebState());
 }
 
-/** The run detail — phases, spend, envelope count, sessions. */
+/** The run detail — phases, spend, envelope count, sessions, and the FULL
+ * event history (the initial SSR sweep rides the ?full=1 detail call — the
+ * controller reads detail.events/detail.next_cursor instead of sweeping). */
 export async function getRunDetail(runId: string): Promise<RunDetail> {
-  return apiRunDetail(requireWebState(), runId);
+  return apiRunDetail(requireWebState(), runId, new URLSearchParams({ full: "1" }));
 }
 
 /** GET /runs/:id/phases/:phase/envelopes — a phase's envelope history. */
@@ -63,6 +72,12 @@ export async function getPhaseEnvelopes(runId: string, phase: string): Promise<P
 /** GET /runs/:id/phases/:phase/gates — gate results incl. overridden. */
 export async function getPhaseGates(runId: string, phase: string): Promise<PhaseGates> {
   return apiPhaseGates(requireWebState(), runId, phase);
+}
+
+/** GET /runs/:id/phases/:phase/outputs — what the agent wrote in the
+ * phase's outputs dir: the file listing + FINDINGS.md content. */
+export async function getPhaseOutputs(runId: string, phase: string): Promise<PhaseOutputs> {
+  return apiPhaseOutputs(requireWebState(), runId, phase);
 }
 
 /** GET /runs/:id/spend — per-phase spend breakdown (+ estimated markers). */

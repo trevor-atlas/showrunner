@@ -29,6 +29,7 @@ import type {
   PauseView,
   PhaseEnvelopes,
   PhaseGates,
+  PhaseOutputs,
   PhaseSummary,
   RawQuery,
   RawTail,
@@ -53,6 +54,7 @@ export type {
   PauseView,
   PhaseEnvelopes,
   PhaseGates,
+  PhaseOutputs,
   PhaseSummary,
   RawQuery,
   RawTail,
@@ -176,6 +178,12 @@ export class DaemonClient {
   /** GET /api/runs/:id/phases/:phase/gates — gate results incl. overridden. */
   getPhaseGates(runId: string, phase: string): Promise<PhaseGates> {
     return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/phases/${encodeURIComponent(phase)}/gates`);
+  }
+
+  /** GET /api/runs/:id/phases/:phase/outputs — what the agent wrote in the
+   * phase's outputs dir: the file listing + FINDINGS.md content. */
+  getPhaseOutputs(runId: string, phase: string): Promise<PhaseOutputs> {
+    return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/phases/${encodeURIComponent(phase)}/outputs`);
   }
 
   /** GET /api/runs/:id/spend — per-phase spend breakdown (+ estimated markers). */

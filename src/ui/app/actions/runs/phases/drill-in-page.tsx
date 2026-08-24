@@ -45,8 +45,6 @@ export interface DrillInPageProps {
     cacheWrite: number;
     spendUsd: number;
     estimatedUsd: number;
-    /** true when the spend sweep hit its safety cap — token totals are partial */
-    truncated: boolean;
   };
   raw: RawTail;
 }
@@ -106,7 +104,6 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
                 cacheWrite={spend.cacheWrite}
                 spendUsd={spend.spendUsd}
                 estimatedUsd={spend.estimatedUsd}
-                truncated={spend.truncated}
               />
               <OutputCard raw={raw} />
             </div>

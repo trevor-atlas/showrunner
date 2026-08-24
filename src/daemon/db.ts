@@ -360,6 +360,49 @@ export function sumEstimatedPhaseSpend(db: Database, runId: string): Map<string,
   return out;
 }
 
+/**
+ * Per-phase spend-token totals, summed from the spend events' token
+ * fields in ONE grouped pass — the spend breakdown's tokens_in /
+ * tokens_out / cache_read / cache_write. SQL SUM is exact — the old
+ * UI sweep's 100k-event cap and its `truncated` flag die with it.
+ * The token field names match the spend event schema (core SpendData):
+ * tokens_in, tokens_out, cache_read, cache_write. Phases with no spend
+ * events are absent from the map; callers read `?? 0`.
+ */
+export function sumSpendTokenTotals(
+  db: Database,
+  runId: string,
+): Map<string, { tokens_in: number; tokens_out: number; cache_read: number; cache_write: number }> {
+  const rows = q<{
+    phase_id: string | null;
+    tokens_in: number | null;
+    tokens_out: number | null;
+    cache_read: number | null;
+    cache_write: number | null;
+  }>(
+    db,
+    `SELECT phase_id,
+       SUM(CAST(json_extract(data, '$.tokens_in') AS REAL)) AS tokens_in,
+       SUM(CAST(json_extract(data, '$.tokens_out') AS REAL)) AS tokens_out,
+       SUM(CAST(json_extract(data, '$.cache_read') AS REAL)) AS cache_read,
+       SUM(CAST(json_extract(data, '$.cache_write') AS REAL)) AS cache_write
+     FROM events
+     WHERE run_id = ? AND type = 'spend'
+     GROUP BY phase_id`,
+  ).all(runId);
+  const out = new Map<string, { tokens_in: number; tokens_out: number; cache_read: number; cache_write: number }>();
+  for (const r of rows) {
+    if (r.phase_id === null) continue;
+    out.set(r.phase_id, {
+      tokens_in: r.tokens_in ?? 0,
+      tokens_out: r.tokens_out ?? 0,
+      cache_read: r.cache_read ?? 0,
+      cache_write: r.cache_write ?? 0,
+    });
+  }
+  return out;
+}
+
 /** The per-phase spend shape for the three surfaces (run detail, spend
  * breakdown, timeline): the estimated half mapped onto the phases rows.
  * Returned in phases-table order (listPhases' started_at order) — the
@@ -438,9 +481,9 @@ export function cursorEvents(db: Database, runId: string, afterRowid: number, li
 
 /** Sweep the cursor query from the start — a run's full event history in
  * rowid order, batched `batchSize` at a time (the one indexed read
- * transport). The timeline fold's event source; the default batch is also
- * the events-page size constant (apiEvents shares it — the magic number
- * lives in one place). */
+ * transport). The timeline fold's event source; the default batch is the
+ * events-page size (500 — server.ts's exported MAX_EVENTS_LIMIT is the
+ * same value; db.ts cannot import server.ts, so the literal stays here). */
 export function sweepRunEvents(db: Database, runId: string, batchSize = 500): EventRow[] {
   const all: EventRow[] = [];
   let after = 0;
@@ -531,6 +574,29 @@ export function listGateResults(db: Database, runId: string, phaseId?: string): 
  * budget-exhaustion pause info read. One shape serves both callers. */
 export function listFailedGateResults(db: Database, envelopeId: string): FailedGateRow[] {
   return q<FailedGateRow>(db, "SELECT id, gate FROM gate_results WHERE envelope_id = ? AND pass = 0").all(envelopeId);
+}
+
+/** Gate names for the given gate-result ids, in gate_results ROW order
+ * (the WHERE id IN (...) scan's natural order), deduped preserving
+ * first-seen order — the pause viewer's override_targets. The ids are
+ * already the failed-only set, so no pass filter is needed here; the
+ * dedup matches the old UI's failedGateNames semantics (the first row
+ * of a repeated gate name wins). */
+export function listGateNamesByIds(db: Database, ids: string[]): string[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = q<{ id: string; gate: string }>(
+    db,
+    `SELECT id, gate FROM gate_results WHERE id IN (${placeholders})`,
+  ).all(...ids);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const row of rows) {
+    if (seen.has(row.gate)) continue;
+    seen.add(row.gate);
+    names.push(row.gate);
+  }
+  return names;
 }
 
 // ── gate overrides ────────────────────────────────────────────────────

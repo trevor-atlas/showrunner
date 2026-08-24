@@ -235,3 +235,42 @@ export function writeAgentMap(runDir: string, phaseName: string, entry: AgentMap
   map[phaseName] = entry;
   writeFileSync(join(runDir, "agent_map.json"), JSON.stringify(map, null, 2) + "\n");
 }
+
+/**
+ * Read the phase's outputs/ dir: the files the agent actually wrote (for
+ * the ENVELOPE card's artifact-existence check) and FINDINGS.md when the
+ * agent wrote one (rendered readably). Absent dir → empty listing;
+ * unreadable files are skipped (best effort — this is display, not
+ * validation). Ported from the UI drill-in controller — the api core's
+ * phase-outputs endpoint reads it (the UI lost its last fs path past the
+ * seam).
+ */
+export function readOutputsDir(
+  runDir: string,
+  phaseName: string,
+): { files: string[]; findingsMd: string | null } {
+  const dir = outputsDirFor(runDir, phaseName);
+  let files: string[] = [];
+  try {
+    files = readdirSync(dir).filter((f) => {
+      try {
+        return statSync(join(dir, f)).isFile();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return { files: [], findingsMd: null };
+  }
+  const findingsFile = files.find((f) => f.toLowerCase() === "findings.md");
+  let findingsMd: string | null = null;
+  if (findingsFile !== undefined) {
+    try {
+      const full = join(dir, findingsFile);
+      if (existsSync(full)) findingsMd = readFileSync(full, "utf8");
+    } catch {
+      findingsMd = null;
+    }
+  }
+  return { files, findingsMd };
+}

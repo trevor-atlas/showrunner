@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
+import type { EventRow } from "../core/index.ts";
 import { isFixtureName } from "./pi/harness/fixtures.ts";
 
 import {
@@ -10,11 +11,13 @@ import {
   getRun,
   listAgentSessions,
   listEnvelopes,
+  listGateNamesByIds,
   listGateResults,
   listPhaseSpend,
   listRuns,
   phaseStatusCounts,
   sumRunSpend,
+  sumSpendTokenTotals,
 } from "./db.ts";
 import {
   ApiError,
@@ -24,6 +27,7 @@ import {
   type PauseView,
   type PhaseEnvelopes,
   type PhaseGates,
+  type PhaseOutputs,
   type RawTail,
   type RunDetail,
   type RunListItem,
@@ -32,6 +36,7 @@ import {
 } from "./contract.ts";
 import { submitFixture } from "./driver.ts";
 import type { SubmitOptions, SubmittedRun } from "./driver.ts";
+import { readOutputsDir } from "./handoff.ts";
 import {
   effectiveMenu,
   getControl,
@@ -68,6 +73,13 @@ export interface ApiState {
   pool: RunPool;
   startedAt: number;
 }
+
+/** The events-page size and the sweep batch — exported so the UI's
+ * events proxy imports the same constant (no re-declared 500 in the
+ * controller). The daemon caps the cursor query at this; the detail
+ * sweep batches this per page. sweepRunEvents' default in db.ts is the
+ * same 500 (db.ts cannot import server.ts, so the value lives in both). */
+export const MAX_EVENTS_LIMIT = 500;
 
 // The one error class lives in contract.ts (shared with client.ts and
 // the UI); re-exported so daemon/index.ts's public surface keeps working.
@@ -219,13 +231,42 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
   throw new ApiError(400, "request body must include a fixture name or a blueprint module path");
 }
 
-export function apiRunDetail(state: ApiState, runId: string): RunDetail {
+/** Safety cap on the ?full=1 detail sweep: 20 × 500 = 10k events. */
+const MAX_EVENT_PAGES = 20;
+
+/** Sweep the cursor query from 0 to the tail — a run's full event history
+ * in rowid order, MAX_EVENTS_LIMIT per page, capped at `maxPages` pages
+ * (default 20 = 10k events — the ?full=1 detail sweep; the timeline's own
+ * sweep in db.ts stays uncapped). Reproduces the old UI collectEvents
+ * loop exactly: a short page is the tail (cursor = its last rowid, or the
+ * requested cursor when empty); a full final page still advances. Returns
+ * { events, cursor } — the wire gets events + next_cursor. */
+function sweepEvents(
+  db: Database,
+  runId: string,
+  maxPages = MAX_EVENT_PAGES,
+): { events: EventRow[]; cursor: number } {
+  const events: EventRow[] = [];
+  let cursor = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const res = cursorEvents(db, runId, cursor, MAX_EVENTS_LIMIT);
+    events.push(...res);
+    if (res.length < MAX_EVENTS_LIMIT) {
+      if (res.length > 0) cursor = res[res.length - 1]!.id;
+      break;
+    }
+    cursor = res[res.length - 1]!.id;
+  }
+  return { events, cursor };
+}
+
+export function apiRunDetail(state: ApiState, runId: string, query?: URLSearchParams): RunDetail {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   // spend splits reported vs estimated — the estimated half comes
   // from the spend events' flag, so show can mark it as such
   const phaseSpend = listPhaseSpend(state.db, runId);
-  return {
+  const detail: RunDetail = {
     run,
     spend_usd: sumRunSpend(state.db, runId),
     estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
@@ -235,25 +276,44 @@ export function apiRunDetail(state: ApiState, runId: string): RunDetail {
     sessions: listAgentSessions(state.db, runId),
     event_count: eventCount(state.db, runId),
   };
+  // ?full=1: the initial SSR sweep rides the detail call — the UI reads
+  // detail.events/detail.next_cursor instead of re-implementing the sweep
+  // (the flagless shape is unchanged; CLI callers never pass ?full=1)
+  if (query?.get("full") === "1") {
+    const sweep = sweepEvents(state.db, runId);
+    detail.events = sweep.events;
+    detail.next_cursor = sweep.cursor;
+  }
+  return detail;
 }
 
-// per-phase spend breakdown (+ estimated markers).
+// per-phase spend breakdown (+ estimated markers + exact token totals).
 export function apiSpend(state: ApiState, runId: string): SpendBreakdown {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const phaseSpend = listPhaseSpend(state.db, runId);
+  const tokenTotals = sumSpendTokenTotals(state.db, runId);
   return {
     run_id: runId,
     spend_usd: sumRunSpend(state.db, runId),
     estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
-    // the wire shape is exactly these five keys — the field pick stays here
-    // (listPhaseSpend returns the full row; the contract pins the shape)
-    phases: phaseSpend.map(({ id, name, status, spend_usd, estimated_spend_usd }) => ({
-      id,
-      name,
-      status,
-      spend_usd,
-      estimated_spend_usd,
-    })),
+    // the wire shape is exactly these keys — the field pick stays here
+    // (listPhaseSpend returns the full row; the contract pins the shape).
+    // Token totals come from the SUM map — SQL SUM is exact, so there is
+    // no sweep cap and no truncated flag on the wire
+    phases: phaseSpend.map(({ id, name, status, spend_usd, estimated_spend_usd }) => {
+      const tokens = tokenTotals.get(id);
+      return {
+        id,
+        name,
+        status,
+        spend_usd,
+        estimated_spend_usd,
+        tokens_in: tokens?.tokens_in ?? 0,
+        tokens_out: tokens?.tokens_out ?? 0,
+        cache_read: tokens?.cache_read ?? 0,
+        cache_write: tokens?.cache_write ?? 0,
+      };
+    }),
   };
 }
 
@@ -308,12 +368,29 @@ export function apiPhaseGates(state: ApiState, runId: string, phaseName: string)
   };
 }
 
+/** GET /runs/:id/phases/:phase/outputs — what the agent actually wrote in
+ * the phase's outputs dir (files + FINDINGS.md content). Same 404
+ * semantics as the envelope/gate phase-scoped reads; reads the run's
+ * record dir only — the daemon stays the sole SQLite writer, and the UI
+ * lost its last fs path past the seam. */
+export function apiPhaseOutputs(state: ApiState, runId: string, phaseName: string): PhaseOutputs {
+  const phase = requirePhaseOrThrow(state, runId, phaseName);
+  const outputs = readOutputsDir(join(state.dataDir, "runs", runId), phase.name);
+  return {
+    run_id: runId,
+    phase: phase.name,
+    phase_id: phase.id,
+    files: outputs.files,
+    findings_md: outputs.findingsMd,
+  };
+}
+
 export function apiEvents(state: ApiState, runId: string, query: URLSearchParams): EventsPage {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const cursor = intParam(query.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
-  // the page default/cap is sweepRunEvents' batch constant (db.ts) — the
-  // events page and the timeline sweep share the 500, one magic number
-  const limit = intParam(query.get("limit"), 500, 500);
+  // the page default/cap is MAX_EVENTS_LIMIT — the same batch the
+  // ?full=1 detail sweep uses (and sweepRunEvents' default in db.ts)
+  const limit = intParam(query.get("limit"), MAX_EVENTS_LIMIT, MAX_EVENTS_LIMIT);
   const events = cursorEvents(state.db, runId, cursor, limit);
   const nextCursor = events.length > 0 ? events[events.length - 1]!.id : cursor;
   return { events, next_cursor: nextCursor };
@@ -346,17 +423,26 @@ export function apiPause(state: ApiState, runId: string): PauseView {
   const paused = run.status === "paused";
   if (paused && control !== null && control.paused) {
     const info = control.pauseInfo!;
-    return {
+    const actions = effectiveMenu(info);
+    const view: PauseView = {
       run_id: runId,
       paused: true,
       status: run.status,
       kind: info.kind,
       phase: info.phase,
       reason: info.reason,
-      actions: effectiveMenu(info),
+      actions,
       queued_steers: control.queuedSteerMessages,
       live_session_id: control.liveSessionId,
     };
+    // the override form's target gates ride the SAME viewer call — the
+    // failed gate-result ids on the pause info, resolved to names in
+    // gate_results ROW order (deduped), so the menu and the override
+    // form always agree; absent when the menu offers no override
+    if (actions.includes("override") && info.gateResultIds !== undefined) {
+      view.override_targets = listGateNamesByIds(state.db, info.gateResultIds);
+    }
+    return view;
   }
   return {
     run_id: runId,
@@ -533,7 +619,9 @@ export async function handleApiRequest(state: ApiState, request: Request): Promi
     }
 
     const runMatch = path.match(/^\/runs\/([^/]+)$/);
-    if (runMatch && method === "GET") return Response.json(apiRunDetail(state, runMatch[1]!));
+    if (runMatch && method === "GET") {
+      return Response.json(apiRunDetail(state, runMatch[1]!, url.searchParams));
+    }
 
     const spendMatch = path.match(/^\/runs\/([^/]+)\/spend$/);
     if (spendMatch && method === "GET") return Response.json(apiSpend(state, spendMatch[1]!));
@@ -551,6 +639,13 @@ export async function handleApiRequest(state: ApiState, request: Request): Promi
     const phaseGatesMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/gates$/);
     if (phaseGatesMatch && method === "GET") {
       return Response.json(apiPhaseGates(state, phaseGatesMatch[1]!, decodeURIComponent(phaseGatesMatch[2]!)));
+    }
+
+    const phaseOutputsMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/outputs$/);
+    if (phaseOutputsMatch && method === "GET") {
+      return Response.json(
+        apiPhaseOutputs(state, phaseOutputsMatch[1]!, decodeURIComponent(phaseOutputsMatch[2]!)),
+      );
     }
 
     const eventsMatch = path.match(/^\/runs\/([^/]+)\/events$/);

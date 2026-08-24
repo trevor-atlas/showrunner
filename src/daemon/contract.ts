@@ -55,6 +55,12 @@ export interface RunDetail {
   phases: PhaseSummary[];
   sessions: AgentSessionRow[];
   event_count: number;
+  /** the full event history (the initial SSR sweep) — present only when the
+   * request carried ?full=1 (the UI's initial load); the live poll starts
+   * from next_cursor */
+  events?: EventRow[];
+  /** the last event rowid in `events` — the poll loop's starting cursor */
+  next_cursor?: number;
 }
 
 export interface EventsPage {
@@ -80,11 +86,35 @@ export interface PhaseGates {
   gates: GateResultWithOverride[];
 }
 
+/** GET /runs/:id/phases/:phase/outputs — what the agent actually wrote in
+ * the phase's outputs/ dir: the file listing + FINDINGS.md content. */
+export interface PhaseOutputs {
+  run_id: string;
+  phase: string;
+  phase_id: string;
+  /** the files in the phase's outputs dir (files only, no subdirs) */
+  files: string[];
+  /** the FINDINGS.md content when the agent wrote one; null otherwise */
+  findings_md: string | null;
+}
+
 export interface SpendBreakdown {
   run_id: string;
   spend_usd: number;
   estimated_spend_usd: number;
-  phases: { id: string; name: string; status: string; spend_usd: number; estimated_spend_usd: number }[];
+  phases: {
+    id: string;
+    name: string;
+    status: string;
+    spend_usd: number;
+    estimated_spend_usd: number;
+    /** per-phase token totals, summed from the spend events (SQL SUM is
+     * exact — always on the wire now, no sweep cap, no truncated) */
+    tokens_in: number;
+    tokens_out: number;
+    cache_read: number;
+    cache_write: number;
+  }[];
 }
 
 // ── R3: the timeline view (GET /runs/:id/timeline) ──────────────────────────
@@ -151,6 +181,10 @@ export interface PauseView {
   phase?: string;
   reason?: string | null;
   actions?: string[];
+  /** the failed gate names the override form offers — present only when
+   * `actions` includes "override" (the ids are resolved server-side, in
+   * gate_results row order, deduped) */
+  override_targets?: string[];
   queued_steers?: string[];
   live_session_id?: string | null;
   note?: string;

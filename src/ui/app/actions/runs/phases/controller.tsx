@@ -1,23 +1,18 @@
-import { dirname, join } from "node:path";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import type { EventRow } from "../../../../../core/index.ts";
-
 import { readBlueprintSnapshot } from "../../../lib/blueprint-snapshot.ts";
-import { resolveDataDir, runDirFor } from "../../../../../core/index.ts";
-import { outputsDirFor } from "../../../../../daemon/handoff.ts";
 import {
   controlOverrideGate,
   controlRestartFresh,
   getPhaseEnvelopes,
   getPhaseGates,
+  getPhaseOutputs,
   getRaw,
   getRunDetail,
-  getRunEvents,
   getSpend,
   isApiError,
 } from "../../../lib/daemon.ts";
@@ -70,27 +65,19 @@ export default createController(routes.runs.phases, {
       }
 
       // everything after the 404 checks is independent — fetch in parallel
-      const [envelopes, gates, spend, raw, spendEvents, snapshot] = await Promise.all([
+      const [envelopes, gates, spend, raw, outputs, snapshot] = await Promise.all([
         getPhaseEnvelopes(runId, phaseName),
         getPhaseGates(runId, phaseName),
         getSpend(runId),
         getRaw(runId, { lines: RAW_TAIL_LINES }),
-        collectSpendEvents(runId),
+        getPhaseOutputs(runId, phaseName),
         readBlueprintSnapshot(runId),
       ]);
 
       const snapshotPhase = snapshot.doc?.phases.find((p) => p.name === phaseName) ?? null;
       const snapshotModuleDir = snapshot.doc?.module !== null && snapshot.doc?.module !== undefined && snapshot.doc?.module !== "" ? dirname(snapshot.doc.module) : null;
 
-      // the phase's outputs/ dir — what the agent actually wrote (for the
-      // ENVELOPE card's artifact existence check + FINDINGS.md content). The
-      // workspace lives under the RUN's record dir ({data_dir}/runs/<run_id>/<phase>/outputs),
-      // never the run cwd.
-      const runDir = runDirFor(resolveDataDir(), runId);
-      const outputs = readOutputsDir(runDir, phaseName);
-
       const spendPhase = spend.phases.find((p) => p.id === phase.id);
-      const tokens = sumPhaseSpendTokens(spendEvents.events, phase.id);
 
       return context.render(
         <DrillInPage
@@ -105,16 +92,17 @@ export default createController(routes.runs.phases, {
           snapshotPhase={snapshotPhase}
           snapshotModuleDir={snapshotModuleDir}
           envelopes={envelopes.envelopes}
-          outputs={outputs}
+          outputs={{ files: outputs.files, findingsMd: outputs.findings_md }}
           gates={gates.gates}
           spend={{
-            tokensIn: tokens.tokens_in,
-            tokensOut: tokens.tokens_out,
-            cacheRead: tokens.cache_read,
-            cacheWrite: tokens.cache_write,
+            // token totals come straight off the spend endpoint — SQL SUM
+            // is exact, so there is no sweep cap and no truncated flag
+            tokensIn: spendPhase?.tokens_in ?? 0,
+            tokensOut: spendPhase?.tokens_out ?? 0,
+            cacheRead: spendPhase?.cache_read ?? 0,
+            cacheWrite: spendPhase?.cache_write ?? 0,
             spendUsd: spendPhase?.spend_usd ?? 0,
             estimatedUsd: spendPhase?.estimated_spend_usd ?? 0,
-            truncated: spendEvents.truncated,
           }}
           raw={raw}
         />,
@@ -196,107 +184,6 @@ export default createController(routes.runs.phases, {
 
 /** The raw tail size for the OUTPUT card (the endpoint caps at 5000). */
 const RAW_TAIL_LINES = 100;
-
-/**
- * Collect the run's spend events by sweeping the cursor query to
- * the TRUE tail (polish, T10b): the drill-in token totals are honest for very
- * long runs (>5000 spend events) instead of silently capping at 10×500. A
- * hard safety cap (200 pages = 100k events) still bounds pathological runs,
- * and `truncated` reports when that cap was hit so the card can say so.
- */
-async function collectSpendEvents(
-  runId: string,
-): Promise<{ events: EventRow[]; truncated: boolean }> {
-  const out: EventRow[] = [];
-  let cursor: number | undefined = undefined;
-  let truncated = false;
-  for (let page = 0; page < MAX_EVENT_PAGES; page++) {
-    const res = await getRunEvents(runId, { cursor, limit: 500 });
-    for (const ev of res.events) {
-      if (ev.type === "spend") out.push(ev);
-    }
-    if (res.events.length < 500) {
-      // a short page is the true tail — everything collected, nothing dropped
-      break;
-    }
-    if (page === MAX_EVENT_PAGES - 1) {
-      // the final page was FULL — more events may exist past the safety cap
-      truncated = true;
-    }
-    cursor = res.next_cursor;
-  }
-  return { events: out, truncated };
-}
-
-/** Safety cap on the spend sweep: 200 × 500 = 100k events. */
-const MAX_EVENT_PAGES = 200;
-
-/** Sum the spend-event token deltas for one phase (phase_id filter). */
-function sumPhaseSpendTokens(events: readonly EventRow[], phaseId: string): {
-  tokens_in: number;
-  tokens_out: number;
-  cache_read: number;
-  cache_write: number;
-} {
-  let tokens_in = 0;
-  let tokens_out = 0;
-  let cache_read = 0;
-  let cache_write = 0;
-  for (const ev of events) {
-    if (ev.phase_id !== phaseId) continue;
-    const data = ev.data as {
-      tokens_in?: unknown;
-      tokens_out?: unknown;
-      cache_read?: unknown;
-      cache_write?: unknown;
-    };
-    tokens_in += num(data.tokens_in);
-    tokens_out += num(data.tokens_out);
-    cache_read += num(data.cache_read);
-    cache_write += num(data.cache_write);
-  }
-  return { tokens_in, tokens_out, cache_read, cache_write };
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-/**
- * Read the phase's outputs/ dir: the files the agent actually wrote (for the
- * ENVELOPE card's artifact-existence check) and FINDINGS.md when the agent
- * wrote one (rendered readably). Absent dir → empty listing; unreadable files
- * are skipped (best effort — this is display, not validation).
- */
-function readOutputsDir(
-  runDir: string,
-  phaseName: string,
-): { files: string[]; findingsMd: string | null } {
-  const dir = outputsDirFor(runDir, phaseName);
-  let files: string[] = [];
-  try {
-    files = readdirSync(dir).filter((f) => {
-      try {
-        return statSync(join(dir, f)).isFile();
-      } catch {
-        return false;
-      }
-    });
-  } catch {
-    return { files: [], findingsMd: null };
-  }
-  const findingsFile = files.find((f) => f.toLowerCase() === "findings.md");
-  let findingsMd: string | null = null;
-  if (findingsFile !== undefined) {
-    try {
-      const full = join(dir, findingsFile);
-      if (existsSync(full)) findingsMd = readFileSync(full, "utf8");
-    } catch {
-      findingsMd = null;
-    }
-  }
-  return { files, findingsMd };
-}
 
 /** A ApiError 404 (run/phase missing) — the drill-in's "missing" case. */
 function isApi404(err: unknown): boolean {
