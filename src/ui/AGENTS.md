@@ -1,11 +1,11 @@
 # Showrunner UI — Agent Guide
 
 The Showrunner dashboard (`@showrunner/ui`): the remix@next (v3 beta) dashboard.
-Built on the `remix` package only — **not React** (spec §16.1). See
-`docs/spec/05-ui-dashboard.md` §16 and the guides at https://guides.remix.run
-(§16.2: read start-here, request-handling, routing-and-controllers,
-rendering-ui, streaming-ui-with-frames, data-and-validation, files-and-assets,
-interactivity before touching this package).
+Built on the `remix` package only — **not React**. See the guides at
+https://guides.remix.run (read start-here, request-handling,
+routing-and-controllers, rendering-ui, streaming-ui-with-frames,
+data-and-validation, files-and-assets, interactivity before touching this
+package).
 
 ## Commands
 
@@ -35,14 +35,14 @@ so running the UI tests from the repo root misses this package's
 - `app/router.ts` — middleware (`staticFiles` + `render`) and controller mapping.
 - `app/actions/controller.tsx` — the `/` action: fetches GET /runs SERVER-SIDE
   via `app/lib/daemon.ts` and renders `RunListPage`. Never call the daemon from
-  the browser — no CORS, no daemon credentials in the browser (§16.4/§16.5).
-- `app/actions/run-list-page.tsx` — the §16.6 run list (table, filter, refresh).
-- `app/actions/runs/` — the run-detail group: `/runs/:runId` (header, control bar, timeline chart, detail panel, live feed), the `events.json` + `timeline.json` cursor/timeline proxies, the phase drill-in group, and the control POST routes (§16.9).
+  the browser — no CORS, no daemon credentials in the browser.
+- `app/actions/run-list-page.tsx` — the run list (table, filter, refresh).
+- `app/actions/runs/` — the run-detail group: `/runs/:runId` (header, control bar, timeline chart, detail panel, live feed), the `events.json` + `timeline.json` cursor/timeline proxies, the phase drill-in group, and the control POST routes.
 - `app/actions/runs/phases/` — the phase drill-in page (config, envelope, gates, spend, output) plus the lazy `envelopes.json`/`gates.json` proxies and the phase-scoped control verbs.
 - `app/actions/public/` — the browser runtime entry, the `RunFilterForm` and `RunLiveRegion` clientEntries.
 - `app/ui/` — shared components (`StatusPill`, `EmptyState`, `NeedsReviewBanner`, `PauseMenu`, phase drill-in cards) and `format.ts`.
 - `app/ui/public/` — the browser module graph: the timeline chart + panel (`timeline.tsx`, `timeline-panel.tsx`, `timeline-model.ts`), the `EventFeed`, and the browser-local `format.ts` copies.
-- `app/lib/daemon.ts` — the server-side daemon data layer: calls the §13 api
+- `app/lib/daemon.ts` — the server-side daemon data layer: calls the api
   core (src/daemon/server.ts) IN-PROCESS against the state held by
   src/daemon/web-state.ts (the merged web server — no socket round trip).
 - `test/` — the T09 e2e (bun test + `router.fetch`, scratch daemons).

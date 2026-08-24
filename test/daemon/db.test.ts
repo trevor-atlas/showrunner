@@ -26,12 +26,12 @@ const tables = [
   "events",
   "envelopes",
   "gate_results",
-  "gate_overrides", // v2 (T03): the audited override marker table (§5.3)
+  "gate_overrides", // v2 (T03): the audited override marker table
   "agent_sessions",
   "processes",
 ];
 
-test("migrating a fresh DB creates the §4.2 tables plus the T03 gate_overrides (§4.2, v2)", () => {
+test("migrating a fresh DB creates the tables plus the T03 gate_overrides (v2)", () => {
   const dir = tmpDataDir("schema");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -48,7 +48,7 @@ test("v2 migration adds the attempt-history columns and gate_overrides to a v1 D
   const dir = tmpDataDir("schema-v2");
   try {
     const db = openDb(join(dir, "showrunner.db"));
-    // §4.2 columns from v1
+    // columns from v1
     const envCols = (db.query("PRAGMA table_info(envelopes)").all() as { name: string }[]).map((c) => c.name);
     expect(envCols).toContain("valid");
     expect(envCols).toContain("violations");
@@ -70,7 +70,7 @@ test("v2 migration adds the attempt-history columns and gate_overrides to a v1 D
   }
 });
 
-test("the DB file lands at {data_dir}/showrunner.db (§4.1)", () => {
+test("the DB file lands at {data_dir}/showrunner.db", () => {
   const dir = tmpDataDir("dbpath");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -81,7 +81,7 @@ test("the DB file lands at {data_dir}/showrunner.db (§4.1)", () => {
   }
 });
 
-test("WAL / synchronous / foreign_keys pragmas are set (§4.1)", () => {
+test("WAL / synchronous / foreign_keys pragmas are set", () => {
   const dir = tmpDataDir("pragmas");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -151,7 +151,7 @@ test("foreign keys are enforced (event with unknown run_id is rejected)", () => 
   }
 });
 
-test("event data is validated against the §6 schema before insert", () => {
+test("event data is validated against the schema before insert", () => {
   const dir = tmpDataDir("validate");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -163,7 +163,7 @@ test("event data is validated against the §6 schema before insert", () => {
   }
 });
 
-test("the cursor contract (§4.3): ordered, page-limited, next_cursor semantics", () => {
+test("the cursor contract (): ordered, page-limited, next_cursor semantics", () => {
   const dir = tmpDataDir("cursor");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -185,7 +185,7 @@ test("the cursor contract (§4.3): ordered, page-limited, next_cursor semantics"
     expect(page2[0]!.id).toBe(501);
     expect(page2[4]!.id).toBe(505);
 
-    // the exact query text from §4.3 is what runs
+    // the exact query text from is what runs
     expect(CURSOR_SQL).toBe("SELECT * FROM events WHERE run_id = ? AND rowid > ? ORDER BY rowid LIMIT ?");
     expect(eventCount(db, "r1")).toBe(505);
     db.close();
@@ -194,7 +194,7 @@ test("the cursor contract (§4.3): ordered, page-limited, next_cursor semantics"
   }
 });
 
-test("sumEstimatedPhaseSpend splits reported vs estimated spend from spend events (§11.1)", () => {
+test("sumEstimatedPhaseSpend splits reported vs estimated spend from spend events", () => {
   const dir = tmpDataDir("estspend");
   try {
     const db = openDb(join(dir, "showrunner.db"));

@@ -26,14 +26,14 @@ const ofType = (events: FoldedEvent[], type: string) => events.filter((e) => e.t
 const asTool = (e: FoldedEvent) => e.data as { tool: string; tool_call_id: string; args: unknown; ok: boolean; result_snippet: string; duration_ms: number; truncated?: boolean };
 const asSpend = (e: FoldedEvent) => e.data as { phase: string; tokens_in: number; tokens_out: number; cache_read: number; cache_write: number; usd: number | null; estimated: boolean };
 
-// ── §7.1 raw capture ─────────────────────────────────────────────────────────
+// ── raw capture ─────────────────────────────────────────────────────────
 
 test("every raw line is appended verbatim BEFORE parsing, even non-JSON junk", () => {
   const { raw } = runStream(["this is not json", toolStart("c1", "bash", "ls"), "42"]);
   expect(raw).toEqual(["this is not json", toolStart("c1", "bash", "ls"), "42"]);
 });
 
-// ── §7.2 tool-call folding ───────────────────────────────────────────────────
+// ── tool-call folding ───────────────────────────────────────────────────
 
 test("start/end fold into exactly one tool_call with duration from receipt wall clock", () => {
   let now = 1_000;
@@ -145,7 +145,7 @@ test("a call that completes while another dies mid-way: only the open one is tru
   expect(asTool(calls[1]!).truncated).toBe(true);
 });
 
-// ── §7.4 agent_end / settle ──────────────────────────────────────────────────
+// ── agent_end / settle ──────────────────────────────────────────────────
 
 test("agent_end fires at stream close with ok=settled && clean exit", () => {
   const settled = runStream(['{"type":"agent_settled"}'], { exitCode: 0 });
@@ -172,7 +172,7 @@ test("a stream that dies before agent_settled folds agent_end ok=false with the 
   expect(a.exit).toBe(143);
 });
 
-// ── §7.3 usage folding ───────────────────────────────────────────────────────
+// ── usage folding ───────────────────────────────────────────────────────
 
 test("usage diffs cumulative snapshots into spend deltas per (phase, visit)", () => {
   const { events } = runStream([
@@ -218,17 +218,17 @@ test("usage deltas never go negative even when a snapshot regresses", () => {
   }
 });
 
-test("usd is null when pi reports no cost (roster fallback, §11.1)", () => {
+test("usd is null when pi reports no cost (roster fallback, )", () => {
   const { events } = runStream([messageUpdate(100, 10)]);
   const s = asSpend(ofType(events, "spend")[0]!);
   expect(s.usd).toBeNull();
   expect(s.estimated).toBe(false);
-  // tokens are still tracked even when usd is null (§11.1)
+  // tokens are still tracked even when usd is null
   expect(s.tokens_in).toBe(100);
   expect(s.tokens_out).toBe(10);
 });
 
-// ── §11.1 roster fallback (the estimate path) ───────────────────────────────
+// ── roster fallback (the estimate path) ───────────────────────────────
 
 function withRoster(roster: Record<string, { in_per_mtok: number; out_per_mtok: number }>, lines: string[]) {
   const events: FoldedEvent[] = [];
@@ -285,7 +285,7 @@ test("roster fallback: zero reported cost with no roster → usd null, not 0", (
   expect(s.estimated).toBe(false);
 });
 
-test("estimates are diffed per delta, not cumulative (§7.3)", () => {
+test("estimates are diffed per delta, not cumulative", () => {
   const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
     messageUpdate(1000, 200),
     messageUpdate(2500, 600), // delta: 1500 in, 400 out
@@ -299,7 +299,7 @@ test("estimates are diffed per delta, not cumulative (§7.3)", () => {
   expect(spends.every((s) => s.estimated)).toBe(true);
 });
 
-test("edge case (§7.3): cumulative usage stays zero during streaming, real cost at completion", () => {
+test("edge case (): cumulative usage stays zero during streaming, real cost at completion", () => {
   const { events } = withRoster({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }, [
     messageUpdate(0, 0, { cost: 0 }), // provider reports zero during streaming
     messageUpdate(0, 0),
@@ -345,7 +345,7 @@ test("roster fallback: cost reported then ABSENT (null) — no estimate either (
   expect(delta.estimated).toBe(false);
 });
 
-test("§19: message_update is delta-only (0.84.1+): folding keys off evt.usage, the authoritative snapshot lives on message_end", () => {
+test("message_update is delta-only (0.84.1+): folding keys off evt.usage, the authoritative snapshot lives on message_end", () => {
   // message_update events carry a DELTA-shaped message (no cumulative content,
   // no nested usage) plus a cumulative usage on the event itself; message_end
   // carries the authoritative cumulative usage on message.usage. The tracer
@@ -368,7 +368,7 @@ test("§19: message_update is delta-only (0.84.1+): folding keys off evt.usage, 
   expect(spends[2]!.usd).toBeCloseTo(0.0004);
 });
 
-test("§19: a delta-only message_update with no usage at all folds nothing (raw only, §7.4)", () => {
+test("a delta-only message_update with no usage at all folds nothing (raw only, )", () => {
   const { events } = runStream([
     '{"type":"message_update","message":{"id":"m1","role":"assistant","delta":{"text":"partial"}}}',
     toolStart("c1", "bash", "ls"),
@@ -381,7 +381,7 @@ test("§19: a delta-only message_update with no usage at all folds nothing (raw 
   expect(ofType(events, "tool_call")).toHaveLength(1);
 });
 
-test("machinery events are recorded raw but never folded (§7.4)", () => {
+test("machinery events are recorded raw but never folded", () => {
   const { events } = runStream(['{"type":"queue_update","queued":1}', '{"type":"compaction_start"}', toolStart("c1", "bash", "x"), toolEnd("c1", "bash", "y")]);
   expect(ofType(events, "tool_call")).toHaveLength(1);
   expect(events.some((e) => e.type === "spend")).toBe(false);

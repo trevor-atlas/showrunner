@@ -1,7 +1,7 @@
 import type { EventRow } from "../core/index.ts";
 
 /**
- * Renders a folded event row as a human-readable line (spec §6 naming rule:
+ * Renders a folded event row as a human-readable line (naming rule:
  * tool calls read aloud, e.g. "bash: ls -la src").
  */
 

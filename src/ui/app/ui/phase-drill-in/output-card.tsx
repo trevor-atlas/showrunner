@@ -5,8 +5,8 @@ import type { RawTail } from "../../../../daemon/client.ts";
 import { Card, Pre } from "./card.tsx";
 
 /**
- * OUTPUT card (§16.8) — the raw_output.jsonl tail from the daemon's
- * `?lines=` endpoint (§13.1): the record of truth (§10), rendered verbatim in
+ * OUTPUT card — the raw_output.jsonl tail from the daemon's
+ * `?lines=` endpoint: the record of truth, rendered verbatim in
  * a scrollable mono block — the drill-in's "TUI-like" view. `truncated` /
  * `line_count` come from the endpoint's tail semantics.
  */

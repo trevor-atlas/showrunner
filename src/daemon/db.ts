@@ -7,23 +7,23 @@ import {
 import type { EventRow, EventType } from "../core/index.ts";
 
 /**
- * The SQLite layer (spec §4). One single-writer connection owned by the daemon;
+ * The SQLite layer. One single-writer connection owned by the daemon;
  * readers (CLI, UI, tail) open separate read-only connections or go through the
  * daemon's HTTP API. Every event row is validated against the core event
- * schemas (§6) before insert - zod is the single source of truth.
+ * schemas before insert - zod is the single source of truth.
  */
 
 export const SCHEMA_VERSION = 2;
 
 /**
- * v1 — the seven tables (spec §4.2), plus the cursor index. `events.id` is
+ * v1 — the seven tables, plus the cursor index. `events.id` is
  * INTEGER PRIMARY KEY AUTOINCREMENT, which SQLite aliases to rowid — the
- * cursor contract (§4.3) is an index scan on (run_id, id).
+ * cursor contract is an index scan on (run_id, id).
  *
  * v2 (T03, issue #8) — additive only: every envelope attempt is now a row
  * (valid=0 for zod-rejected / unreadable envelopes), each attempt carries the
  * gate violations that rejected it and the correction message issued after it,
- * and gate overrides (§5.3) are audited in their own table — the original
+ * and gate overrides are audited in their own table — the original
  * gate_results row is KEPT (the audit trail is the point); this table is the
  * "who + why + when" marker hanging off it.
  */
@@ -120,7 +120,7 @@ CREATE TABLE gate_overrides (
 `,
 ];
 
-/** Open (creating if needed) and migrate the DB, with the §4.1 pragmas. */
+/** Open (creating if needed) and migrate the DB, with the pragmas. */
 export function openDb(dbPath: string): Database {
   const db = new Database(dbPath);
   db.exec("PRAGMA journal_mode = WAL;");
@@ -208,7 +208,7 @@ export interface GateResultRow {
   ran_at: string;
 }
 
-/** A gate result with its override marker (§5.3) — the drill-in badge: the
+/** A gate result with its override marker — the drill-in badge: the
  * original row is kept, so pass stays 0 and the override is a separate marker. */
 export interface GateResultWithOverride extends GateResultRow {
   overridden: number; // 1 when an override marker exists for this gate result
@@ -311,7 +311,7 @@ export function getPhaseById(db: Database, id: string): PhaseRow | null {
   return q<PhaseRow>(db, "SELECT * FROM phases WHERE id = ?").get(id) ?? null;
 }
 
-/** A phase of a run, looked up by its blueprint NAME (the §13 phase-scoped
+/** A phase of a run, looked up by its blueprint NAME (the phase-scoped
  * endpoints use the name — the URL-safe slug the UI carries). */
 export function getPhaseByName(db: Database, runId: string, name: string): PhaseRow | null {
   return q<PhaseRow>(db, "SELECT * FROM phases WHERE run_id = ? AND name = ? LIMIT 1").get(runId, name) ?? null;
@@ -326,8 +326,8 @@ export function sumRunSpend(db: Database, runId: string): number {
 }
 
 /**
- * Estimated (roster-derived) spend per phase, summed from the §6 #12 spend
- * events whose `estimated` flag is set (§11.1) — the show drill-in splits
+ * Estimated (roster-derived) spend per phase, summed from the spend
+ * events whose `estimated` flag is set — the show drill-in splits
  * reported vs estimated dollars. Reported spend never lands here: the flag is
  * set only when usd came from the local prices.json.
  */
@@ -346,7 +346,7 @@ export function sumEstimatedPhaseSpend(db: Database, runId: string): Map<string,
   return out;
 }
 
-// ── events (the cursor contract, §4.3) ───────────────────────────────────────
+// ── events (the cursor contract) ───────────────────────────────────────
 
 export interface NewEvent {
   run_id: string;
@@ -372,7 +372,7 @@ export function insertEvent(db: Database, e: NewEvent): number {
 }
 
 /**
- * The one cursor query that is the entire read transport (spec §2.3, §4.3):
+ * The one cursor query that is the entire read transport:
  *
  *   select * from events where run_id = ? and rowid > ? order by rowid limit 500;
  *
@@ -403,7 +403,7 @@ export function eventCount(db: Database, runId: string): number {
   return row?.n ?? 0;
 }
 
-/** Accepted/attempt envelope rows for a run — the §13 detail's envelope count. */
+/** Accepted/attempt envelope rows for a run — the detail's envelope count. */
 export function envelopeCount(db: Database, runId: string): number {
   const row = q<{ n: number }>(db, "SELECT COUNT(*) AS n FROM envelopes WHERE run_id = ?").get(runId);
   return row?.n ?? 0;
@@ -431,7 +431,7 @@ export function getEnvelope(db: Database, id: string): EnvelopeRow | null {
 
 export function listEnvelopes(db: Database, runId: string, phaseId?: string): EnvelopeRow[] {
   // per-attempt history order: visit, then attempt within the visit (the drill-in's
-  // "attempts: 1 ✗ … 2 ✓ …" list, §16.8)
+  // "attempts: 1 ✗ … 2 ✓ …" list)
   if (phaseId !== undefined) {
     return q<EnvelopeRow>(db, "SELECT * FROM envelopes WHERE run_id = ? AND phase_id = ? ORDER BY visit, attempt").all(runId, phaseId);
   }
@@ -451,7 +451,7 @@ export function getGateResult(db: Database, id: string): GateResultRow | null {
   return q<GateResultRow>(db, "SELECT * FROM gate_results WHERE id = ?").get(id) ?? null;
 }
 
-/** Every gate result for a run (or phase), with its override marker (§5.3). The
+/** Every gate result for a run (or phase), with its override marker. The
  * original row is KEPT on override: pass stays 0 and overridden=1 carries the
  * audit badge. */
 export function listGateResults(db: Database, runId: string, phaseId?: string): GateResultWithOverride[] {
@@ -471,7 +471,7 @@ export function listGateResults(db: Database, runId: string, phaseId?: string): 
   return q<GateResultWithOverride>(db, sql).all(...bindings);
 }
 
-// ── gate overrides (§5.3) ────────────────────────────────────────────────────
+// ── gate overrides ────────────────────────────────────────────────────
 
 export function insertGateOverride(db: Database, o: GateOverrideRow): void {
   q(
@@ -512,7 +512,7 @@ export function listAgentSessions(db: Database, runId: string): AgentSessionRow[
   return q<AgentSessionRow>(db, "SELECT * FROM agent_sessions WHERE run_id = ? ORDER BY started_at").all(runId);
 }
 
-// ── processes (id -> pid; how a stuck run is found, §8.3) ────────────────────
+// ── processes (id -> pid; how a stuck run is found) ────────────────────
 
 export function insertProcess(db: Database, p: ProcessRow): void {
   q(db, "INSERT INTO processes (id, pid, kind, started_at) VALUES (?, ?, ?, ?)").run(
@@ -529,7 +529,7 @@ export function listProcesses(db: Database): ProcessRow[] {
 }
 
 /** Every live child recorded for one run (agent-session rows plus any run-kind
- * rows) — the §8.3 kill target set for fail / daemon-restart recovery. */
+ * rows) — the kill target set for fail / daemon-restart recovery. */
 export function listRunProcesses(db: Database, runId: string): ProcessRow[] {
   return q<ProcessRow>(
     db,

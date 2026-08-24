@@ -8,7 +8,7 @@ import { lintClean, testsPass } from "../gates/index.ts";
  * and a bounded fix loop. `build` must pass the test suite and a clean
  * typecheck; when its correction budget runs out it routes to `fix`, and
  * `fix` (same gates) routes back to `build` — so the loop always terminates
- * or pauses via the visit guard (spec §5.2 step 3).
+ * or pauses via the visit guard.
  *
  * Replace-this: the test/lint commands and the loop wiring are the point of
  * this file.

@@ -1,6 +1,6 @@
 /**
  * Unit tests for the raw pi JSONL line classifier (raw-lines.ts) — the single
- * owner of the stream's `type` vocabulary (spec §7.4). Type-string
+ * owner of the stream's `type` vocabulary. Type-string
  * classification only: payload validation stays in the tracer handlers.
  */
 import { describe, expect, it } from "bun:test";
@@ -17,7 +17,7 @@ describe("isSettledLine", () => {
     expect(isSettledLine('{"type":"agent_settled","sessionId":"x","messageCount":4}')).toBe(true);
   });
 
-  it("never settles on agent_end, with or without willRetry (§7.4)", () => {
+  it("never settles on agent_end, with or without willRetry", () => {
     expect(isSettledLine('{"type": "agent_end", "willRetry": false}')).toBe(false);
     expect(isSettledLine('{"type": "agent_end", "willRetry": true}')).toBe(false);
     expect(isSettledLine('{"type": "agent_end"}')).toBe(false);

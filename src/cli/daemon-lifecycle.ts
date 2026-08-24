@@ -12,7 +12,7 @@ import { DaemonClient } from "../daemon/client.ts";
 /**
  * Daemon lifecycle for the CLI: if no daemon is listening on HTTP, spawn one
  * detached and wait for it to come up; `stop` signals it via the pidfile.
- * The daemon is the long-lived owner of execution (§2.1) - every CLI command
+ * The daemon is the long-lived owner of execution - every CLI command
  * lands on the same TCP port.
  *
  * The daemon binds 127.0.0.1:<port> and writes a two-line pidfile

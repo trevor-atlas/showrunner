@@ -6,13 +6,13 @@ import type { PhaseStatus, RunStatus } from "../core/run.ts";
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride, PhaseRow, RunRow } from "./db.ts";
 
 /**
- * The typed HTTP client for the daemon's §13 API — ships for the CLI and the
+ * The typed HTTP client for the daemon's API — ships for the CLI and the
  * UI (the UI is a server-side client: remix actions fetch this API; the
- * browser never talks to the daemon directly, §16). One method per §13
+ * browser never talks to the daemon directly). One method per
  * endpoint, typed request/response.
  *
  * Transport: node:http over TCP only — the daemon's merged web server serves
- * the §13 API under `/api/*` on ONE listener (default 127.0.0.1:44100, port
+ * the API under `/api/*` on ONE listener (default 127.0.0.1:44100, port
  * overridable via SHOWRUNNER_PORT). The unix socket is gone; `baseUrl`
  * defaults to http://127.0.0.1:${SHOWRUNNER_PORT ?? 44100}.
  */
@@ -33,11 +33,11 @@ export function isDaemonDown(err: unknown): boolean {
   return code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EADDRNOTAVAIL";
 }
 
-// ── §13 response shapes (the wire contract the server honors) ────────────────
+// ── response shapes (the wire contract the server honors) ────────────────
 
 export interface RunListItem extends RunRow {
   spend_usd: number;
-  /** §13.1: 1-based spawn-queue position for pool-queued runs; null when not queued */
+  /** 1-based spawn-queue position for pool-queued runs; null when not queued */
   queue_position: number | null;
   phase_counts: Record<string, number>;
 }
@@ -58,7 +58,7 @@ export interface RunDetail {
 
 export interface EventsPage {
   events: EventRow[];
-  /** §4.3: the last rowid returned (or the requested cursor when the page is
+  /** the last rowid returned (or the requested cursor when the page is
    * empty) — pass this as `cursor` on the next poll; the query is idempotent */
   next_cursor: number;
 }
@@ -75,7 +75,7 @@ export interface PhaseGates {
   run_id: string;
   phase: string;
   phase_id: string;
-  /** gate results incl. the §5.3 override badge (who + why + when) */
+  /** gate results incl. the override badge (who + why + when) */
   gates: GateResultWithOverride[];
 }
 
@@ -200,7 +200,7 @@ export class DaemonClient {
     this.baseUrl = base.replace(/\/+$/, "");
   }
 
-  // ── the one low-level verb; every §13 method is a typed wrapper ───────────
+  // ── the one low-level verb; every method is a typed wrapper ───────────
 
   private request(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
     return new Promise((resolve, reject) => {
@@ -243,7 +243,7 @@ export class DaemonClient {
     return res as T;
   }
 
-  // ── §13.1 read endpoints ──────────────────────────────────────────────────
+  // ── read endpoints ──────────────────────────────────────────────────
 
   /** GET /api/health — daemon up probe. */
   health(): Promise<{ ok: boolean }> {
@@ -255,7 +255,7 @@ export class DaemonClient {
     return this.typed("GET", "/api/status");
   }
 
-  /** GET /api/runs — the run list, each with queue position (§13.1). */
+  /** GET /api/runs — the run list, each with queue position. */
   listRuns(): Promise<{ runs: RunListItem[] }> {
     return this.typed("GET", "/api/runs");
   }
@@ -266,7 +266,7 @@ export class DaemonClient {
   }
 
   /**
-   * GET /api/runs/:id/events?cursor=&limit= — the §4.3 cursor query. `cursor`
+   * GET /api/runs/:id/events?cursor=&limit= — the cursor query. `cursor`
    * is the last rowid seen (0 for the start); `limit` defaults to 500 (capped
    * at 500). The response's next_cursor is the cursor for the next poll.
    */
@@ -305,14 +305,14 @@ export class DaemonClient {
     return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/raw${q}`);
   }
 
-  /** GET /api/runs/:id/pause — the pause viewer (T04; not in §13's table). */
+  /** GET /api/runs/:id/pause — the pause viewer (T04; not in the API table). */
   pause(runId: string): Promise<PauseView> {
     return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/pause`);
   }
 
-  // ── §13.2 control endpoints ───────────────────────────────────────────────
+  // ── control endpoints ───────────────────────────────────────────────
 
-  /** POST /api/runs — submit a blueprint module (§13.3) or an observation fixture. */
+  /** POST /api/runs — submit a blueprint module or an observation fixture. */
   submitRun(body: SubmitRunBody): Promise<SubmitRunResult> {
     return this.typed("POST", "/api/runs", body);
   }
@@ -322,7 +322,7 @@ export class DaemonClient {
     return this.typed("POST", `/api/runs/${encodeURIComponent(runId)}/resume`, body ?? {});
   }
 
-  /** POST /api/runs/:id/fail — fail the run and kill its children (§8.3). */
+  /** POST /api/runs/:id/fail — fail the run and kill its children. */
   failRun(runId: string, body?: { by?: string }): Promise<ControlResult> {
     return this.typed("POST", `/api/runs/${encodeURIComponent(runId)}/fail`, body ?? {});
   }
@@ -332,7 +332,7 @@ export class DaemonClient {
     return this.typed("POST", `/api/sessions/${encodeURIComponent(piSessionId)}/steer`, { message, ...(by ? { by } : {}) });
   }
 
-  /** POST /api/runs/:id/steer — run-keyed steer (T04; not in §13's table). */
+  /** POST /api/runs/:id/steer — run-keyed steer (T04; not in the API table). */
   steerRun(runId: string, message: string, by?: string): Promise<ControlResult> {
     return this.typed("POST", `/api/runs/${encodeURIComponent(runId)}/steer`, { message, ...(by ? { by } : {}) });
   }

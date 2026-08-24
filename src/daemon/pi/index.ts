@@ -1,9 +1,9 @@
 /**
- * @showrunner/daemon/src/pi — the real pi session driver (T02, spec §8).
+ * @showrunner/daemon/src/pi — the real pi session driver (T02, spec).
  *
  * Spawns `pi --mode rpc --session-id <id> --approve` behind the SessionDriver
- * seam: RPC command writer (id-matched responses, §8.4), LF-only stdout reader
- * (§7.1), bounded stderr capture (§8.3), and lifecycle (close stdin to reap,
+ * seam: RPC command writer (id-matched responses), LF-only stdout reader
+ *, bounded stderr capture, and lifecycle (close stdin to reap,
  * SIGTERM → SIGKILL after 1s). The scripted FakePi stand-in (T01b) implements
  * the same interface so the run loop is byte-compatible downstream.
  */

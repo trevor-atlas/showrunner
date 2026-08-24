@@ -7,7 +7,7 @@ import { setWebState } from "./web-state.ts";
 
 /**
  * The daemon's merged web server: ONE node:http listener serving BOTH the
- * §13 JSON API (under `/api/*`, dispatched straight to the api core in
+ * JSON API (under `/api/*`, dispatched straight to the api core in
  * src/daemon/server.ts) AND the remix@next dashboard (everything else, via
  * the lazily-imported router).
  *
@@ -51,7 +51,7 @@ function getRouter(): Promise<RouterModule> {
 
 export function createWebServer(state: ApiState): Server {
   // register the daemon state for in-process consumers (the UI actions call
-  // the §13 api core against it — no socket round trip, Phase 2 / T4)
+  // the api core against it — no socket round trip, Phase 2 / T4)
   setWebState(state);
   const listener = createRequestListener(async (request) => {
     if (isApiPath(request.url)) {

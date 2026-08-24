@@ -5,11 +5,11 @@ import type { Issue } from "remix/data-schema";
 import type { ControlError } from "../../ui/pause-menu.tsx";
 
 /**
- * The control verbs' data-schema validation (§16.12 — the UI does not import
+ * The control verbs' data-schema validation (the UI does not import
  * zod; `remix/data-schema` is the framework's own validator) and the
  * ControlError builders the controllers share.
  *
- * Validation contract (§16.9): steer `message` required (non-blank); override
+ * Validation contract: steer `message` required (non-blank); override
  * `gate` + `reason` both required (non-blank); the confirm forms (restart /
  * fail / approve) and resume carry NO data — the confirm IS the action, so
  * they need no schema. Failures re-render the page with the errors inline on

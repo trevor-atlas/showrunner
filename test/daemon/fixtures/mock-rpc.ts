@@ -1,12 +1,12 @@
 /**
  * A scripted pi-like RPC process for daemon unit tests — no real pi, no tokens.
  *
- * Mirrors the verified §8 wire contract: reads LF JSONL commands on stdin,
+ * Mirrors the verified wire contract: reads LF JSONL commands on stdin,
  * answers each with an id-matched `{"id":<req>,"type":"response",...}` on
  * stdout, and for `prompt` commands streams a scripted turn of agent events
  * (ending in agent_settled). stdin EOF exits 0 (the daemon reaps by closing
- * stdin, §8.3); SIGTERM exits 143 unless MOCK_RPC_IGNORE_SIGTERM=1 (pi's own
- * signal handlers, §8.1).
+ * stdin); SIGTERM exits 143 unless MOCK_RPC_IGNORE_SIGTERM=1 (pi's own
+ * signal handlers).
  *
  * Env:
  *   MOCK_RPC_EVENTS           path to a JSONL file of agent events to stream per prompt
@@ -15,7 +15,7 @@
  *   MOCK_RPC_EVENT_DELAY_MS   delay between streamed events (default 1)
  *   MOCK_RPC_CHUNKED=1        write every stdout line in two halves (framing test)
  *   MOCK_RPC_STDERR           diagnostic line(s) to write to stderr, "|"-separated
- *                             chunks written as separate writes (§8.3 capture/cap)
+ *                             chunks written as separate writes (capture/cap)
  *   MOCK_RPC_EXIT_CODE        exit code on stdin close (default 0)
  *   MOCK_RPC_IGNORE_SIGTERM   do not exit on SIGTERM (stop() SIGKILL test)
  *   MOCK_RPC_DIE_AFTER_TURN   exit right after the first prompt's events (crash tests)
@@ -68,7 +68,7 @@ if (eventsPath) {
 // All stdout output is serialized per line, and process.exit() waits until
 // every queued write has flushed — otherwise chunked (or backpressured) lines
 // get dropped or interleaved mid-write. Chunked mode splits ONE line into two
-// writes (a real mid-line chunk boundary for the §7.1 framing test) while
+// writes (a real mid-line chunk boundary for the framing test) while
 // keeping each line's bytes contiguous in the stream.
 const lineQueue: string[] = [];
 let lineWriting = false;
@@ -152,7 +152,7 @@ if (stderrLine) {
   pumpStderr();
 }
 
-// ── signals (pi's convention: SIGTERM → 143, §8.1) ──────────────────────────
+// ── signals (pi's convention: SIGTERM → 143) ──────────────────────────
 
 process.on("SIGTERM", () => {
   if (!ignoreSigterm) requestExit(143);
@@ -161,7 +161,7 @@ process.on("SIGHUP", () => {
   if (!ignoreSigterm) requestExit(129);
 });
 
-// ── stdin: LF-only command framing (mirrors the stdout contract, §7.1) ──────
+// ── stdin: LF-only command framing (mirrors the stdout contract) ──────
 
 const queue: Record<string, unknown>[] = [];
 let processing = false;
@@ -177,7 +177,7 @@ async function drain(): Promise<void> {
         await new Promise((r) => setTimeout(r, ackDelayMs));
       }
       if (cmd.type === "prompt") {
-        // pi acks prompt at preflight success, then the turn streams (§8.4)
+        // pi acks prompt at preflight success, then the turn streams
         if (oneWrite) {
           // G1: ack + the ENTIRE turn land in one write — the caller sees the
           // settle before it can register a waiter (without the driver's latch

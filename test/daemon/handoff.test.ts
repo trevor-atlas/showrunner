@@ -35,12 +35,12 @@ import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
 import handoffFixture from "./fixtures/handoff/handoff-blueprint.ts";
 
 /**
- * The §9 context & handoff filesystem protocol (T05) — proven end to end on
- * FakePi only (spec §17): no pi binary, no tokens. The round-trip fixture
+ * The context & handoff filesystem protocol (T05) — proven end to end on
+ * FakePi only: no pi binary, no tokens. The round-trip fixture
  * (handoff-blueprint.ts) exercises every branch: the predecessor's envelope +
- * artifacts land in the next phase's inputs (§9.3), context entries resolve
- * literal / path / module-dir-fallback / §19 collision, the raw record lands
- * verbatim (§10), agent_map.json tracks visits, and the pi v3 session tree
+ * artifacts land in the next phase's inputs, context entries resolve
+ * literal / path / module-dir-fallback / collision, the raw record lands
+ * verbatim, agent_map.json tracks visits, and the pi v3 session tree
  * appears under an overridden session dir without touching ~/.pi.
  */
 
@@ -103,7 +103,7 @@ function closeEnv(env: { dir: string; db: { close(): void }; cwd: string; runDir
 
 // ── the round trip: envelope + artifacts materialize into the next phase ─────
 
-test("§9 round-trip on FakePi: plan's accepted envelope + plan.md land in build's inputs", async () => {
+test("round-trip on FakePi: plan's accepted envelope + plan.md land in build's inputs", async () => {
   const env = openEnv("handoff-roundtrip");
   try {
     const modulePath = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "handoff", "handoff-blueprint.ts");
@@ -112,7 +112,7 @@ test("§9 round-trip on FakePi: plan's accepted envelope + plan.md land in build
     expect(result).toEqual({ status: "success", needs_review: false });
 
     // the run workspace lives under the RUN RECORD DIR ({data_dir}/runs/<run_id>),
-    // never the run cwd — the checkout stays clean (§9.1)
+    // never the run cwd — the checkout stays clean
     const runDir = runDirFor(env.dir, run.run_id);
     expect(existsSync(join(env.cwd, "context_handoff"))).toBe(false);
 
@@ -122,7 +122,7 @@ test("§9 round-trip on FakePi: plan's accepted envelope + plan.md land in build
     ) as { summary: string; quality: number };
     expect(handoffEnvelope).toMatchObject({ summary: "plan complete", quality: 8 });
 
-    // §9.3 zero-friction: the artifact plan listed (plan.md) is in build's inputs
+    // zero-friction: the artifact plan listed (plan.md) is in build's inputs
     expect(readFileSync(join(inputsDirFor(runDir, "build"), "plan.md"), "utf8")).toContain(
       "1. Scaffold the handoff module.",
     );
@@ -139,12 +139,12 @@ test("§9 round-trip on FakePi: plan's accepted envelope + plan.md land in build
   }
 });
 
-// ── §9.2 context resolution: literal / path / collision / fallback / no globs ─
+// ── context resolution: literal / path / collision / fallback / no globs ─
 
-test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback, and §19 collision entries in order", async () => {
+test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback, and collision entries in order", async () => {
   const env = openEnv("handoff-context");
   try {
-    // cwd files for the cwd-resolve and collision branches (§9.2, §19)
+    // cwd files for the cwd-resolve and collision branches
     mkdirSync(join(env.cwd, "docs"), { recursive: true });
     writeFileSync(join(env.cwd, "docs", "context.md"), "CWD FILE: inlined from the run cwd.\n");
     writeFileSync(join(env.cwd, "quality.md"), "COLLISION: this file shadows the literal.\n");
@@ -157,11 +157,11 @@ test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback
     );
     const moduleNotes = readFileSync(join(moduleDir, "agent-notes.md"), "utf8");
 
-    // each branch resolves exactly as §9.2/§19 prescribes, in agent order
+    // each branch resolves exactly as prescribes, in agent order
     expect(prompt).toContain("Context literal: the plan must name the module, the slices, and the done criteria.");
     expect(prompt).toContain("CWD FILE: inlined from the run cwd."); // cwd file → inlined
     expect(prompt).toContain(moduleNotes); // module-dir fallback → inlined verbatim
-    expect(prompt).toContain("COLLISION: this file shadows the literal."); // §19: file beats prose
+    expect(prompt).toContain("COLLISION: this file shadows the literal."); // file beats prose
     expect(prompt.indexOf("Context literal")).toBeLessThan(prompt.indexOf("CWD FILE:"));
     expect(prompt.indexOf("CWD FILE:")).toBeLessThan(prompt.indexOf("fallback-branch proof"));
     expect(prompt.indexOf("fallback-branch proof")).toBeLessThan(prompt.indexOf("COLLISION:"));
@@ -184,11 +184,11 @@ test("composePrompt [Context] renders literal, inlined-file, module-dir-fallback
   }
 });
 
-test("composePrompt inlines the materialized handoff inputs into [Context], naming each path (§8.2/§9.3)", () => {
+test("composePrompt inlines the materialized handoff inputs into [Context], naming each path", () => {
   const env = openEnv("handoff-prompt-inputs");
   try {
     // mirror the run loop order: the predecessor's accepted envelope + artifacts
-    // are materialized into <runDir>/build/inputs/ (§9.3) BEFORE the prompt is composed
+    // are materialized into <runDir>/build/inputs/ BEFORE the prompt is composed
     const planOutputs = outputsDirFor(env.runDir, "plan");
     mkdirSync(join(planOutputs, "sub"), { recursive: true });
     writeFileSync(join(planOutputs, "plan.md"), "# Plan\n1. Scaffold the handoff module.\n");
@@ -245,7 +245,7 @@ test("resolveContext: exact-path branches — absolute, cwd, module-dir, collisi
       "plain prose", // literal
       "a/notes.txt", // cwd resolve
       "fallback.txt", // module-dir fallback
-      "notes.txt", // §19 collision: a literal that IS a real path → file
+      "notes.txt", // collision: a literal that IS a real path → file
       join(env.cwd, "a", "notes.txt"), // absolute path
       "*.md", // no glob semantics: no file named "*.md" → literal
     ]);
@@ -262,7 +262,7 @@ test("resolveContext: exact-path branches — absolute, cwd, module-dir, collisi
   }
 });
 
-// ── §10 raw record: envelope.json verbatim + agent_map.json ──────────────────
+// ── raw record: envelope.json verbatim + agent_map.json ──────────────────
 
 test("raw record: runDir/envelope.json is the last accepted envelope verbatim; agent_map.json maps phases to sessions", async () => {
   const env = openEnv("handoff-raw");
@@ -281,7 +281,7 @@ test("raw record: runDir/envelope.json is the last accepted envelope verbatim; a
       ) + "\n";
     expect(readFileSync(join(runDir, "envelope.json"), "utf8")).toBe(expectedRaw);
 
-    // agent_map: one entry per phase, derived ids per §8.1
+    // agent_map: one entry per phase, derived ids per
     const map = readAgentMap(runDir);
     expect(Object.keys(map).sort()).toEqual(["build", "plan"]);
     expect(map.plan).toMatchObject({ visit: 1, model: "fake-pi" });
@@ -383,7 +383,7 @@ test("materializeHandoff: nested artifacts keep their path; missing + traversal 
 
 // ── the pi v3 session tree (hermetic, no ~/.pi pollution) ────────────────────
 
-test("sessionDirNameForCwd matches pi's verified sanitization (§8.1 v3 layout)", () => {
+test("sessionDirNameForCwd matches pi's verified sanitization (v3 layout)", () => {
   expect(sessionDirNameForCwd("/Users/me/my repo/proj")).toBe("--Users-me-my repo-proj--");
   expect(sessionDirNameForCwd("/a/b:c")).toBe("--a-b-c--");
   expect(sessionDirNameForCwd("/a/b\\c")).toBe("--a-b-c--");

@@ -63,7 +63,7 @@ async function waitForDone(dataDir: string, runId: string, baseUrl: string, trie
   throw new Error(`run ${runId} did not reach a terminal state in time`);
 }
 
-test("the daemon API serves health, submit, runs, detail, events cursor, raw (§13)", async () => {
+test("the daemon API serves health, submit, runs, detail, events cursor, raw", async () => {
   const dir = tmpDataDir("server");
   let daemon: DaemonHandle | null = null;
   try {
@@ -139,7 +139,7 @@ test("the daemon API serves health, submit, runs, detail, events cursor, raw (§
   }
 });
 
-test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)", async () => {
+test("POST /runs with a blueprint module drives it to completion (, T01b)", async () => {
   const dir = tmpDataDir("server-blueprint");
   // F3: the run's cwd is a scratch dir — context_handoff/ must never land in
   // the repo root when a test forgets to pass one
@@ -180,7 +180,7 @@ test("POST /runs with a blueprint module drives it to completion (§13.3, T01b)"
     const list = (runs.json as { runs: { phase_counts: Record<string, number> }[] }).runs;
     expect(list[0]!.phase_counts).toMatchObject({ total: 2, success: 2 });
 
-    // §13.3 snapshot is on disk
+    // snapshot is on disk
     expect(existsSync(join(dir, "runs", run_id, "blueprint.json"))).toBe(true);
 
     // F3: the run workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>),

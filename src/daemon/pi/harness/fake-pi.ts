@@ -1,5 +1,5 @@
 /**
- * FakePi (spec §17) — the scripted pi stand-in.
+ * FakePi — the scripted pi stand-in.
  *
  * Replays a fixture JSONL file to stdout, one line per write, honoring stdout
  * backpressure (pi awaits stdout backpressure before processing further

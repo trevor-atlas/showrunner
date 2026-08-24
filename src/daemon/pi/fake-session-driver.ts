@@ -11,12 +11,12 @@ import type { SessionDriver } from "./session-driver.ts";
 import type { RpcCommand, RpcResponse } from "./rpc-types.ts";
 
 export interface FakeSessionDriverOptions {
-  /** create-or-continue session id (§8.1) — same shape pi expects */
+  /** create-or-continue session id — same shape pi expects */
   sessionId: string;
   /** spawn cwd */
   cwd: string;
   /**
-   * The scripted session (spec §17) — written to `sessionFile`, which
+   * The scripted session — written to `sessionFile`, which
    * fake-session.ts reads. The run record stays self-contained in the run dir.
    */
   script: unknown;
@@ -28,14 +28,14 @@ export interface FakeSessionDriverOptions {
   delayMs?: number;
   /** extra env for the child (merged over process.env) */
   env?: Record<string, string>;
-  /** every raw stdout line (LF-split, §7.1), before parsing — feeds the tracer */
+  /** every raw stdout line (LF-split), before parsing — feeds the tracer */
   onLine?: (line: string, final?: boolean) => void;
-  /** stderr capture cap (§8.3) */
+  /** stderr capture cap */
   stderrLimit?: number;
 }
 
 /**
- * The scripted FakePi session driver (spec §17, T01b) — the deterministic,
+ * The scripted FakePi session driver (T01b) — the deterministic,
  * no-pi, no-token stand-in behind the same SessionDriver seam. It spawns
  * src/daemon/pi/harness/fake-session.ts (the exact process T01b's loop spawned)
  * with the exact same arguments and env, so downstream behavior is
@@ -45,7 +45,7 @@ export interface FakeSessionDriverOptions {
  * The fake does not speak RPC acks (fake-session.ts never writes responses),
  * so `send` is fire-and-forget: it writes the command line and resolves with
  * a synthetic `success: true` — matching the T01b loop's usage of a plain
- * stdin write. The settle signal is what actually gates the loop (§8.3).
+ * stdin write. The settle signal is what actually gates the loop.
  */
 export class FakeSessionDriver implements SessionDriver {
   private readonly child: ChildProcess;
@@ -103,7 +103,7 @@ export class FakeSessionDriver implements SessionDriver {
     );
     this.child = child;
 
-    // stderr: same bounded capture convention as the real driver (§8.3)
+    // stderr: same bounded capture convention as the real driver
     child.stderr?.on("data", (chunk: Buffer) => {
       this.stderrBytes += chunk.length;
       if (this.stderrBytes <= this.stderrLimit) this.stderrChunks.push(chunk.toString("utf8"));
@@ -188,7 +188,7 @@ export class FakeSessionDriver implements SessionDriver {
   }
 
   /**
-   * stdin EOF → the process reaps itself (exit 0, §8.3); resolves when gone.
+   * stdin EOF → the process reaps itself (exit 0); resolves when gone.
    * HARDENED (capstone FINDING 3): if the child ever ignores stdin EOF and
    * lingers past a 1s grace period, escalate SIGTERM → SIGKILL after 1s (the
    * same semantics as stop()) — a long-lived daemon must never accumulate

@@ -20,13 +20,13 @@ import { StatusPill, isRunStatus, type RunStatus } from "../../ui/status-pill.ts
 import { Document } from "../document.tsx";
 
 /**
- * The run detail page (spec §16.7 + R4/R5/R6): header + control bar +
- * timeline chart + detail panel + live feed. Server-rendered from the §13
+ * The run detail page (R4/R5/R6): header + control bar +
+ * timeline chart + detail panel + live feed. Server-rendered from the
  * detail endpoint, the R3 timeline view (per-visit segments), and the FULL
- * event history (§4.3 — the cursor query IS the read transport, so a paused/
+ * event history (the cursor query IS the read transport, so a paused/
  * completed run renders its whole history here); the browser then polls the
  * events.json + timeline.json proxies and the hydrated live region re-renders
- * the timeline's live edges + the feed (§16.5, R6 — the timeline snapshot is
+ * the timeline's live edges + the feed (R6 — the timeline snapshot is
  * refetched each tick so open bubbles grow and new segments appear).
  *
  * R5 selection: the initial selection (the ?phase= deep link, validated, or
@@ -34,19 +34,19 @@ import { Document } from "../document.tsx";
  * are server-rendered; later selections fetch through the proxies.
  *
  * T10b — the control surface: the control bar mounts the resume HEADER
- * action (only when the run is `interrupted`, §16.9) and the pause menu
- * (§16.9) when the run is `paused`. Both post to remix POST routes that call
- * the §13.2 daemon endpoints server-side; the browser never mutates daemon
- * state itself (no optimistic mutation, §16.9).
+ * action (only when the run is `interrupted`) and the pause menu
+ * when the run is `paused`. Both post to remix POST routes that call
+ * the daemon endpoints server-side; the browser never mutates daemon
+ * state itself (no optimistic mutation).
  *
- * A missing run renders the 404 page with a back-link (§16.10). The UI and
+ * A missing run renders the 404 page with a back-link. The UI and
  * the daemon share one process (merged web server), so there is no "daemon
  * down" shell state.
  */
 
 export interface RunDetailPageProps {
   runId: string;
-  /** the §13 detail payload for the run */
+  /** the detail payload for the run */
   detail: RunDetail;
   /** the R3 timeline view — the chart + panel render from it */
   timeline: TimelineView;
@@ -58,9 +58,9 @@ export interface RunDetailPageProps {
   initialGates: GateResultWithOverride[];
   /** the full event history at load (initial feed + initial cursor) */
   events: FeedEvent[];
-  /** the last event rowid — the poll loop starts from here (§4.3) */
+  /** the last event rowid — the poll loop starts from here */
   cursor: number;
-  /** the §13 pause viewer — the menu renders from it when the run is paused */
+  /** the pause viewer — the menu renders from it when the run is paused */
   pause: PauseView | null;
   /** the FAILED gate names on the paused phase — the override select options */
   overrideGates: string[];
@@ -102,18 +102,18 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       // R6: the live region refetches the timeline each poll tick through the
       // timeline.json proxy (new segments + open bubbles growing to now)
       timelineHref: routes.runs.timeline.href({ runId }),
-      // R6 pause surfacing: the §13 pause viewer's reason (fetched above when
+      // R6 pause surfacing: the pause viewer's reason (fetched above when
       // the run is paused at SSR) — the panel header renders it; mid-poll
       // transitions ride the run_status → paused event's reason instead
       pauseReason: pause?.reason ?? null,
     };
 
-    // §16.9: resume is a HEADER action for INTERRUPTED runs only — never part
+    // resume is a HEADER action for INTERRUPTED runs only — never part
     // of the pause menu. A pending resume error keeps the control rendered so
     // the 409/validation failure stays visible on the form.
     const showResume = run.status === "interrupted" || controlError?.verb === "resume";
-    // §16.9: the pause menu renders when the run is paused (the pause state +
-    // kind come from the §13 pause viewer).
+    // the pause menu renders when the run is paused (the pause state +
+    // kind come from the pause viewer).
     const showMenu = run.status === "paused" && pause !== null && pause.paused;
 
     return (
@@ -121,8 +121,8 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
         <main mix={pageStyle}>
           <PageHeader runId={runId} blueprint={run.blueprint} status={pillStatus} />
 
-          {/* §16.7 control bar — status, cwd, started/ended, spend, needs
-          review badge, and the §16.9 resume HEADER action (interrupted runs) */}
+          {/* control bar — status, cwd, started/ended, spend, needs
+          review badge, and the resume HEADER action (interrupted runs) */}
           <div data-control-bar mix={controlBarStyle}>
             <span data-meta="status">{pillStatus}</span>
             <span data-meta="cwd" mix={monoStyle}>
@@ -202,7 +202,7 @@ function PageHeader(handle: Handle<{ runId: string; blueprint: string; status: R
   };
 }
 
-/** §16.10 missing run — 404 with a back-link to the run list. */
+/** missing run — 404 with a back-link to the run list. */
 export function NotFoundPage(handle: Handle<{ runId: string }>) {
   return () => (
     <Document title={`Showrunner · not found`}>

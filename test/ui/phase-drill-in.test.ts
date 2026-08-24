@@ -1,15 +1,15 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 /**
- * T11 acceptance e2e: the phase drill-in page (§16.8, issue #16) rendered from
+ * T11 acceptance e2e: the phase drill-in page (issue #16) rendered from
  * REAL daemon data — server-side only, driven through the app router with
  * `router.fetch(...)` (the same hermetic pattern as T09's run-list suite).
  *
  * The run is a REAL blueprint run on FakePi: build phase produces an invalid
  * attempt → a gate-violations attempt → a correction → an accepted attempt;
  * verify phase exhausts its budget (every attempt fails the gate) → the run
- * PAUSES → the test overrides the failed gate through the §13.2 HTTP verb
+ * PAUSES → the test overrides the failed gate through the HTTP verb
  * (audited: who + why) → the drill-in shows the override badge. The blueprint
- * module is MUTATED after submit to prove the CONFIG card renders the §13.3
+ * module is MUTATED after submit to prove the CONFIG card renders the
  * snapshot (what actually ran), never the live module.
  *
  * Hermetic: every test uses its own mkdtemp data dir + cwd, writes its own
@@ -70,7 +70,7 @@ describe("phase drill-in (T11)", () => {
     const cwd = tmpDir("drillin-cwd");
     // the run's cwd carries the context file the blueprint references
     writeFileSync(join(cwd, "README.md"), "demo repo rules readme");
-    // the §11.1 roster — verify's cost-free usage becomes an ESTIMATE
+    // the roster — verify's cost-free usage becomes an ESTIMATE
     writeFileSync(join(dir, "prices.json"), JSON.stringify({ "fake-pi": { in_per_mtok: 2, out_per_mtok: 8 } }));
     const restore = setDataDir(dir);
     const originalModule = readFileSync(BLUEPRINT, "utf8");
@@ -101,7 +101,7 @@ describe("phase drill-in (T11)", () => {
       });
 
       // the LIVE MODULE is mutated after submit — the CONFIG card must still
-      // show the §13.3 snapshot (restored in finally)
+      // show the snapshot (restored in finally)
       writeFileSync(BLUEPRINT, originalModule.replace(ORIGINAL_PROMPT_LINE, MUTATION_MARKER));
 
       // ── build phase: the full attempt history + snapshot config ──────────
@@ -137,7 +137,7 @@ describe("phase drill-in (T11)", () => {
       expect(html).toContain("✓ valid, gates passed");
       expect(html).toContain("quality 4 below 7");
       expect(html).toContain("→ no correction followed");
-      // the envelope's source is the runDir/phase/outputs path (§9.1 workspace)
+      // the envelope's source is the runDir/phase/outputs path
       expect(html).toContain(join(dir, "runs", runId, "build", "outputs", "envelope.json"));
       expect(html).toContain("view JSON");
       expect(html).toContain('"quality": 8'); // accepted envelope JSON viewable
@@ -178,13 +178,13 @@ describe("phase drill-in (T11)", () => {
       expect(vhtml).toContain("overridden");
       expect(vhtml).toContain("by reviewer-alice");
       expect(vhtml).toContain("manual check passed");
-      // §11.1: cost-free usage estimated from the roster, flagged on the card
+      // cost-free usage estimated from the roster, flagged on the card
       expect(vhtml).toContain("tokens in 4,000 · out 1,000 · cache r/w 0/0");
       expect(vhtml).toContain("incl. est. $0.02 (roster estimate)");
       // raw tail holds the last (repeated) verify turn's lines
       expect(vhtml).toContain("Verifying quality: 5 (never green).");
 
-      // ── needs_review banner when the run is flagged (§16.10) ─────────────
+      // ── needs_review banner when the run is flagged ─────────────
       const db = openDb(dbPathFor(dir));
       updateRun(db, runId, { needs_review: 1 });
       db.close();
@@ -240,7 +240,7 @@ describe("phase drill-in (T11)", () => {
     }
   });
 
-  it("404s with a back-link for a ghost run and a ghost phase (§16.10)", async () => {
+  it("404s with a back-link for a ghost run and a ghost phase", async () => {
     const dir = tmpDir("drillin-404");
     const restore = setDataDir(dir);
     let daemon: DaemonHandle | null = null;

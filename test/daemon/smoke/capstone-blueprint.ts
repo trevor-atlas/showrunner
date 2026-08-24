@@ -8,8 +8,8 @@ import type { Gate, GateContext } from "../../../src/core/index.ts";
 import { testsPass, lintClean } from "../../../src/starter-kit/gates/index.ts";
 
 /**
- * The capstone smoke blueprint (T13, spec §17): plan → build → verify → ship
- * on a tiny REAL git repo, proving the §5 wiring end to end against real pi.
+ * The capstone smoke blueprint (T13, spec): plan → build → verify → ship
+ * on a tiny REAL git repo, proving the wiring end to end against real pi.
  *
  * The repo ships with a deliberately broken `src/add.ts` (a-b instead of a+b)
  * and a failing test. The chain:
@@ -23,7 +23,7 @@ import { testsPass, lintClean } from "../../../src/starter-kit/gates/index.ts";
  *              commands in the repo.
  *  - verify  — the verifier is told to report quality 5; `qualityGate`
  *              demands >= 8, so the phase exhausts its budget and PAUSES — the
- *              smoke overrides the failed gate through the CLI (§5.3).
+ *              smoke overrides the failed gate through the CLI.
  *  - ship    — require_approval pauses; the smoke approves through the CLI.
  *
  * Every phase spawns a real pi session (SHOWRUNNER_SMOKE=1 in the daemon's
@@ -109,7 +109,7 @@ const BuildEnvelope = EnvelopeBase.extend({ implemented: z.boolean() });
 const VerifyEnvelope = EnvelopeBase.extend({ quality: z.number().min(0).max(10) });
 const ShipEnvelope = EnvelopeBase.extend({ shipped: z.boolean() });
 
-/** The planner's plan artifact must exist (§9.3 feeds it to build). */
+/** The planner's plan artifact must exist. */
 const planArtifactGate: Gate = async (_envelope, ctx) => {
   if (ctx.outputs_dir === undefined || ctx.outputs_dir === "") {
     return { pass: false, violations: ["the daemon did not provide ctx.outputs_dir"] };
@@ -154,7 +154,7 @@ const verifyFix: Gate = (() => {
  * fails the phase's first two envelopes — the verifier is instructed to report
  * quality 5 and a HELPFUL real model may bump it anyway, so the failure cannot
  * depend on the model. The violation names the bar; the smoke then overrides
- * the failed gate through the CLI (§5.3) exactly like a human would accept a
+ * the failed gate through the CLI exactly like a human would accept a
  * borderline review.
  */
 const qualityGate: Gate = (() => {

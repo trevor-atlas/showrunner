@@ -150,7 +150,7 @@ test("a zod-invalid envelope is an attempt row holding the rejected text verbati
   }
 });
 
-test("blocked short-circuits BEFORE gates: recorded attempt, no gate rows, no envelope event (§3.2)", async () => {
+test("blocked short-circuits BEFORE gates: recorded attempt, no gate rows, no envelope event", async () => {
   const env = setup("seam-blocked");
   try {
     const bomb: Gate = async () => {
@@ -178,7 +178,7 @@ test("blocked short-circuits BEFORE gates: recorded attempt, no gate rows, no en
   }
 });
 
-test("accepted: recorded attempt, per-gate rows, and the §6 #8 envelope event", async () => {
+test("accepted: recorded attempt, per-gate rows, and the envelope event", async () => {
   const env = setup("seam-accepted");
   try {
     const path = writeEnvelope(env, { summary: "s", artifacts: [], notes_for_next_agent: "n", quality: 8 });
@@ -198,7 +198,7 @@ test("accepted: recorded attempt, per-gate rows, and the §6 #8 envelope event",
   }
 });
 
-test("a throwing gate is a per-gate violation row + envelope-row violation, never a crash (§5.5)", async () => {
+test("a throwing gate is a per-gate violation row + envelope-row violation, never a crash", async () => {
   const env = setup("seam-crash");
   try {
     const bomb: Gate = async () => {
@@ -222,7 +222,7 @@ test("a throwing gate is a per-gate violation row + envelope-row violation, neve
   }
 });
 
-test("overrideGateResult audits who + why + when and emits the §6 #11 human_action event", async () => {
+test("overrideGateResult audits who + why + when and emits the human_action event", async () => {
   const env = setup("seam-override");
   try {
     const failGate: Gate = async () => ({ pass: false, violations: ["bad output"] });

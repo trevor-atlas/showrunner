@@ -1,14 +1,14 @@
 /**
- * FakePi session runner (spec §17, T01b) — the scripted, multi-turn pi stand-in
- * that the run loop (§5.2) drives.
+ * FakePi session runner (T01b) — the scripted, multi-turn pi stand-in
+ * that the run loop drives.
  *
- * Mirrors pi's RPC contract (§8.1): a long-lived process that reads JSON
+ * Mirrors pi's RPC contract: a long-lived process that reads JSON
  * commands on stdin, writes JSONL events on stdout, and is keyed by a
  * create-or-continue `--session-id`. Each `prompt` command advances the script
  * one turn: the turn's events are streamed to stdout (agent_settled ends the
  * turn) and the turn's envelope is written to <output>/envelope.json — the
- * agent's "typed result" (§9.1). stdin EOF exits 0 (the daemon reaps by
- * closing stdin, §8.3).
+ * agent's "typed result". stdin EOF exits 0 (the daemon reaps by
+ * closing stdin).
  *
  * The same `--session-id` is reused across corrections: the daemon re-prompts
  * the SAME process, and the script advances to the next turn. When the script
@@ -20,7 +20,7 @@
  * The session file shape (the "scripted session" seam):
  *   { turns: [{ events: [...], envelope: {...} }], unterminatedFinalLine?: bool }
  * `unterminatedFinalLine: true` makes the process emit its very last event
- * WITHOUT a trailing newline — the raw record (§10) must then be byte-identical
+ * WITHOUT a trailing newline — the raw record must then be byte-identical
  * to the stream, i.e. no newline is appended to an unterminated final line.
  *
  * Env: FAKE_PI_DELAY_MS  pause between lines (default 0)
@@ -47,7 +47,7 @@ interface ScriptedTurn {
   events: Record<string, unknown>[];
   envelope: Record<string, unknown>;
   /** extra files the agent "writes" to <output>/<path> (path → content); the
-   * paths listed in envelope.artifacts become the next phase's inputs (§9.3) */
+   * paths listed in envelope.artifacts become the next phase's inputs */
   artifacts?: Record<string, string>;
 }
 interface ScriptedSession {
@@ -74,7 +74,7 @@ const turns = script.turns;
 const lastTurnIdx = turns.length - 1;
 const unterminatedFinal = script.unterminatedFinalLine === true;
 
-// v3 session-file mimicry (§8.1, verified): real pi writes its session tree at
+// v3 session-file mimicry (verified): real pi writes its session tree at
 // <sessionDir>/--<sanitized-cwd>--/<ts>_<id>.jsonl (sanitized: leading separator
 // stripped, [/\:] → "-"). FakePi mirrors that when PI_CODING_AGENT_SESSION_DIR
 // is set (tests) so the daemon's "don't fight pi's session tree" contract is
@@ -90,7 +90,7 @@ const mirrorSessionFile = ((): string | null => {
 })();
 
 // One process, one command at a time; commands received while a turn is
-// streaming are queued (pi's FIFO steering queue, §8.4). Each prompt consumes
+// streaming are queued (pi's FIFO steering queue). Each prompt consumes
 // the next scripted turn.
 const commandQueue: Record<string, unknown>[] = [];
 let streaming = false;
@@ -174,7 +174,7 @@ async function drain(): Promise<void> {
   }
 }
 
-// ── stdin: LF-only command framing (mirrors the stdout contract, §7.1) ───────
+// ── stdin: LF-only command framing (mirrors the stdout contract) ───────
 
 let buf = "";
 process.stdin.setEncoding("utf8");
@@ -197,7 +197,7 @@ process.stdin.on("data", (chunk: string) => {
   }
 });
 process.stdin.on("end", () => {
-  // stdin closed = the daemon reaped us (§8.3); exit 0 once the stream settles
+  // stdin closed = the daemon reaped us; exit 0 once the stream settles
   stdinEnded = true;
   if (!streaming && commandQueue.length === 0) process.exit(0);
 });

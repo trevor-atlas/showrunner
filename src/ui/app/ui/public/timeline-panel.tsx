@@ -49,7 +49,7 @@ export interface TimelinePanelProps {
   gates: GateResultWithOverride[] | null;
   envelopesError: boolean;
   gatesError: boolean;
-  /** the §13 pause viewer's reason while the run is paused (null otherwise) —
+  /** the pause viewer's reason while the run is paused (null otherwise) —
    * surfaced in the panel header; live transitions ride the run_status →
    * paused event (run-live-region captures it), SSR rides getPause */
   pauseReason: string | null;
@@ -63,7 +63,7 @@ export function TimelinePanel(handle: Handle<TimelinePanelProps>) {
     return (
       <section data-testid="timeline-panel" data-selected={selected ?? ""} mix={panelStyle}>
         {/* R6: the pause reason surfaces in the panel header while the run is
-        paused — the same value the §13 pause viewer reports (getPause at SSR;
+        paused — the same value the pause viewer reports (getPause at SSR;
         the run_status → paused event's reason on a live transition) */}
         {timeline.status === "paused" && pauseReason !== null && pauseReason !== "" ? (
           <p data-panel-pause-reason mix={pausedBannerStyle}>
@@ -277,7 +277,7 @@ function EnvelopeSection(handle: Handle<{ envelopes: EnvelopeRow[] | null; envel
   };
 }
 
-/** One-line state label for an attempt, per §16.8's "✗ invalid … ✓ valid". */
+/** One-line state label for an attempt, per the "✗ invalid … ✓ valid" pair. */
 function attemptState(e: EnvelopeRow): string {
   if (e.valid !== 1) return "rejected";
   return parseViolations(e.violations).length > 0 ? "valid, gate violations" : "valid";

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 /**
- * The local price roster (spec §11.1) — the FALLBACK/estimate path for spend.
+ * The local price roster — the FALLBACK/estimate path for spend.
  *
  * pi's own reported cost (`Usage.cost.total`) is the primary source; the
  * roster only fills the gap when pi reports no cost (zero or absent). It is a
@@ -32,14 +32,14 @@ export type Roster = z.infer<typeof RosterSchema>;
 
 export const PRICES_FILE = "prices.json";
 
-/** {data_dir}/prices.json (§11.1). */
+/** {data_dir}/prices.json. */
 export function pricesPathFor(dataDir: string): string {
   return join(dataDir, PRICES_FILE);
 }
 
 /**
  * Load the roster from {data_dir}/prices.json. A missing file reads as the
- * empty roster (no estimates — the primary path, §11.1); a file that is not
+ * empty roster (no estimates — the primary path); a file that is not
  * valid JSON or not the `{ model: { in_per_mtok, out_per_mtok } }` shape
  * throws with the file path — a broken roster is a configuration error, and
  * silently dropping estimates would hide it.
@@ -69,7 +69,7 @@ export function loadRoster(dataDir: string): Roster {
 /**
  * Estimate the dollar cost of a token delta from the roster (tokens ×
  * per-mtok / 1e6). Returns null when the model has no roster entry — the
- * caller then keeps `usd: null` (never fabricated, §11.1). Cache tokens are
+ * caller then keeps `usd: null` (never fabricated). Cache tokens are
  * deliberately not priced: the roster only knows input/output rates.
  */
 export function estimateUsd(

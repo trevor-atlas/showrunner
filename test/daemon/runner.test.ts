@@ -39,8 +39,8 @@ import {
 import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
 
 /**
- * The run loop (spec §5, T01b) — driven against scripted FakePi sessions
- * (spec §17): deterministic, no pi binary, no tokens. The five acceptance
+ * The run loop (T01b) — driven against scripted FakePi sessions
+ *: deterministic, no pi binary, no tokens. The five acceptance
  * fixtures live here (multi-phase success, gate-fail→correction→success,
  * on_fail routing, budget exhaustion → paused, loop guard) plus the seams
  * T03/T04/T05 will extend.
@@ -86,7 +86,7 @@ function settledTurn(extra: Record<string, unknown> = {}): ScriptedTurn {
   };
 }
 
-/** A settled turn whose usage reports NO cost — the §11.1 roster estimate path. */
+/** A settled turn whose usage reports NO cost — the roster estimate path. */
 function settledTurnNoCost(extra: Record<string, unknown> = {}): ScriptedTurn {
   const t = settledTurn(extra);
   return {
@@ -130,7 +130,7 @@ async function waitFor(fn: () => boolean, timeoutMs = 10_000, label = "condition
   }
 }
 
-// ── §11.1 spend aggregation (roster estimates flow into phase/run totals) ────
+// ── spend aggregation (roster estimates flow into phase/run totals) ────
 
 test("spend: roster estimates accumulate into phase spend_usd, phase_end, and the run total", async () => {
   const env = openEnv("runner-spend");
@@ -174,7 +174,7 @@ test("spend: roster estimates accumulate into phase spend_usd, phase_end, and th
       expect((s.data as { tokens_out: number }).tokens_out).toBe(20);
     }
 
-    // phase_end carries the accumulated spend_usd per phase (§6 #4)
+    // phase_end carries the accumulated spend_usd per phase
     const phaseEnds = cursorEvents(env.db, run.run_id, 0, 10_000).filter((e) => e.type === "phase_end");
     expect(phaseEnds).toHaveLength(2);
     for (const pe of phaseEnds) {
@@ -188,7 +188,7 @@ test("spend: roster estimates accumulate into phase spend_usd, phase_end, and th
 test("spend: reported cost still flows through the loop unflagged; the roster never overrides it", async () => {
   const env = openEnv("runner-spend-report");
   try {
-    // the roster is present but pi reports cost — pi's number wins (§11.1)
+    // the roster is present but pi reports cost — pi's number wins
     writeFileSync(join(env.dir, "prices.json"), JSON.stringify({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }));
     const blueprint = defineBlueprint({
       name: "reported",
@@ -244,9 +244,9 @@ test("multi-phase blueprint drives both phases to success; statuses, visits, han
       ["build", "success", 1, 0],
     ]);
 
-    // §9 minimal handoff: build's inputs carry plan's accepted envelope — the
+    // minimal handoff: build's inputs carry plan's accepted envelope — the
     // workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>/inputs),
-    // never the run cwd (§9.1)
+    // never the run cwd
     const handoff = JSON.parse(
       readFileSync(join(runDirFor(env.dir, run.run_id), "build", "inputs", "envelope.json"), "utf8"),
     ) as { quality: number };
@@ -265,7 +265,7 @@ test("multi-phase blueprint drives both phases to success; statuses, visits, han
     const statuses = events.filter((e) => e.type === "run_status").map((e) => (e.data as { to: string }).to);
     expect(statuses).toEqual(["running", "success"]);
 
-    // sessions: one per phase, ids derived per §8.1
+    // sessions: one per phase, ids derived per
     const sessions = listAgentSessions(env.db, run.run_id);
     expect(sessions.map((s) => s.pi_session_id).sort()).toEqual([
       `${run.run_id.slice(0, 8)}_build_v1`,
@@ -276,7 +276,7 @@ test("multi-phase blueprint drives both phases to success; statuses, visits, han
   }
 });
 
-test("run-level events carry NULL phase/session ids; phase events carry theirs (§6)", async () => {
+test("run-level events carry NULL phase/session ids; phase events carry theirs", async () => {
   const env = openEnv("runner-nullids");
   try {
     const blueprint = defineBlueprint({
@@ -348,7 +348,7 @@ test("gate fail → one correction → success on the SAME session; correction c
     const gates = listGateResults(env.db, run.run_id);
     expect(gates.map((g) => g.pass)).toEqual([0, 1]);
 
-    // only the accepted envelope fires the §6 #8 event
+    // only the accepted envelope fires the event
     expect(events.filter((e) => e.type === "envelope")).toHaveLength(1);
   } finally {
     closeEnv(env);
@@ -459,7 +459,7 @@ test("loop guard: an on_fail cycle pauses once any phase hits max_visits", async
       ["build", "failed", 2],
       ["review", "failed", 2],
     ]);
-    // §8.1 session ids carry the visit number: build ran v1 and v2
+    // session ids carry the visit number: build ran v1 and v2
     const sessions = listAgentSessions(env.db, run.run_id).map((s) => s.pi_session_id);
     expect(sessions).toContain(`${run.run_id.slice(0, 8)}_build_v2`);
     expect(sessions).toContain(`${run.run_id.slice(0, 8)}_review_v2`);
@@ -503,7 +503,7 @@ test("R1: a revisit re-opens the row — in_progress, ended_at NULL, corrections
     const run = runBlueprint(env.db, env.dir, {
       blueprint,
       cwd: env.cwd,
-      scripts: { build: session([settledTurn(), settledTurn()]) }, // the last turn repeats (§17)
+      scripts: { build: session([settledTurn(), settledTurn()]) }, // the last turn repeats
       maxVisits: 2, // after visit 2 the guard pauses the run
     });
     expect((await run.done).status).toBe("paused");
@@ -624,7 +624,7 @@ test("R2 cause: a steer queued at a budget pause rides the restart continuation;
     });
     expect((await run.done).status).toBe("paused");
 
-    // a steer alone never resolves a pause (§5.3: queued + stays paused); the
+    // a steer alone never resolves a pause (queued + stays paused); the
     // menu's "steer then the visit continues" proceeds via restart-fresh, and
     // the queued steer rides the new visit's session (edge-cases pattern)
     const control = getControl(run.run_id)!;
@@ -706,7 +706,7 @@ test("R2 cause: a human restart at a guard pause overrides the pending on_fail c
 
 // ── envelope/gate seams (T03's module, exercised now) ────────────────────────
 
-test("a throwing gate is a violation, never a daemon crash (§5.5)", async () => {
+test("a throwing gate is a violation, never a daemon crash", async () => {
   const env = openEnv("runner-gatecrash");
   try {
     // throws for low quality (the first envelope), passes for high (the correction)
@@ -731,7 +731,7 @@ test("a throwing gate is a violation, never a daemon crash (§5.5)", async () =>
     expect(gates[0]!.pass).toBe(0);
     expect(gates[0]!.violations).toContain("kaboom: roster missing");
 
-    // T03: the crash violation is also on the envelope row (§16.8 per-attempt violations)
+    // T03: the crash violation is also on the envelope row (per-attempt violations)
     const envelopes = listEnvelopes(env.db, run.run_id);
     expect(envelopes.map((e) => e.valid)).toEqual([1, 1]);
     expect(JSON.parse(envelopes[0]!.violations)).toEqual(["gate \"explodingGate\" crashed: kaboom: roster missing"]);
@@ -769,13 +769,13 @@ test("attempt history: invalid → gate-fail → accepted records three attempts
     const phase = listPhases(env.db, run.run_id)[0]!;
     expect(phase.corrections).toBe(2);
 
-    // per-attempt history in visit/attempt order: the drill-in list (§16.8)
+    // per-attempt history in visit/attempt order: the drill-in list
     const envelopes = listEnvelopes(env.db, run.run_id);
     expect(envelopes.map((e) => e.attempt)).toEqual([0, 1, 2]);
     expect(envelopes.map((e) => e.valid)).toEqual([0, 1, 1]);
     // the correction that followed each rejected attempt is stamped on the row
     expect(envelopes[0]!.correction).toContain("notes_for_next_agent"); // invalid → zod issue
-    expect(envelopes[1]!.correction).toBe("Gate violations: quality 2 below 7"); // verbatim §3.4
+    expect(envelopes[1]!.correction).toBe("Gate violations: quality 2 below 7"); // verbatim
     expect(envelopes[2]!.correction).toBeNull(); // accepted: nothing followed
     // gate violations live on the rejected attempt's row
     expect(JSON.parse(envelopes[1]!.violations)).toEqual(["quality 2 below 7"]);
@@ -840,7 +840,7 @@ test("one gate_results row per gate run per envelope, with pass/violations/ran_a
   }
 });
 
-// ── gate overrides (§5.3): the audited mechanism T04/T08 call ────────────────
+// ── gate overrides: the audited mechanism T04/T08 call ────────────────
 
 test("override: a failed gate is marked overridden (row kept, audited), envelope approved, acceptance recorded", async () => {
   const env = openEnv("runner-override");
@@ -898,7 +898,7 @@ test("override: a failed gate is marked overridden (row kept, audited), envelope
     expect(trail).toHaveLength(1);
     expect(trail[0]).toMatchObject({ gate: "alwaysFailGate", pass: 0, by: "reviewer" });
 
-    // the resume path: approved → acceptance recorded (§6 #8) → run continues
+    // the resume path: approved → acceptance recorded → run continues
     const sink = new EventSink(env.db, { runId: run.run_id, phaseId: null, agentSessionId: null });
     const accepted = recordEnvelopeAcceptance({
       db: env.db,
@@ -958,9 +958,9 @@ test("override guardrails: passing gates, missing results, and double overrides 
   }
 });
 
-// ── loop guard (§19, T03): the exact fixture — 2-phase cycle, max_visits 3 ──
+// ── loop guard (T03): the exact fixture — 2-phase cycle, max_visits 3 ──
 
-test("loop guard: reviewer → builder → reviewer cycle with max_visits 3 pauses at 3 visits (§19)", async () => {
+test("loop guard: reviewer → builder → reviewer cycle with max_visits 3 pauses at 3 visits", async () => {
   const env = openEnv("runner-guard3");
   try {
     const blueprint = defineBlueprint({
@@ -990,7 +990,7 @@ test("loop guard: reviewer → builder → reviewer cycle with max_visits 3 paus
       ["review", "failed", 3],
       ["build", "failed", 3],
     ]);
-    // §8.1 session ids carry the visit number: review ran v1, v2, and v3
+    // session ids carry the visit number: review ran v1, v2, and v3
     const sessions = listAgentSessions(env.db, run.run_id).map((s) => s.pi_session_id);
     for (const v of [1, 2, 3]) {
       expect(sessions).toContain(`${run.run_id.slice(0, 8)}_review_v${v}`);
@@ -1042,7 +1042,7 @@ test("a zod-invalid envelope is corrected with the exact issue; EVERY attempt is
   }
 });
 
-test("blocked envelope pauses the run pre-gate, burning no corrections (§3.2)", async () => {
+test("blocked envelope pauses the run pre-gate, burning no corrections", async () => {
   const env = openEnv("runner-blocked");
   try {
     const blueprint = defineBlueprint({
@@ -1070,7 +1070,7 @@ test("blocked envelope pauses the run pre-gate, burning no corrections (§3.2)",
   }
 });
 
-test("require_approval pauses before the phase starts (§5.2 step 1)", async () => {
+test("require_approval pauses before the phase starts ( step 1)", async () => {
   const env = openEnv("runner-approval");
   try {
     const blueprint = defineBlueprint({
@@ -1095,9 +1095,9 @@ test("require_approval pauses before the phase starts (§5.2 step 1)", async () 
   }
 });
 
-// ── snapshot (§13.3) ─────────────────────────────────────────────────────────
+// ── snapshot ─────────────────────────────────────────────────────────
 
-test("the blueprint snapshot records the rendered config (§13.3)", async () => {
+test("the blueprint snapshot records the rendered config", async () => {
   const env = openEnv("runner-snapshot");
   try {
     const blueprint = defineBlueprint({
@@ -1138,7 +1138,7 @@ test("the blueprint snapshot records the rendered config (§13.3)", async () => 
   }
 });
 
-// ── raw record (§10): byte-identical, incl. an unterminated final line ───────
+// ── raw record: byte-identical, incl. an unterminated final line ───────
 
 test("raw_output.jsonl is byte-identical to the stream, incl. an unterminated final line", async () => {
   const env = openEnv("runner-raw");
@@ -1175,9 +1175,9 @@ test("raw_output.jsonl is byte-identical to the stream, incl. an unterminated fi
   }
 });
 
-// ── hooks (§14) ──────────────────────────────────────────────────────────────
+// ── hooks ──────────────────────────────────────────────────────────────
 
-test("a throwing onPhaseStart pauses the run instead of dying silently (§14)", async () => {
+test("a throwing onPhaseStart pauses the run instead of dying silently", async () => {
   const env = openEnv("runner-hook");
   try {
     const blueprint = defineBlueprint({
@@ -1223,16 +1223,16 @@ test("onPhaseStart gets ctx.shell() and can act on the workspace", async () => {
   }
 });
 
-// ── the composed prompt (§8.2) ───────────────────────────────────────────────
+// ── the composed prompt ───────────────────────────────────────────────
 
-test("composePrompt renders the §8.2 prompt: phase, agent, context, handoff, envelope contract", async () => {
+test("composePrompt renders the prompt: phase, agent, context, handoff, envelope contract", async () => {
   const env = openEnv("runner-prompt");
   try {
     const blueprint = defineBlueprint({
       name: "prompted",
       phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [], context: ["literal context line", "brief.md"] }],
     });
-    // a context entry that resolves to a real file gets inlined (§9.2)
+    // a context entry that resolves to a real file gets inlined
     writeFileSync(join(env.cwd, "brief.md"), "# brief\ninline this file\n");
     const run = runBlueprint(env.db, env.dir, {
       blueprint,
@@ -1267,7 +1267,7 @@ test("FINDING-1: a run submitted with --prompt composes it as [User request] in 
       name: "prompted_args",
       phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [] }],
     });
-    // the CLI's §13.3 args channel lands in the run's snapshot (blueprint.json)
+    // the CLI's args channel lands in the run's snapshot (blueprint.json)
     // — build the state by hand over a REAL snapshot written via the public
     // snapshot function, exactly as the submit path records it
     const runDir = runDirFor(env.dir, "f1-snap");
@@ -1292,11 +1292,11 @@ test("FINDING-1: a run submitted with --prompt composes it as [User request] in 
   }
 });
 
-test("§12 resume: a failed relaunch leaves the run interrupted — never a zombie `running`", async () => {
+test("resume: a failed relaunch leaves the run interrupted — never a zombie `running`", async () => {
   const env = openEnv("runner-resume-fail");
   try {
     const runId = await interruptedDemoRun(env);
-    // destroy the §13.3 snapshot — the resume cannot rebuild the run
+    // destroy the snapshot — the resume cannot rebuild the run
     rmSync(join(runDirFor(env.dir, runId), "blueprint.json"));
     await expect(prepareResume(env.db, env.dir, runId)).rejects.toThrow(/snapshot/);
     // the run stays interrupted and un-driven; no resume attempt was audited
@@ -1313,7 +1313,7 @@ test("§12 resume: a failed relaunch leaves the run interrupted — never a zomb
 
 // ── the session-crash path ───────────────────────────────────────────────────
 
-// ── §12 resume (T07): continue an interrupted run from the last completed phase ─
+// ── resume (T07): continue an interrupted run from the last completed phase ─
 
 const demoBlueprintPath = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "demo-blueprint.ts");
 
@@ -1328,8 +1328,8 @@ async function interruptedDemoRun(env: { dir: string; db: ReturnType<typeof open
   updatePhase(env.db, plan.id, { status: "success", visits: 1, started_at: t, ended_at: t });
   updatePhase(env.db, build.id, { status: "in_progress", visits: 1, started_at: t });
   updateRun(env.db, runId, { status: "interrupted" });
-  // the predecessor's accepted envelope lands in the run's raw record (§10) —
-  // what §12 resume reconstructs the build handoff from
+  // the predecessor's accepted envelope lands in the run's raw record —
+  // what resume reconstructs the build handoff from
   recordAcceptedEnvelope(
     runDirFor(env.dir, runId),
     JSON.stringify({ summary: "Plan complete.", artifacts: [], notes_for_next_agent: "Proceed to build.", quality: 8 }),
@@ -1337,7 +1337,7 @@ async function interruptedDemoRun(env: { dir: string; db: ReturnType<typeof open
   return runId;
 }
 
-test("§12 resume continues from the interrupted phase: success phases not re-run, same session id, needs_review preserved", async () => {
+test("resume continues from the interrupted phase: success phases not re-run, same session id, needs_review preserved", async () => {
   const env = openEnv("runner-resume");
   try {
     const runId = await interruptedDemoRun(env);
@@ -1352,7 +1352,7 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
     expect(pr.resume.continueInstruction).toContain("envelope.json");
     expect(pr.resume.handoff).not.toBeNull();
     expect(pr.resume.handoff!.fromPhase).toBe("plan");
-    // the §12.3 continue instruction is NOT the fresh composed prompt
+    // the continue instruction is NOT the fresh composed prompt
     expect(pr.resume.continueInstruction).not.toContain("[Context]");
 
     const run = driveResumedRun(env.db, env.dir, pr, { delayMs: 0 });
@@ -1368,7 +1368,7 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
     expect(plan.status).toBe("success");
     expect(plan.visits).toBe(1);
     expect(build.status).toBe("success");
-    // the interrupted phase re-visits with the SAME session id (§12.3): the new
+    // the interrupted phase re-visits with the SAME session id: the new
     // build session is v1 — never a v2 spawn
     const buildSessions = listAgentSessions(env.db, runId).filter((s) =>
       s.pi_session_id.includes("_build_"),
@@ -1379,7 +1379,7 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
     // plan was never re-driven: no plan sessions at all (it completed pre-crash)
     expect(listAgentSessions(env.db, runId).some((s) => s.pi_session_id.includes("_plan_"))).toBe(false);
 
-    // the resume attempt is audited (§6 #11) and the run_status shows interrupted→running
+    // the resume attempt is audited and the run_status shows interrupted→running
     const events = cursorEvents(env.db, runId, 0, 10_000);
     expect(
       events.some((e) => e.type === "human_action" && (e.data as { action: string }).action === "resume"),
@@ -1392,7 +1392,7 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
           (e.data as { from: string; to: string }).to === "running",
       ),
     ).toBe(true);
-    // R2: the resumed visit's phase_start is a human "resume" (the §12 continue
+    // R2: the resumed visit's phase_start is a human "resume" (the continue
     // verb) — with the operator who requested it, mirroring the human_action
     const buildStart = events.find(
       (e) => e.type === "phase_start" && (e.data as { phase: string }).phase === "build",
@@ -1407,13 +1407,13 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
   }
 });
 
-test("§12 resume: the build handoff is the predecessor's accepted envelope; the continue instruction renders the envelope contract; resume refuses non-interrupted runs", async () => {
+test("resume: the build handoff is the predecessor's accepted envelope; the continue instruction renders the envelope contract; resume refuses non-interrupted runs", async () => {
   const env = openEnv("runner-resume-handoff");
   try {
     const runId = await interruptedDemoRun(env);
     const pr = await prepareResume(env.db, env.dir, runId);
     // handoff reconstructed from runDir/envelope.json — the predecessor's
-    // envelope becomes build's §9.3 materialized input
+    // envelope becomes build's materialized input
     const handoff = pr.resume.handoff!;
     expect((handoff.envelope as { summary: string }).summary).toBe("Plan complete.");
     // composeContinuePrompt is a standalone seam: phase + run dir + envelope contract
@@ -1468,7 +1468,7 @@ test("a session that dies before agent_settled fails the run with needs_review",
     expect(result).toEqual({ status: "failed", needs_review: true });
     expect(getRun(env.db, run.run_id)!.needs_review).toBe(1);
     expect(listPhases(env.db, run.run_id)[0]!.status).toBe("failed");
-    // the open tool call was flushed truncated (§7.2)
+    // the open tool call was flushed truncated
     const truncated = cursorEvents(env.db, run.run_id, 0, 10_000).filter(
       (e) => e.type === "tool_call" && (e.data as { truncated?: boolean }).truncated,
     );

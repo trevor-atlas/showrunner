@@ -3,20 +3,20 @@ import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../../src/core
 import type { Envelope, Gate } from "../../../../src/core/index.ts";
 
 /**
- * The §9 context & handoff protocol fixture (T05) — the round-trip proof that
- * runs on FakePi only (spec §17): two phases, no real pi, no tokens.
+ * The context & handoff protocol fixture (T05) — the round-trip proof that
+ * runs on FakePi only: two phases, no real pi, no tokens.
  *
  * plan (2 turns): turn 1 fails the quality gate (4 < 7) → one correction →
  * turn 2 passes and "writes" an ARTIFACT (plan.md) next to its envelope.json.
  * build (1 turn): passes; its inputs/ must contain plan's accepted envelope
- * AND plan.md — the §9.3 zero-friction handoff, no declaration required.
+ * AND plan.md — the zero-friction handoff, no declaration required.
  *
- * Context entries exercise the §9.2 resolution rule through every branch:
+ * Context entries exercise the resolution rule through every branch:
  *   planner.context:
  *     "Context literal: …"      → pure literal (not a path)
  *     "docs/context.md"         → resolves to a FILE in the run's cwd → inlined
  *     "agent-notes.md"          → resolves via the module-dir fallback → inlined
- *     "quality.md"              → §19 collision: a string that IS a real file in
+ *     "quality.md"              → collision: a string that IS a real file in
  *                                  the cwd gets read as a file, not as prose
  *   builder.context + build.context (phase additions, appended after agent
  *   defaults): "Build literal: …" and "*.md" (no file named "*.md" exists →

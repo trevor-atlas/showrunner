@@ -5,8 +5,8 @@ process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never 
  * action. Real daemon, real blueprint runs on FakePi (deterministic scripts),
  * driven through the app router with `router.fetch(...)` (the same hermetic
  * pattern as T10a/T11). Every control verb is asserted END-TO-END: the form
- * POSTs to a remix action (which calls the §13.2 daemon endpoint server-side),
- * the daemon audits the §6 #11 human_action event, and the re-rendered page
+ * POSTs to a remix action (which calls the daemon endpoint server-side),
+ * the daemon audits the human_action event, and the re-rendered page
  * shows daemon state — NO optimistic mutation anywhere.
  *
  * Acceptance coverage:
@@ -245,7 +245,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       await waitFor(async () => (await runStatus(client, runId)) === "paused", 20_000, "second pause");
       await waitFor(async () => (await client.getRun(runId)).sessions.length === 2, 20_000, "v2 session");
 
-      // a NEW pi session with the §8.1 id v<visit+1>
+      // a NEW pi session with the id v<visit+1>
       const detail = await client.getRun(runId);
       const ids = detail.sessions.map((s) => s.pi_session_id).sort();
       expect(ids).toEqual([
@@ -302,7 +302,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const restore = setDataDir(dir);
     let daemon: DaemonHandle | null = null;
     try {
-      // seed an INTERRUPTED run directly (status + pending phase + §13.3
+      // seed an INTERRUPTED run directly (status + pending phase +
       // snapshot) — the same shape prepareResume reads (contract.test.ts)
       const runId = "bbbbbbbb-0000-4000-8000-000000000002";
       const seedDb = openDb(dbPathFor(dir));
@@ -326,7 +326,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       const resumed = await postControl(routes.runs.resume.href({ runId }));
       const followed = await followRedirect(resumed);
       expect(followed.status).toBe(200);
-      // §19 pin: ANY resume flags needs_review — the re-render shows it
+      // pin: ANY resume flags needs_review — the re-render shows it
       expect(followed.html).toContain('data-meta="needs-review"');
       expect(followed.html).toContain("resumed after an interruption");
 
@@ -377,7 +377,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const restore = setDataDir(dir);
     let daemon: DaemonHandle | null = null;
     try {
-      // seed a paused run DIRECTLY — no loop, no control handle (§12 restart case)
+      // seed a paused run DIRECTLY — no loop, no control handle
       const runId = "99999999-0000-4000-8000-000000000009";
       const seedDb = openDb(dbPathFor(dir));
       const startedAt = new Date().toISOString();
@@ -481,7 +481,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       const db = openDb(dbPathFor(dir));
       insertRun(db, { id: runId, blueprint: "spendy", status: "success", cwd: "/tmp/spendy", needs_review: 0, started_at: startedAt, ended_at: startedAt });
       insertPhase(db, { id: "ph-build", run_id: runId, name: "build", agent: "builder", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.55, started_at: startedAt, ended_at: startedAt });
-      // 5500 §6 #12 spend events (11 pages of 500) — the OLD sweep capped at
+      // 5500 spend events (11 pages of 500) — the OLD sweep capped at
       // 5000 and silently under-reported; the fix pages to the tail
       for (let i = 0; i < 5500; i++) {
         insertEvent(db, {

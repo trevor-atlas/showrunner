@@ -6,10 +6,10 @@ import { envelopeShape, reviewApproved } from "../gates/index.ts";
 
 /**
  * build_review — "is this what was asked for" matters more than "does it run"
- * : builder, reviewer, bounded revise loop. The reviewer must
+ *: builder, reviewer, bounded revise loop. The reviewer must
  * approve (reviewApproved gate); a rejected review routes back to the builder,
  * and the builder's failures route forward to the reviewer — the loop always
- * terminates or pauses via the visit guard (spec §5.2 step 3).
+ * terminates or pauses via the visit guard.
  *
  * Replace-this: the phases, gates, and agents are the point of this file.
  */

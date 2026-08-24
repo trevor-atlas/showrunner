@@ -7,8 +7,8 @@ import { RUN_STATUSES, isRunStatus } from "../ui/status-pill.tsx";
 import { RunListPage } from "./run-list-page.tsx";
 
 /**
- * Top-level route actions (spec §16.12). `home` fetches GET /runs
- * SERVER-SIDE through the §13 api core IN-PROCESS and renders the run list —
+ * Top-level route actions. `home` fetches GET /runs
+ * SERVER-SIDE through the api core IN-PROCESS and renders the run list —
  * the browser never talks to the daemon (no CORS, no daemon credentials in
  * the browser). Since the merged web server the UI and the daemon share one
  * process, so the old "daemon down" shell state is impossible. The status

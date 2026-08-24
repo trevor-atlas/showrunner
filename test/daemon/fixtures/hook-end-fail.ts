@@ -1,7 +1,7 @@
 import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../src/core/index.ts";
 
 /**
- * onPhaseEnd THROWS (§14 failure path): the visit's envelope was ACCEPTED,
+ * onPhaseEnd THROWS: the visit's envelope was ACCEPTED,
  * but the end hook fails — the phase is recorded `failed` (phase_end with
  * status failed), the failure is audited as a human_action hook_error, and
  * the run parks at the hook_failed pause menu instead of advancing.

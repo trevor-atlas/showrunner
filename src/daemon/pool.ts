@@ -1,9 +1,9 @@
 /**
- * The run pool (spec §5.4): N concurrent run slots (default 2), spawns beyond
+ * The run pool: N concurrent run slots (default 2), spawns beyond
  * the pool queue at the daemon. A run holds a slot from first spawn to its
  * terminal state — `release` is called when the run's `done` resolves.
  *
- * Queue-position surfacing (GET /runs, POST /runs — §13.1) is served by
+ * Queue-position surfacing (GET /runs, POST /runs —) is served by
  * `position` (T08); this pool is the spawn gate itself.
  */
 export class RunPool {
@@ -39,7 +39,7 @@ export class RunPool {
   }
 
   /**
-   * §13.1 queue position: the run's 1-based position in the spawn queue (1 =
+   * queue position: the run's 1-based position in the spawn queue (1 =
    * next to start), or null when the run is not queued (running — its slot is
    * live — or already terminal). Surfaced on GET /runs and POST /runs.
    */
@@ -48,7 +48,7 @@ export class RunPool {
     return idx === -1 ? null : idx + 1;
   }
 
-  /** total pool capacity (§13 status verb) */
+  /** total pool capacity */
   get slots(): number {
     return this.slotCount;
   }

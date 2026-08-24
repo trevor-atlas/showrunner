@@ -15,8 +15,8 @@ import type { Envelope, Gate } from "../../../../src/core/index.ts";
  * succeeds.
  *
  * NOTE: zod appears here ONLY because this is a BLUEPRINT FIXTURE — the daemon
- * imports blueprint modules at submit (§13.3) and blueprints are core-side
- * artifacts. The UI runtime (app/) does not import zod (§16.12).
+ * imports blueprint modules at submit and blueprints are core-side
+ * artifacts. The UI runtime (app/) does not import zod.
  */
 const neverGreen: Gate = async () => ({ pass: false, violations: ["never green by design"] });
 

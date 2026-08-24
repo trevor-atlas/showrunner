@@ -27,7 +27,7 @@ function openTmp(label: string) {
 }
 
 /** A scratch run cwd for fixture submissions — the agent works there, but the
- * §9 workspace (inputs/outputs) lives under the run's record dir, never the
+ * workspace (inputs/outputs) lives under the run's record dir, never the
  * repo root (the test runner's working directory). Mirrors the server/e2e
  * scratch-cwd pattern. */
 function tmpCwd(label: string): string {
@@ -45,7 +45,7 @@ test("happy fixture: full lifecycle lands as folded events, in order", async () 
 
     const events = cursorEvents(db, sub.run_id, 0, 1000);
     const types = events.map((e) => e.type);
-    // §5/§6 lifecycle, in fixture order (usage arrives before the tool call it paid for;
+    // lifecycle, in fixture order (usage arrives before the tool call it paid for;
     // call_03's streamed updates carry no usage, so two tool_calls land adjacently)
     expect(types).toEqual([
       "run_submitted",
@@ -76,7 +76,7 @@ test("happy fixture: full lifecycle lands as folded events, in order", async () 
 
     const spends = events.filter((e) => e.type === "spend").map((e) => e.data as { usd: number; tokens_in: number; tokens_out: number });
     expect(spends.reduce((s, x) => s + (x.usd ?? 0), 0)).toBeCloseTo(HAPPY_SPEND);
-    // deltas sum to the cumulative total (§7.3 diffs per (phase, visit))
+    // deltas sum to the cumulative total (diffs per (phase, visit))
     expect(spends.reduce((s, x) => s + x.tokens_in, 0)).toBe(1400);
     expect(spends.reduce((s, x) => s + x.tokens_out, 0)).toBe(380);
 
@@ -109,7 +109,7 @@ test("happy fixture: full lifecycle lands as folded events, in order", async () 
   }
 });
 
-test("raw_output.jsonl captures the fixture byte-identically (§10)", async () => {
+test("raw_output.jsonl captures the fixture byte-identically", async () => {
   const { dir, db } = openTmp("driver-raw");
   const cwd = tmpCwd("raw");
   try {
@@ -125,7 +125,7 @@ test("raw_output.jsonl captures the fixture byte-identically (§10)", async () =
   }
 });
 
-test("agent_map.json records phase -> session mapping (§10)", async () => {
+test("agent_map.json records phase -> session mapping", async () => {
   const { dir, db } = openTmp("driver-map");
   const cwd = tmpCwd("map");
   try {
@@ -141,7 +141,7 @@ test("agent_map.json records phase -> session mapping (§10)", async () => {
   }
 });
 
-test("stderr diagnostics are captured per run (§8.3)", async () => {
+test("stderr diagnostics are captured per run", async () => {
   const { dir, db } = openTmp("driver-stderr");
   const cwd = tmpCwd("stderr");
   try {
@@ -156,7 +156,7 @@ test("stderr diagnostics are captured per run (§8.3)", async () => {
   }
 });
 
-test("crash fixture: run fails, needs_review set, open tool call flushed truncated (§12.5)", async () => {
+test("crash fixture: run fails, needs_review set, open tool call flushed truncated", async () => {
   const { dir, db } = openTmp("driver-crash");
   const cwd = tmpCwd("crash");
   try {

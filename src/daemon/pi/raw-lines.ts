@@ -1,7 +1,7 @@
 import { MACHINERY_EVENT_TYPES } from "../../core/index.ts";
 
 /**
- * The raw pi JSONL line classifier (spec §7.4) — the single place the stream's
+ * The raw pi JSONL line classifier — the single place the stream's
  * `type` vocabulary is recognized. Type-string classification ONLY (no
  * zod-payload validation): payload validation stays in the tracer handlers,
  * so the classifier's acceptance can't drift from the tracer's. Every
@@ -74,7 +74,7 @@ export function classifyLine(line: string): ClassifiedLine {
   return { kind: "unknown", evt };
 }
 
-/** Whether the line is an agent_settled event (§7.4: agent_end is not done). */
+/** Whether the line is an agent_settled event (agent_end is not done). */
 export function isSettledLine(line: string): boolean {
   return classifyLine(line).kind === SETTLED_KIND;
 }

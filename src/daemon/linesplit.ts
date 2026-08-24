@@ -1,5 +1,5 @@
 /**
- * LF-only framing (spec §7.1): "Clients must split records on `\n` only" -
+ * LF-only framing: "Clients must split records on `\n` only" -
  * Node's readline is explicitly non-compliant, so the tracer splits on `\n`
  * itself. `\r` is not treated as a record terminator and is preserved.
  */

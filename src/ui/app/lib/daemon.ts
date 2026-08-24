@@ -1,16 +1,16 @@
 /**
- * The dashboard's server-side daemon access (spec §16.10 `app/lib/daemon.ts`).
+ * The dashboard's server-side daemon access (`app/lib/daemon.ts`).
  *
  * Since the merged web server (Phase 2) the UI and the daemon share ONE
  * process: the unix socket and the typed client round trip are gone.
- * Every function here calls the corresponding §13 api core function
+ * Every function here calls the corresponding api core function
  * (src/daemon/server.ts) IN-PROCESS against the daemon's state, held by
  * src/daemon/web-state.ts. A "daemon down" state is impossible — there is no
  * socket to miss, so no unreachable-daemon error and no down banner exist.
  *
  * The browser NEVER imports this module and NEVER talks to the daemon: actions
  * fetch daemon data here, server-side, and the browser only receives rendered
- * HTML (§16.4/§16.5 — no CORS, no daemon credentials in the browser).
+ * HTML (no CORS, no daemon credentials in the browser).
  */
 
 import {
@@ -44,12 +44,12 @@ import type {
   TimelineView,
 } from "../../../daemon/client.ts";
 
-/** The run list rows (§13.1) — in-process against the daemon's state. */
+/** The run list rows — in-process against the daemon's state. */
 export async function listRuns(): Promise<{ runs: RunListItem[] }> {
   return apiListRuns(requireWebState()) as { runs: RunListItem[] };
 }
 
-/** The run detail — phases, spend, envelope count, sessions (§13.1). */
+/** The run detail — phases, spend, envelope count, sessions. */
 export async function getRunDetail(runId: string): Promise<RunDetail> {
   return apiRunDetail(requireWebState(), runId) as unknown as RunDetail;
 }
@@ -81,7 +81,7 @@ export async function getRaw(runId: string, opts: { lines?: number } = {}): Prom
   return apiRaw(requireWebState(), runId, query) as unknown as RawTail;
 }
 
-/** GET /runs/:id/events — the §4.3 cursor page (drill-in sums §6 #12 spend). */
+/** GET /runs/:id/events — the cursor page (drill-in sums spend). */
 export async function getRunEvents(runId: string, opts: { cursor?: number; limit?: number } = {}): Promise<EventsPage> {
   const query = new URLSearchParams();
   if (opts.cursor !== undefined) query.set("cursor", String(opts.cursor));
@@ -89,14 +89,14 @@ export async function getRunEvents(runId: string, opts: { cursor?: number; limit
   return apiEvents(requireWebState(), runId, query) as EventsPage;
 }
 
-/** GET /runs/:id/pause — the §16.9 pause viewer (kind, phase, actions, queued steers). */
+/** GET /runs/:id/pause — the pause viewer (kind, phase, actions, queued steers). */
 export async function getPause(runId: string): Promise<PauseView> {
   return apiPause(requireWebState(), runId) as unknown as PauseView;
 }
 
-// ── §13.2 control verbs (T10b) ───────────────────────────────────────────────
-// Every verb calls the §13.2 api core in-process; on success the daemon has
-// already written the §6 #11 human_action event and the new run state, so the
+// ── control verbs (T10b) ───────────────────────────────────────────────
+// Every verb calls the api core in-process; on success the daemon has
+// already written the human_action event and the new run state, so the
 // action can re-render/redirect from daemon state. A 409 / 4xx surfaces as a
 // server-side ApiError — the actions translate it onto the form.
 
@@ -105,12 +105,12 @@ export async function controlSteer(runId: string, message: string): Promise<Cont
   return apiSteerRun(requireWebState(), runId, { message }) as unknown as ControlResult;
 }
 
-/** POST /runs/:id/resume — continue an interrupted run (§12). */
+/** POST /runs/:id/resume — continue an interrupted run. */
 export async function controlResume(runId: string): Promise<ControlResult> {
   return apiResume(requireWebState(), runId, {}) as unknown as ControlResult;
 }
 
-/** POST /runs/:id/fail — fail the run and kill its children (§8.3). */
+/** POST /runs/:id/fail — fail the run and kill its children. */
 export async function controlFail(runId: string): Promise<ControlResult> {
   return apiFailRun(requireWebState(), runId, {}) as unknown as ControlResult;
 }
@@ -122,7 +122,7 @@ export async function controlApprove(runId: string): Promise<ControlResult> {
 
 /** POST /runs/:id/phases/:phase/override — override a failed gate (audited).
  * The dashboard audits its overrides as "web" (the daemon defaults to "cli"
- * only for CLI callers that send no by) — §16.8 the who is the point. */
+ * only for CLI callers that send no by) — the who is the point. */
 export async function controlOverrideGate(
   runId: string,
   phase: string,
@@ -139,9 +139,9 @@ export async function controlRestartFresh(runId: string, phase: string): Promise
 }
 
 /**
- * Is the thrown error a §13 ApiError? The control actions translate
+ * Is the thrown error a ApiError? The control actions translate
  * 409/4xx into an inline form error (from ApiError.status/message) instead of
- * pretending success (§16.9). The server-side ApiError (src/daemon/server.ts)
+ * pretending success. The server-side ApiError (src/daemon/server.ts)
  * keeps the same `{ name: "ApiError", status, message }` shape as the typed
  * client's, so this single check covers both.
  */

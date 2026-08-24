@@ -1,5 +1,5 @@
 /**
- * SHOWRUNNER_SMOKE=1 capstone smoke (spec §17, T13): proves the WIRING with the
+ * SHOWRUNNER_SMOKE=1 capstone smoke (T13): proves the WIRING with the
  * REAL pi binary on a REAL repo, end to end.
  *
  *   SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun packages/daemon/test/smoke/smoke.ts
@@ -14,11 +14,11 @@
  *     is overridden via the CLI, ship pauses for approval and is approved.
  *     Terminal success + spend recorded.
  *  2. CRASH-WITH-LIVE-CHILD — the pi child is SIGKILLed mid-flight: the run
- *     fails with needs_review per the §19 convention, no orphans remain; the
+ *     fails with needs_review per the convention, no orphans remain; the
  *     fail verb then exercises driver.stop() against a live real-pi child.
  *  3. BACKFILL (real pi) — the daemon is SIGKILLed mid-session: on restart the
  *     missed session tail is restored from pi's own session tree and a second
- *     sweep is idempotent (§12.4).
+ *     sweep is idempotent.
  *  4. POLL TOOL RUNTIME LOAD — the starter kit's poll extension is loaded via
  *     `pi -e` and actually CALLED by a real agent (toolName "poll" in the
  *     stream) — the format-compliant-until-now extension is proven at runtime.
@@ -399,7 +399,7 @@ async function scenarioCrash(): Promise<void> {
   await waitForStatus(client, runId, "failed", 120_000);
   const d1 = await client.getRun(runId);
   check("run failed after child death", d1.run.status === "failed");
-  check("needs_review flagged (§19 mid-tool-crash)", d1.run.needs_review === 1, `needs_review=${d1.run.needs_review}`);
+  check("needs_review flagged ( mid-tool-crash)", d1.run.needs_review === 1, `needs_review=${d1.run.needs_review}`);
   await waitFor(() => !pidAlive(childPid), 5_000, "child death");
   // the daemon's process bookkeeping reaped it — no orphan pi children
   const db1 = openDb(join(dataDir, "showrunner.db"));
@@ -419,12 +419,12 @@ async function scenarioCrash(): Promise<void> {
   check("fail verb → failed", d2.run.status === "failed");
   check("deliberate fail is NOT needs_review", d2.run.needs_review === 0, `needs_review=${d2.run.needs_review}`);
   await waitFor(() => !pidAlive(childPid2), 8_000, "child stopped via driver.stop()");
-  check("driver.stop() killed the live child (SIGTERM → SIGKILL, §8.3)", !pidAlive(childPid2), `pid=${childPid2}`);
+  check("driver.stop() killed the live child (SIGTERM → SIGKILL, )", !pidAlive(childPid2), `pid=${childPid2}`);
 
   daemon.child.kill("SIGKILL");
 }
 
-// ── scenario 3: backfill against a REAL pi session (§12.4) ───────────────────
+// ── scenario 3: backfill against a REAL pi session ───────────────────
 
 async function scenarioBackfill(): Promise<void> {
   console.log("\n=== scenario 3: backfill — daemon SIGKILLed mid-session, restart restores the missed tail (real pi) ===");
@@ -482,7 +482,7 @@ async function scenarioBackfill(): Promise<void> {
   // give the orphan pi a moment to write to its session file before it dies
   await new Promise((r) => setTimeout(r, 1500));
 
-  // restart against the SAME data dir: §12.1 reaps, §12.2 interrupts, §12.4 backfills
+  // restart against the SAME data dir: reaps, interrupts, backfills
   daemon = bootDaemon(dataDir, { PI_CODING_AGENT_SESSION_DIR: sessionRoot });
   await waitForHealth(dataDir);
   // the restarted daemon bound a NEW ephemeral port — re-point the client at it

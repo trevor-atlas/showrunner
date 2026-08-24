@@ -22,43 +22,43 @@ import type { EventIds } from "./queue.ts";
 import type { RpcCommand, SessionDriver } from "./pi/index.ts";
 
 /**
- * The pause & control surface (spec §5.3, T04) — the human-in-the-loop
+ * The pause & control surface (T04) — the human-in-the-loop
  * machinery on top of the T01b run loop and T03's gate-override seam.
  *
  * The loop suspends at a pause point (approval / budget exhausted / visit
  * guard / blocked / hook error) by awaiting `RunControl.waitForAction()`. The
  * control surface (HTTP verbs in server.ts, called by the CLI) dispatches one
  * of the pause-menu actions: steer, approve, override gate, restart phase
- * fresh, or fail run. Every action writes a §6 #11 `human_action` event.
+ * fresh, or fail run. Every action writes a `human_action` event.
  *
- * Stable vs terminal (F1, §5.4): `stable` resolves at the first pause OR at a
+ * Stable vs terminal (F1): `stable` resolves at the first pause OR at a
  * terminal state (a paused run is a stable state — T01b's `done`); `terminal`
  * resolves only at success/failed. The pool releases a run's slot on
- * `terminal`, so a paused run KEEPS its pool slot (§5.4: cheap — no pi
+ * `terminal`, so a paused run KEEPS its pool slot (cheap — no pi
  * process is alive while paused). A run parked at a pause therefore never
  * resolves `done` away from its slot.
  *
  * Paused-run steer semantics (pinned): a steer is ALWAYS audited as a
  * `human_action` and shown in the feed; on a RUNNING run with a live session
  * the RPC steer is written to the SAME session's stdin via
- * SessionDriver.send (queued between turns, no message id — §8.4) and is NOT
+ * SessionDriver.send (queued between turns, no message id) and is NOT
  * re-queued; on a PAUSED run (no live process) the message is queued on the
  * run's control and the run stays paused — delivery lands with the
  * continuation machinery: the next spawned session's driveVisit drains the
  * queue (drainQueuedSteers) and writes each message as an RPC steer after its
- * first prompt (§5.3's 'then the visit continues'). A queued steer whose
+ * first prompt ('then the visit continues'). A queued steer whose
  * continuation never spawns (e.g. a gate override accepts the rejected
  * envelope without a new visit) stays queued and rides the NEXT spawn.
- * Resume-from-interrupted (§12) records the attempt + sets needs_review per
- * the §19 pin; the relaunch+backfill continuation is T07.
+ * Resume-from-interrupted records the attempt + sets needs_review per
+ * the pin; the relaunch+backfill continuation is T07.
  */
 
 export type PauseKind =
   | "approval" // require_approval, before the visit spawns
   | "budget_exhausted" // corrections within the visit hit the phase budget
-  | "guard_exhausted" // max_visits reached (§5.2 step 3)
-  | "blocked" // the agent's envelope asserted blocked (§3.2)
-  | "hook_failed"; // a hook threw (§14)
+  | "guard_exhausted" // max_visits reached
+  | "blocked" // the agent's envelope asserted blocked
+  | "hook_failed"; // a hook threw
 
 export interface PauseInfo {
   kind: PauseKind;
@@ -82,7 +82,7 @@ export type ControlAction =
   | { kind: "restart_fresh"; by?: string }
   | { kind: "fail"; by?: string };
 
-/** The pause menu per pause kind (§5.3: blocked/guard offer the menu minus
+/** The pause menu per pause kind (blocked/guard offer the menu minus
  * override — nothing was rejected; approval offers approve + steer + fail). */
 const MENU: Record<PauseKind, ControlAction["kind"][]> = {
   approval: ["approve", "steer", "fail"],
@@ -130,7 +130,7 @@ export interface ControlState {
  */
 export class RunControl {
   readonly runId: string;
-  /** resolves at the first pause OR at terminal (§5.1 — T01b's `done`) */
+  /** resolves at the first pause OR at terminal (T01b's `done`) */
   readonly stable: Promise<RunControlResult>;
   /** resolves only at a terminal state (success|failed) — F1's slot release */
   readonly terminal: Promise<RunControlResult>;
@@ -177,7 +177,7 @@ export class RunControl {
    * Drain + clear the steers queued while the run was paused. Called by the
    * continuation machinery (driveVisit) once a session is spawned and its
    * first prompt is sent: each queued message is written to the new session
-   * as an RPC steer (queued between turns, §8.4). Live steers never enter
+   * as an RPC steer (queued between turns). Live steers never enter
    * this queue — they were delivered to the session immediately.
    */
   drainQueuedSteers(): string[] {
@@ -231,10 +231,10 @@ export class RunControl {
   /**
    * steer: on a RUNNING run with a live session, the RPC steer is written to
    * the SAME session via SessionDriver.send — queued between turns, no
-   * message id (§8.4) — and is not re-queued. On a PAUSED run (no live
+   * message id — and is not re-queued. On a PAUSED run (no live
    * process) the message is audited + queued and the run stays paused;
    * delivery lands with the continuation machinery (drainQueuedSteers on the
-   * next spawned visit, §5.3 'then the visit continues'). Works mid-run on
+   * next spawned visit ('then the visit continues'). Works mid-run on
    * both a paused and a running run; always writes the human_action event.
    */
   steer(message: string, by?: string): void {
@@ -244,7 +244,7 @@ export class RunControl {
     this.emitHuman("steer", by, message);
     const live = this.liveSessionValue;
     if (live !== null) {
-      // running: deliver to the live session NOW (queued between turns, §8.4)
+      // running: deliver to the live session NOW (queued between turns)
       const cmd: RpcCommand = { type: "steer", message };
       // fire-and-forget: a dead stream surfaces via the loop's settle waiter
       void live.driver.send(cmd).catch(() => {});
@@ -267,7 +267,7 @@ export class RunControl {
    * override gate: T03's overrideGateResult (audited: who+why+when; the
    * original gate_results row is KEPT) marks the gate treated-as-passed, the
    * envelope becomes approved (isEnvelopeApproved), and the acceptance is
-   * recorded (§6 #8) — the loop then continues the run from the envelope.
+   * recorded — the loop then continues the run from the envelope.
    */
   overrideGate(input: { gate: string; by: string; reason: string }): GateOverrideResult {
     this.assertMenu("override");
@@ -313,7 +313,7 @@ export class RunControl {
 
   /**
    * fail run: run → failed, ended_at set; the live child is killed via
-   * SessionDriver.stop() (SIGTERM → SIGKILL after 1s, §8.3) and any other
+   * SessionDriver.stop() (SIGTERM → SIGKILL after 1s) and any other
    * children recorded in processes for the run are signalled too. Audited as
    * a human_action; the loop finalizes with run_status paused→failed.
    */
@@ -404,7 +404,7 @@ export function unregisterControl(runId: string): void {
   controls.delete(runId);
 }
 
-/** Find a control whose session is live (the §13.2 session-keyed steer). */
+/** Find a control whose session is live (the session-keyed steer). */
 export function getControlByLiveSession(piSessionId: string): RunControl | null {
   for (const control of controls.values()) {
     if (control.liveSessionId === piSessionId) return control;
@@ -412,7 +412,7 @@ export function getControlByLiveSession(piSessionId: string): RunControl | null 
   return null;
 }
 
-// ── process signalling (§8.3 fail-run semantics) ─────────────────────────────
+// ── process signalling (fail-run semantics) ─────────────────────────────
 
 function killPid(pid: number): void {
   if (!Number.isInteger(pid) || pid <= 0) return;
@@ -421,7 +421,7 @@ function killPid(pid: number): void {
   } catch {
     return; // already gone
   }
-  // SIGKILL after 1s — the same semantics as pi's RpcClient.stop() (§8.3)
+  // SIGKILL after 1s — the same semantics as pi's RpcClient.stop()
   const timer = setTimeout(() => {
     try {
       process.kill(pid, "SIGKILL");
@@ -432,7 +432,7 @@ function killPid(pid: number): void {
   timer.unref?.();
 }
 
-/** Kill every child recorded in processes for the run (§8.3). */
+/** Kill every child recorded in processes for the run. */
 export function killRunProcesses(db: Database, runId: string): void {
   for (const p of listRunProcesses(db, runId)) killPid(p.pid);
 }
@@ -449,10 +449,10 @@ export function isPidAlive(pid: number): boolean {
 }
 
 /**
- * §12.1 orphan cleanup — the daemon-startup sweep over the WHOLE processes
+ * orphan cleanup — the daemon-startup sweep over the WHOLE processes
  * table. Rows whose pid is dead (or bogus) are removed; rows whose pid is
  * ALIVE are orphaned children from a previous daemon instance killed with
- * SIGKILL — they are SIGTERM'd (SIGKILL after 1s, §8.3) and removed. The
+ * SIGKILL — they are SIGTERM'd (SIGKILL after 1s) and removed. The
  * daemon cannot take over a child whose stdout pipe it no longer owns, so
  * reaping is the only honest cleanup. Returns what was cleaned for tests.
  */
@@ -461,7 +461,7 @@ export function cleanupProcesses(db: Database): { removed_dead: number; killed: 
   const killed: number[] = [];
   for (const p of listProcesses(db)) {
     if (isPidAlive(p.pid)) {
-      killPid(p.pid); // SIGTERM → SIGKILL after 1s (§8.3)
+      killPid(p.pid); // SIGTERM → SIGKILL after 1s
       killed.push(p.pid);
     } else {
       removedDead.push(p.pid);
@@ -472,10 +472,10 @@ export function cleanupProcesses(db: Database): { removed_dead: number; killed: 
 }
 
 /**
- * Graceful shutdown (§13, T07): stop every recorded child (SIGTERM → SIGKILL
- * after 1s, §8.3) and remove its processes row. Events are already durable —
+ * Graceful shutdown (T07): stop every recorded child (SIGTERM → SIGKILL
+ * after 1s) and remove its processes row. Events are already durable —
  * nothing is persisted here; the runs they belong to surface as interrupted
- * on the next daemon start (§12.2).
+ * on the next daemon start.
  */
 export function stopRecordedChildren(db: Database): void {
   for (const p of listProcesses(db)) {
@@ -487,13 +487,13 @@ export function stopRecordedChildren(db: Database): void {
 // ── stateless verbs (no loop in this process) ────────────────────────────────
 
 /**
- * POST /runs/:id/resume on an INTERRUPTED run (§12, §13.2) — the continue
- * verb's recording half. needs_review semantics PINNED (§19, T04):
+ * POST /runs/:id/resume on an INTERRUPTED run — the continue
+ * verb's recording half. needs_review semantics PINNED (T04):
  * mid-tool-call death (an unsettled stream at process death) flags
  * needs_review when the crash lands; ANY resume from interrupted flags it
  * again — this verb enforces the second half unconditionally. The relaunch
  * itself (same --session-id + continue instruction + backfill) is T07's
- * prepareResume/driveResumedRun; this records the attempt (a §6 #11
+ * prepareResume/driveResumedRun; this records the attempt (a
  * human_action) and pins the flag.
  */
 export function resumeInterruptedRun(db: Database, runId: string, by?: string): { status: string; needs_review: number } {
@@ -552,7 +552,7 @@ export function statelessFailRun(db: Database, runId: string, by?: string): RunR
 }
 
 /**
- * Daemon-startup reconciliation (§12): every run left in `running` when the
+ * Daemon-startup reconciliation: every run left in `running` when the
  * daemon restarts is surfaced as `interrupted` — orphaned children are killed
  * (the daemon cannot take over a child whose stdout it no longer owns), the
  * run_status event records the crash, and the run awaits a human continue.

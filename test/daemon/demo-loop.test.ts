@@ -236,7 +236,7 @@ test("R7 #1 envelope_attempts: the fold counts `envelopes` TABLE rows per (phase
     // attempt list reads (test/daemon/timeline.test.ts seeds those rows and
     // asserts the same counts). review v1's segment reports 2 (rows attempts
     // 0 and 1, quality 5 and 6 — both gate-rejected: valid=1 rows with gate
-    // violations), review v2 reports 1 (attempt 0, quality 9). The §6 #8
+    // violations), review v2 reports 1 (attempt 0, quality 9). The
     // `envelope` EVENT would undercount here — it fires only on acceptance,
     // and review v1 accepted nothing.
     const state = apiState(env);
@@ -307,7 +307,7 @@ test("R7 #6: a second run of the SAME blueprint whose package envelope asserts b
     const blueprint = await loadBlueprintModule(DEMO_LOOP_BP);
     const scripts = resolveScriptedSessions(blueprint, DEMO_LOOP_FAKE_PI);
     // the same blueprint, a scripted package envelope that asserts blocked
-    // (EnvelopeBase.blocked) — the loop parks at the §3.2 blocked pause with
+    // (EnvelopeBase.blocked) — the loop parks at the blocked pause with
     // package's phase_start emitted and NO phase_end (the segment stays open)
     scripts.package = {
       turns: [settledTurn({
@@ -356,7 +356,7 @@ test("R7 #3: a phase_start payload WITHOUT cause validates through the zod path 
   try {
     // round-1's zod-level test — verify it exists and cite it:
     //   test/core/core.test.ts "R2: an old-style phase_start payload (no
-    //   cause) still validates (§6 back-compat)" — parseEventData +
+    //   cause) still validates (back-compat)" — parseEventData +
     //   PhaseStartData.parse accept { phase, agent, visit, budget } with no
     //   cause key. Re-assert the schema contract here:
     const oldStyle = { phase: "build", agent: "builder", visit: 1, budget: 3 };
@@ -409,7 +409,7 @@ test("R7 #7: the timeline endpoint reads via the (run_id, rowid) cursor; SCHEMA_
     const run = runBlueprint(env.db, env.dir, { blueprint, cwd: env.cwd, scripts });
     await run.terminal;
 
-    // the timeline endpoint's one read transport is the §4.3 cursor query:
+    // the timeline endpoint's one read transport is the cursor query:
     // collectTimelineEvents (server.ts) sweeps cursorEvents(db, runId, after,
     // MAX_EVENTS_LIMIT) from rowid 0, batching 500 — the events the fold
     // derives the segments from ARE that cursor sweep, in rowid order.

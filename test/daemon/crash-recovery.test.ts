@@ -29,8 +29,8 @@ import {
 import type { DaemonHandle } from "../../src/daemon/index.ts";
 
 /**
- * T07 crash recovery & daemon lifecycle (issue #12): kill-9 durability, §12.1
- * orphan cleanup, §12.4 backfill, §13 status/graceful shutdown. The kill-9
+ * T07 crash recovery & daemon lifecycle (issue #12): kill-9 durability,
+ * orphan cleanup, backfill, status/graceful shutdown. The kill-9
  * fixtures spawn REAL daemon processes against scratch data dirs — fake
  * sessions only (no pi binary, no tokens).
  */
@@ -191,8 +191,8 @@ test(
         }
       }, 15_000, "daemon down");
 
-      // restart against the SAME data dir: §12.1 reaps the orphan (or notes it
-      // already died on EPIPE), §12.2 surfaces the run as interrupted
+      // restart against the SAME data dir: reaps the orphan (or notes it
+      // already died on EPIPE), surfaces the run as interrupted
       boot();
       baseUrl = await waitForDaemonUp(dir);
       await waitForStatus(baseUrl, runId, "interrupted");
@@ -223,7 +223,7 @@ test(
       };
       expect(done.run.status).toBe("success");
       expect(done.run.needs_review).toBe(1); // T04 pin: any resume flags it, success keeps it
-      // §12.3 (T13 #10): the shared --session-id is asserted EXPLICITLY — the
+      // (T13 #10): the shared --session-id is asserted EXPLICITLY — the
       // crashed visit's row (never ended) plus the resumed incarnation are
       // BOTH `..._build_v1` (no v2). A Set would mask a stray different id
       // (or a wrong incarnation count); the explicit check cannot.
@@ -246,7 +246,7 @@ test(
 
       const db = openDb(join(dir, "showrunner.db"));
       try {
-        // §4.1 durability: WAL mode survived a kill-9; the file is sound
+        // durability: WAL mode survived a kill-9; the file is sound
         expect((db.query("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
         expect((db.query("PRAGMA journal_mode").get() as { journal_mode: string }).journal_mode).toBe("wal");
         // no torn rows: every event parses, ids are strictly ascending
@@ -257,7 +257,7 @@ test(
         for (let i = 1; i < rows.length; i++) expect(rows[i]!.id).toBeGreaterThan(rows[i - 1]!.id);
         for (const r of rows) expect(() => JSON.parse(r.data)).not.toThrow();
         expect(db.query("SELECT type FROM events").all().length).toBe(rows.length);
-        // §12.1: the processes table is empty after the restart's cleanup
+        // the processes table is empty after the restart's cleanup
         expect((db.query("SELECT COUNT(*) AS n FROM processes").get() as { n: number }).n).toBe(0);
       } finally {
         db.close();
@@ -275,9 +275,9 @@ test(
   { timeout: 120_000 },
 );
 
-// ── §12.1 orphan cleanup, unit level: live orphans are SIGTERM'd + removed ───
+// ── orphan cleanup, unit level: live orphans are SIGTERM'd + removed ───
 
-test("cleanupProcesses removes dead-pid rows and SIGTERMs live orphans (§12.1)", async () => {
+test("cleanupProcesses removes dead-pid rows and SIGTERMs live orphans", async () => {
   const dir = tmpDataDir("orphan");
   try {
     const db = openDb(join(dir, "showrunner.db"));
@@ -295,7 +295,7 @@ test("cleanupProcesses removes dead-pid rows and SIGTERMs live orphans (§12.1)"
     expect(out.removed_dead).toBe(2);
     expect(listProcesses(db)).toHaveLength(0); // every row is cleaned
 
-    // the live orphan actually received SIGTERM and died (§8.3 fail semantics)
+    // the live orphan actually received SIGTERM and died
     const deadline = Date.now() + 5_000;
     while (pidAlive(livePid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
     expect(pidAlive(livePid)).toBe(false);
@@ -306,7 +306,7 @@ test("cleanupProcesses removes dead-pid rows and SIGTERMs live orphans (§12.1)"
   }
 }, { timeout: 20_000 });
 
-// ── §12.4 backfill, unit level: the missed session tail is restored and the
+// ── backfill, unit level: the missed session tail is restored and the
 //    sweep is idempotent (deduplicated — the events table is append-only) ─────
 
 test("backfill finds FLAT session files too — a custom session root (PI_CODING_AGENT_SESSION_DIR) has no cwd subdir (T13)", async () => {
@@ -422,7 +422,7 @@ test("backfill restores the missed session tail, deduplicated (idempotent sweep)
   }
 });
 
-// ── §12.4 backfill end-to-end: daemon killed mid-session → restart restores
+// ── backfill end-to-end: daemon killed mid-session → restart restores
 //    the missed tail and a further restart adds nothing ───────────────────────
 
 test(
@@ -508,9 +508,9 @@ test(
   { timeout: 120_000 },
 );
 
-// ── §13 status verb: health + pool utilization + run status counts ───────────
+// ── status verb: health + pool utilization + run status counts ───────────
 
-test("GET /status reports health, pool utilization, and run status counts (§13)", async () => {
+test("GET /status reports health, pool utilization, and run status counts", async () => {
   const dir = tmpDataDir("status");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-status-cwd-"));
   let daemon: DaemonHandle | null = null;
@@ -564,9 +564,9 @@ test("GET /status reports health, pool utilization, and run status counts (§13)
   }
 });
 
-// ── §13 graceful shutdown: stop children, remove the pidfile ────────────────
+// ── graceful shutdown: stop children, remove the pidfile ────────────────
 
-test("graceful shutdown stops recorded children and removes the pidfile (§13)", async () => {
+test("graceful shutdown stops recorded children and removes the pidfile", async () => {
   const dir = tmpDataDir("shutdown");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-shutdown-cwd-"));
   let daemon: DaemonHandle | null = null;
@@ -597,7 +597,7 @@ test("graceful shutdown stops recorded children and removes the pidfile (§13)",
     } finally {
       db.close();
     }
-    // the run left mid-flight surfaces as interrupted on the next start (§12.2)
+    // the run left mid-flight surfaces as interrupted on the next start
     const daemon2 = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
     try {
       await waitForStatus(daemon2.baseUrl, runId, "interrupted");
@@ -643,7 +643,7 @@ test("no auto-resume (v1): a restarted daemon surfaces interrupted but never dri
     boot();
     baseUrl = await waitForDaemonUp(dir);
     await waitForStatus(baseUrl, runId, "interrupted");
-    // let time pass — the run must STAY interrupted (no auto-resume, §12.6)
+    // let time pass — the run must STAY interrupted (no auto-resume)
     await new Promise((r) => setTimeout(r, 600));
     const detail = (await api(baseUrl, "GET", `/runs/${runId}`)).json as { run: { status: string } };
     expect(detail.run.status).toBe("interrupted");

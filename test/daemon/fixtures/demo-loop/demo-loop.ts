@@ -9,7 +9,7 @@ import type { Envelope, Gate } from "../../../../src/core/index.ts";
  * on_fail jump sends execution BACK to implement for a second visit, after
  * which review v2 passes and the run completes.
  *
- * The exact driven sequence (§5.2, pinned by test/daemon/demo-loop.test.ts):
+ * The exact driven sequence (pinned by test/daemon/demo-loop.test.ts):
  *   plan v1 succeeds → implement v1 succeeds → review v1: attempt 0 fails its
  *   gates, one correction is issued, attempt 1 fails, the correction budget
  *   (1) is exhausted, the phase ends `failed`, and the jump fires →

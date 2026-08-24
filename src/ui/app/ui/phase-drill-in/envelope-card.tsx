@@ -7,7 +7,7 @@ import { badGlyph, Card, mono, okGlyph, Pre } from "./card.tsx";
 import { parseEnvelope, parseViolations, type ParsedEnvelope } from "../public/envelope-parse.ts";
 
 /**
- * ENVELOPE card (§16.8) — the accepted envelope + the FULL attempt history:
+ * ENVELOPE card — the accepted envelope + the FULL attempt history:
  * every attempt (valid/invalid, the violations that rejected it, and the
  * correction message that followed — filled by the loop once the correction is
  * actually sent), attempt number, and timestamps. The accepted envelope is
@@ -15,9 +15,9 @@ import { parseEnvelope, parseViolations, type ParsedEnvelope } from "../public/e
  * (notes_for_next_agent), the files it produced (artifacts — checked against
  * its outputs/ dir), and the FINDINGS.md content when the phase wrote one —
  * with the raw JSON viewable inline; the envelope.json source path is shown
- * (§10).
+ *.
  *
- * The data comes from the daemon's §13.1 envelope-history endpoint: ALL
+ * The data comes from the daemon's envelope-history endpoint: ALL
  * attempts for the phase, ordered visit → attempt (T03's model). `outputs` is
  * the phase's outputs/ dir listing read server-side by the drill-in controller.
  */
@@ -104,7 +104,7 @@ export function EnvelopeCard(handle: Handle<EnvelopeCardProps>) {
   };
 }
 
-/** One-line state label for an attempt row, per §16.8's "✗ invalid … ✓ valid". */
+/** One-line state label for an attempt row, per the "✗ invalid … ✓ valid" pair. */
 function attemptState(e: EnvelopeRow): string {
   if (e.valid !== 1) return "invalid";
   const violations = parseViolations(e.violations);

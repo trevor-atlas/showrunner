@@ -2,7 +2,7 @@
  * @showrunner/daemon — the daemon package's public surface.
  */
 
-// SQLite (§4)
+// SQLite
 export {
   CURSOR_SQL,
   SCHEMA_VERSION,
@@ -52,18 +52,18 @@ export type {
   RunWithSpend,
 } from "./db.ts";
 
-// Tracer (§7)
+// Tracer
 export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "./tracer.ts";
 export type { FoldedEvent, FoldedEventType, TracerOptions, TracerSink } from "./tracer.ts";
 
-// Price roster (§11.1)
+// Price roster
 export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, pricesPathFor } from "./roster.ts";
 export type { Roster, RosterEntry } from "./roster.ts";
 
-// Raw records (§10)
+// Raw records
 export { RawOutputFile, tailRawFile } from "./rawfile.ts";
 
-// §9 context & handoff filesystem protocol (T05)
+// context & handoff filesystem protocol (T05)
 export {
   inputsDirFor,
   materializeHandoff,
@@ -79,7 +79,7 @@ export {
 } from "./handoff.ts";
 export type { AgentMapEntry, Handoff } from "./handoff.ts";
 
-// Line framing (§7.1)
+// Line framing
 export { LineSplitter } from "./linesplit.ts";
 
 // Event queue
@@ -97,7 +97,7 @@ export type {
   RecordEnvelopeAcceptanceOptions,
 } from "./envelope-runner.ts";
 
-// The §5 run loop
+// The run loop
 export {
   DEFAULT_MAX_VISITS,
   composeContinuePrompt,
@@ -127,10 +127,10 @@ export type {
   ScriptedTurn,
 } from "./runner.ts";
 
-// §5.4 run pool
+// run pool
 export { RunPool } from "./pool.ts";
 
-// T04 pause & control surface (§5.3 pause menu, §12 resume, F1 slot hold)
+// T04 pause & control surface (pause menu, resume, F1 slot hold)
 export {
   RunControl,
   cleanupProcesses,
@@ -167,7 +167,7 @@ export {
 } from "./driver.ts";
 export type { SubmittedRun, SubmitOptions } from "./driver.ts";
 
-// pi session drivers (T02: real pi spawn behind the §8 seam)
+// pi session drivers (T02: real pi spawn behind the seam)
 export {
   DEFAULT_RPC_TIMEOUT_MS,
   DEFAULT_STDERR_CAP,
@@ -189,11 +189,11 @@ export type {
   SessionDriverKind,
 } from "./pi/index.ts";
 
-// §12.4 backfill (T07: session-JSONL re-read, deduped against the run's raw file)
+// backfill (T07: session-JSONL re-read, deduped against the run's raw file)
 export { backfillMissedEvents } from "./backfill.ts";
 export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
 
-// HTTP API (§13)
+// HTTP API
 export { createWebServer } from "./web.ts";
 // The api core: exported per-endpoint functions the wire dispatcher and the
 // UI actions (in-process, T4) share. ApiError carries the wire status code.
@@ -221,7 +221,7 @@ export {
 } from "./server.ts";
 export type { ApiState } from "./server.ts";
 
-// The typed §13 client (ships for the CLI and the UI; http-only — the daemon
+// The typed client (ships for the CLI and the UI; http-only — the daemon
 // serves the API under /api/* on one TCP listener). Its ApiError lives in
 // client.ts (the server core has its own — same shape, different module).
 export {

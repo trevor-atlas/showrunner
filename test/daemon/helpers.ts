@@ -20,7 +20,7 @@ export function rawLine(evt: RawEvent): string {
   return JSON.stringify(evt);
 }
 
-// ── raw pi event builders (verified shapes, §7.1/§7.2) ───────────────────────
+// ── raw pi event builders (verified shapes) ───────────────────────
 
 export function toolStart(callId: string, toolName: string, args: unknown): string {
   return rawLine({ type: "tool_execution_start", toolCallId: callId, toolName, args });

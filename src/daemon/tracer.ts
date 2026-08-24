@@ -8,8 +8,8 @@ import type { Roster } from "./roster.ts";
 import { classifyLine, SETTLED_KIND } from "./pi/raw-lines.ts";
 
 /**
- * The tracer (spec §7): folds a raw pi JSONL stream into the three harness
- * event types it owns - tool_call (§7.2), spend (§7.3), and agent_end
+ * The tracer: folds a raw pi JSONL stream into the three harness
+ * event types it owns - tool_call, spend, and agent_end
  * (agent_settled / stream death). The driver emits the run/phase/agent
  * lifecycle events around it.
  *
@@ -23,7 +23,7 @@ import { classifyLine, SETTLED_KIND } from "./pi/raw-lines.ts";
  *  - calls still open when the stream dies are flushed as ok:false, truncated:true
  *  - usage is snapshotted at message_update / message_end / turn_end and
  *    diffed per (phase, visit) into spend deltas; usd comes from pi's reported
- *    cost when present, else null — the §11.1 roster fallback turns a
+ *    cost when present, else null — the roster fallback turns a
  *    zero/absent reported cost into a flagged estimate (tokens × per-mtok)
  *    when the agent's model is on the roster, and null is never fabricated
  *  - agent_end fires once, at stream close, with ok = settled && clean exit
@@ -43,18 +43,18 @@ export interface TracerOptions {
   visit: number;
   agent: string; // agent name
   piSessionId: string;
-  /** the agent's model — the roster lookup key for the §11.1 estimate path */
+  /** the agent's model — the roster lookup key for the estimate path */
   model?: string;
-  /** the local price roster (§11.1); when pi reports zero/absent cost, `usd`
+  /** the local price roster; when pi reports zero/absent cost, `usd`
    * becomes an estimate from this roster, flagged `estimated: true` */
   roster?: Roster;
-  /** snippet cap in characters (default 4096, §7.2) */
+  /** snippet cap in characters (default 4096) */
   snippetCap?: number;
   /** injectable wall clock (ms epoch) for deterministic tests */
   now?: () => number;
   sink: TracerSink;
   /**
-   * Append a raw line verbatim, BEFORE parsing (spec §10). `final` marks the
+   * Append a raw line verbatim, BEFORE parsing. `final` marks the
    * last line of the stream: an unterminated final line must be appended
    * byte-identically (no invented trailing newline).
    */
@@ -127,7 +127,7 @@ export class Tracer {
         this.onToolEnd(evt!);
         break;
       case SETTLED_KIND:
-        // §7.4: agent_end with willRetry is not done; agent_settled is.
+        // agent_end with willRetry is not done; agent_settled is.
         this.settled = true;
         break;
       case "message_update":
@@ -136,7 +136,7 @@ export class Tracer {
         this.snapshotUsage(evt!);
         break;
       default:
-        break; // machinery and other events: recorded raw only (§7.4)
+        break; // machinery and other events: recorded raw only
     }
   }
 
@@ -164,11 +164,11 @@ export class Tracer {
     });
   }
 
-  // ── tool-call folding (§7.2) ───────────────────────────────────────────────
+  // ── tool-call folding ───────────────────────────────────────────────
 
   /**
    * Resolve the pending-call key. pi always emits toolCallId; the fallback
-   * (spec §7.2) handles a missing id: start keys on (toolName, start_ts), and
+   * handles a missing id: start keys on (toolName, start_ts), and
    * update/end resolve by toolName when exactly one call is open for it.
    */
   private resolveKey(toolCallId: string | undefined, toolName: string): string | undefined {
@@ -199,7 +199,7 @@ export class Tracer {
     const key = this.resolveKey(r.data.toolCallId, r.data.toolName);
     const call = key !== undefined ? this.calls.get(key) : undefined;
     if (!call) return;
-    // §7.2: partialResult is the *accumulated* output - REPLACES, not appends
+    // partialResult is the *accumulated* output - REPLACES, not appends
     call.snippet = capText(joinTextBlocks(r.data.partialResult.content), this.opts.snippetCap);
   }
 
@@ -235,7 +235,7 @@ export class Tracer {
     });
   }
 
-  // ── usage folding (§7.3) ───────────────────────────────────────────────────
+  // ── usage folding ───────────────────────────────────────────────────
 
   private snapshotUsage(evt: Record<string, unknown>): void {
     const usage = extractUsage(evt);
@@ -256,7 +256,7 @@ export class Tracer {
             : usage.costTotal,
     };
     this.lastUsage = usage;
-    // §11.1 roster fallback: when the PROVIDER reports no cost for this delta
+    // roster fallback: when the PROVIDER reports no cost for this delta
     // (zero or absent `cost.total`) — and it is NOT a clamped snapshot
     // regression — `usd` becomes an ESTIMATE from the local prices.json
     // (tokens × per-mtok), flagged `estimated: true`; a missing roster entry
@@ -304,7 +304,7 @@ export class Tracer {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/** §7.2: content blocks are {type:"text",text}[] - join the text fields. */
+/** content blocks are {type:"text",text}[] - join the text fields. */
 export function joinTextBlocks(blocks: { type: string; text?: string }[]): string {
   return blocks.map((b) => b.text ?? "").join("\n");
 }
@@ -314,7 +314,7 @@ function capText(text: string, cap: number): string {
 }
 
 /**
- * Extract the cumulative usage from a message/turn event (§7.3): the field
+ * Extract the cumulative usage from a message/turn event: the field
  * lives on `evt.usage` (message_update) or `evt.message.usage`
  * (message_end / turn_end). Version-tolerant: any field that is missing or
  * not a finite number reads as 0.

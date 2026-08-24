@@ -26,23 +26,23 @@ import {
 import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
 
 /**
- * The §19 edge-case fixture suite (T13 capstone) — the implementation-time
+ * The edge-case fixture suite (T13 capstone) — the implementation-time
  * open questions pinned hermetically against FakePi:
  *
- *  - slow-gate backpressure (§19 "Backpressure"): a gate that sleeps while the
+ *  - slow-gate backpressure ("Backpressure"): a gate that sleeps while the
  *    agent's stream is already folded — the tracer read loop must never block
  *    on the gate (raw file complete at gate start; events queryable DURING the
  *    gate's sleep).
- *  - mid-tool-crash needs_review (§19 "Mid-tool-call crash") re-verified at the
+ *  - mid-tool-crash needs_review ("Mid-tool-call crash") re-verified at the
  *    run-loop level, including the agent_end ok=false on a turn-1-settled /
  *    turn-2-died-with-exit-0 stream (T13 #3 cosmetic fix).
- *  - the visit-guard latch (§5.2 step 3, T13 #7): the one-shot guard bypass —
+ *  - the visit-guard latch (step 3, T13 #7): the one-shot guard bypass —
  *    restart-fresh can never silently exceed max_visits, guard_exhausted stays
  *    reachable through the pause menu.
- *  - queued-steer drain (§5.3, T13 #8): a steer queued while paused is
+ *  - queued-steer drain (T13 #8): a steer queued while paused is
  *    delivered to the continued visit's session (delivery lands with the
  *    continuation machinery).
- *  - zombie-running invariant (§13, T13 #12): a synchronous initState throw
+ *  - zombie-running invariant (T13 #12): a synchronous initState throw
  *    (malformed prices.json between submit and drive) finalizes the run failed
  *    instead of stranding it in "running".
  *
@@ -113,16 +113,16 @@ async function waitFor(fn: () => boolean | Promise<boolean>, timeoutMs = 8000, l
   }
 }
 
-// ── §19 "Backpressure": the tracer read loop never blocks on a slow gate ─────
+// ── "Backpressure": the tracer read loop never blocks on a slow gate ─────
 
 test(
-  "§19 slow-gate backpressure: the raw record is complete and events are queryable WHILE a gate sleeps (3s)",
+  " slow-gate backpressure: the raw record is complete and events are queryable WHILE a gate sleeps (3s)",
   async () => {
     const env = openEnv("edge-slowgate");
     const marker = join(env.cwd, "gate-started.marker");
     const gateSleptMs: number[] = [];
     try {
-      // a gate that sleeps 3s — the §7.1 danger window: if the read loop
+      // a gate that sleeps 3s — the danger window: if the read loop
       // blocked on gate execution, the agent's stream would stall behind it
       const slowGate: Gate = async (_envelope) => {
         writeFileSync(marker, "started"); // the test polls this
@@ -134,7 +134,7 @@ test(
       const passGate: Gate = async () => ({ pass: true });
 
       // the agent streams ~25 tool calls slowly — a long tail the read loop
-      // must fully drain (raw file = the safe buffer, §7.1) before the gate
+      // must fully drain (raw file = the safe buffer) before the gate
       const streamed: Record<string, unknown>[] = [
         { type: "agent_start", messageCount: 0, model: "fake-pi" },
         { type: "turn_start" },
@@ -171,12 +171,12 @@ test(
 
       // the gate STARTED → at that moment the raw record must already hold the
       // agent's ENTIRE stream (the read loop drained it before the gate ran —
-      // the raw file is the safe buffer, §7.1) and the folded tool_call events
+      // the raw file is the safe buffer) and the folded tool_call events
       // must be queryable DURING the gate's sleep, not after it returns
       await waitFor(() => existsSync(marker), 15_000, "slow gate started");
       const rawPath = join(runDirFor(env.dir, run.run_id), "raw_output.jsonl");
       const rawLines = readFileSync(rawPath, "utf8").split("\n").filter((l) => l !== "");
-      // every streamed event landed byte-identically in the raw record (§10)
+      // every streamed event landed byte-identically in the raw record
       expect(rawLines.length).toBe(streamed.length);
       // the folded tool_call rows are visible in SQLite while the gate sleeps:
       // the read loop never waited on the gate (a 1.8s window inside a 3s sleep)
@@ -200,10 +200,10 @@ test(
   { timeout: 30_000 },
 );
 
-// ── §19 "Mid-tool-call crash": needs_review at the loop level + agent_end ok ──
+// ── "Mid-tool-call crash": needs_review at the loop level + agent_end ok ──
 
 test(
-  "§19 mid-tool-crash: turn 1 settles, turn 2 dies with exit 0 → run failed + needs_review, agent_end ok=false (T13 #3)",
+  " mid-tool-crash: turn 1 settles, turn 2 dies with exit 0 → run failed + needs_review, agent_end ok=false (T13 #3)",
   async () => {
     const env = openEnv("edge-crash");
     try {
@@ -214,7 +214,7 @@ test(
       // turn 1 settles and fails the gate → a correction is issued → turn 2
       // dies mid tool call with a CLEAN exit 0 (no settle) — the tracer must
       // report ok=false even though an EARLIER turn settled (T13 #3), and the
-      // run verdict is crash/needs_review per §19
+      // run verdict is crash/needs_review per
       const dyingTurn: ScriptedTurn = {
         events: [
           { type: "agent_start", messageCount: 0, model: "fake-pi" },
@@ -237,7 +237,7 @@ test(
       // now agrees: the visit died before its LAST turn settled → ok=false
       const agentEnd = cursorEvents(env.db, run.run_id, 0, 10_000).find((e) => e.type === "agent_end");
       expect(agentEnd!.data).toMatchObject({ ok: false, exit: 0 });
-      // the open tool call of the dying turn was flushed truncated (§7.2)
+      // the open tool call of the dying turn was flushed truncated
       const truncated = cursorEvents(env.db, run.run_id, 0, 10_000).filter(
         (e) => e.type === "tool_call" && (e.data as { truncated?: boolean }).truncated,
       );
@@ -249,10 +249,10 @@ test(
   { timeout: 20_000 },
 );
 
-// ── §5.2 step 3: the visit guard re-asserts after restarts (T13 #7) ─────────
+// ── step 3: the visit guard re-asserts after restarts (T13 #7) ─────────
 
 test(
-  "§5.2 visit guard: the bypass is one-shot — guard_exhausted stays reachable through the pause menu (T13 #7)",
+  " visit guard: the bypass is one-shot — guard_exhausted stays reachable through the pause menu (T13 #7)",
   async () => {
     const env = openEnv("edge-guard");
     try {
@@ -286,7 +286,7 @@ test(
         if (Date.now() > deadline) break;
         await new Promise((r) => setTimeout(r, 10));
       }
-      // the pinned §5.2 sequence: visits 1-2 exhaust their budgets, then the
+      // the pinned sequence: visits 1-2 exhaust their budgets, then the
       // guard fires (visits >= max_visits); a restart earns ONE more visit,
       // then the guard fires AGAIN — the sticky-latch bug would have only the
       // first guard pause and then silent visits beyond max_visits
@@ -304,10 +304,10 @@ test(
   { timeout: 20_000 },
 );
 
-// ── §5.3: a steer queued while paused is delivered to the continued visit ────
+// ── a steer queued while paused is delivered to the continued visit ────
 
 test(
-  "§5.3 queued steer on a paused run is drained onto the continued visit's session (T13 #8)",
+  " queued steer on a paused run is drained onto the continued visit's session (T13 #8)",
   async () => {
     const env = openEnv("edge-steerdrain");
     try {
@@ -343,7 +343,7 @@ test(
       control.steer("try harder", "operator");
       expect(control.queuedSteerCount).toBe(1); // queued (no live session)
 
-      // the §5.3 menu: 'steer then the visit continues' — restart-fresh
+      // the menu: 'steer then the visit continues' — restart-fresh
       // continues the phase; the queued steer rides the NEW visit's session
       control.restartFresh("operator");
 
@@ -369,7 +369,7 @@ test(
       expect(v2Tools).toContain("T2"); // the queued steer was delivered
       expect(v2Tools[0]).toBe("T1"); // the prompt came first
 
-      // audited + in the feed (§6 #11)
+      // audited + in the feed
       const actions = cursorEvents(env.db, run.run_id, 0, 10_000)
         .filter((e) => e.type === "human_action")
         .map((e) => e.data as { action: string; detail: string });
@@ -385,7 +385,7 @@ test(
 );
 
 test(
-  "§19 mid-tool-crash: a SIGNAL-killed child (exitCode null) still crashes the run — the closed latch (T13 capstone)",
+  " mid-tool-crash: a SIGNAL-killed child (exitCode null) still crashes the run — the closed latch (T13 capstone)",
   async () => {
     const env = openEnv("edge-signalkill");
     try {
@@ -430,7 +430,7 @@ test(
       const result = await run.terminal;
       expect(result).toEqual({ status: "failed", needs_review: true });
       expect(getRun(env.db, run.run_id)!.needs_review).toBe(1);
-      // the open tool call was flushed truncated (§7.2)
+      // the open tool call was flushed truncated
       const truncated = cursorEvents(env.db, run.run_id, 0, 10_000).filter(
         (e) => e.type === "tool_call" && (e.data as { truncated?: boolean }).truncated,
       );
@@ -442,18 +442,18 @@ test(
   { timeout: 20_000 },
 );
 
-// ── §13: a synchronous initState throw never strands a run in "running" ──────
+// ── a synchronous initState throw never strands a run in "running" ──────
 
 test(
-  "§13 zombie-running: a malformed prices.json between submit and drive finalizes the run failed (T13 #12)",
+  " zombie-running: a malformed prices.json between submit and drive finalizes the run failed (T13 #12)",
   async () => {
     const env = openEnv("edge-zombie");
     try {
-      // a VALID roster at submit — the §13.3 submit-time validation passes
+      // a VALID roster at submit — the submit-time validation passes
       writeFileSync(pricesPathFor(env.dir), JSON.stringify({ "fake-pi": { in_per_mtok: 3, out_per_mtok: 15 } }));
       const prepared = await prepareBlueprintRun(env.db, env.dir, { modulePath: HAPPY_BP, cwd: env.cwd });
-      // the roster file becomes malformed before the run drives (§11.1 re-read
-      // once per run — the §13.3 snapshot doctrine's residual window)
+      // the roster file becomes malformed before the run drives (re-read
+      // once per run — the snapshot doctrine's residual window)
       writeFileSync(pricesPathFor(env.dir), "{ not json");
 
       const run = drivePreparedRun(env.db, env.dir, prepared);
@@ -466,7 +466,7 @@ test(
       // the failure is recorded as an event, not a silence
       const statuses = cursorEvents(env.db, prepared.runId, 0, 100).filter((e) => e.type === "run_status");
       expect(statuses.at(-1)!.data).toMatchObject({ from: "running", to: "failed" });
-      // no zombie: a §12.2 reconcile sweep finds nothing to interrupt
+      // no zombie: a reconcile sweep finds nothing to interrupt
       expect(reconcileInterruptedRuns(env.db)).not.toContain(prepared.runId);
     } finally {
       closeEnv(env);
@@ -475,10 +475,10 @@ test(
   { timeout: 20_000 },
 );
 
-// ── the §11.1 fixture submit path: a malformed roster fails BEFORE rows exist ─
+// ── the fixture submit path: a malformed roster fails BEFORE rows exist ─
 
 test(
-  "§11.1 fixture submit: a malformed prices.json throws with NO run row left behind (T13 #5)",
+  " fixture submit: a malformed prices.json throws with NO run row left behind (T13 #5)",
   async () => {
     const env = openEnv("edge-roster-submit");
     try {
@@ -502,15 +502,15 @@ test(
   { timeout: 20_000 },
 );
 
-// ── §19 "on_fail + loop guard": a redrive cycle pauses at max_visits ─────────
+// ── "on_fail + loop guard": a redrive cycle pauses at max_visits ─────────
 
 test(
-  "§5.2 on_fail + loop guard: a budget-exhausted phase routing to a phase that also fails PAUSES at max_visits across the redrives (not running forever)",
+  " on_fail + loop guard: a budget-exhausted phase routing to a phase that also fails PAUSES at max_visits across the redrives (not running forever)",
   async () => {
     const env = openEnv("edge-onfail-guard");
     try {
       // the capstone FINDING 2 shape: BOTH phases fail and route to each
-      // other via on_fail — the plan↔build cycle must terminate at the §5.2
+      // other via on_fail — the plan↔build cycle must terminate at the
       // step-3 guard (visits >= max_visits → pause), never run forever. The
       // on_fail target counts as a NEW visit on the same per-phase counter.
       const blueprint = defineBlueprint({
@@ -573,10 +573,10 @@ test(
   { timeout: 30_000 },
 );
 
-// ── §8.3/§19: no fake-session child outlives its run ────────────────────────
+// ── no fake-session child outlives its run ────────────────────────
 
 test(
-  "§8.3 child lifecycle: no fake-session child outlives a completed run (reaped at visit end, processes table clean)",
+  " child lifecycle: no fake-session child outlives a completed run (reaped at visit end, processes table clean)",
   async () => {
     const env = openEnv("edge-reap");
     try {

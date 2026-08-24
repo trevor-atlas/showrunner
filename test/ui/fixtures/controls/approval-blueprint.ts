@@ -2,7 +2,7 @@ import { EnvelopeBase, defineAgent, defineBlueprint } from "../../../../src/core
 
 /**
  * The T10b approve e2e fixture — a one-phase blueprint with require_approval:
- * the run pauses BEFORE the phase spawns (§5.2 step 1) with the approval menu
+ * the run pauses BEFORE the phase spawns with the approval menu
  * (approve / steer / fail); the approve action proceeds to spawn and the
  * phase succeeds on its first turn (fake-pi/build.json writes a valid
  * envelope; gates: [] means nothing rejects it).

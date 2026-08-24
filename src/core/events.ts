@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The event taxonomy (spec §6): exactly twelve event types, each with its data
+ * The event taxonomy: exactly twelve event types, each with its data
  * shape. These schemas are the single source of truth - the daemon validates
  * every event's data against them before inserting (no hand-rolled
  * validation).
@@ -53,7 +53,7 @@ export const PhaseStartCauseOnFail = z.object({
 });
 export const PhaseStartCauseHuman = z.object({
   kind: z.literal("human"),
-  /** the §6 #11 human_action verb that redrove the phase: restart | steer | resume */
+  /** the human_action verb that redrove the phase: restart | steer | resume */
   action: z.string(),
   by: z.string().optional(),
 });
@@ -93,14 +93,14 @@ export const AgentEndData = z.object({
   ok: z.boolean(),
 });
 
-/** 7 — one row per real tool call (folding, §7.2) */
+/** 7 — one row per real tool call (folding) */
 export const ToolCallData = z.object({
   tool: z.string(),
   tool_call_id: z.string(),
   args: z.unknown(),
   result_snippet: z.string(),
   ok: z.boolean(),
-  /** set on mid-tool-call death flush (§7.2) */
+  /** set on mid-tool-call death flush */
   truncated: z.boolean().optional(),
   duration_ms: z.number().nonnegative(),
   agent: z.string(),
@@ -136,16 +136,16 @@ export const HumanActionData = z.object({
   detail: z.string(),
 });
 
-/** 12 — usage deltas folded from pi message/turn usage fields (§7.3) */
+/** 12 — usage deltas folded from pi message/turn usage fields */
 export const SpendData = z.object({
   phase: z.string(),
   tokens_in: z.number().int().nonnegative(),
   tokens_out: z.number().int().nonnegative(),
   cache_read: z.number().int().nonnegative(),
   cache_write: z.number().int().nonnegative(),
-  /** dollars from pi's reported cost when present; null otherwise (§11.1) */
+  /** dollars from pi's reported cost when present; null otherwise */
   usd: z.number().nullable(),
-  /** true when `usd` is an ESTIMATE from the local price roster (§11.1) — the
+  /** true when `usd` is an ESTIMATE from the local price roster — the
    * numbers are pi's, not ours: the roster only fills gaps, and the UI shows
    * estimated vs reported spend distinctly. False for reported or null usd. */
   estimated: z.boolean(),
@@ -190,7 +190,7 @@ export function parseEventData(type: EventType, data: unknown): unknown {
   return EVENT_DATA_SCHEMAS[type].parse(data);
 }
 
-/** One events row as stored (§6). */
+/** One events row as stored. */
 export interface EventRow {
   id: number;
   run_id: string;

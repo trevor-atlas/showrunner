@@ -2,7 +2,7 @@ import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
 /**
- * Empty state (spec §16.10): no runs yet — the one-line CTA that points at
+ * Empty state: no runs yet — the one-line CTA that points at
  * the CLI's submit verb.
  */
 

@@ -5,7 +5,7 @@ import type { Gate } from "./gate.ts";
 import type { PhaseHookContext } from "./run.ts";
 
 /**
- * Blueprint types (spec §3.5). A blueprint is a TypeScript module defining a
+ * Blueprint types. A blueprint is a TypeScript module defining a
  * play of phases; phases reference imported agents and gates directly - no
  * string registries.
  */
@@ -35,7 +35,7 @@ export interface Blueprint {
   onPhaseEnd?: (ctx: PhaseHookContext) => Promise<void>;
 }
 
-/** Default correction budget per visit (spec §3.5). */
+/** Default correction budget per visit. */
 export const DEFAULT_BUDGET = 3;
 
 /** Thrown by defineBlueprint when a blueprint fails load-time validation. */
@@ -47,7 +47,7 @@ export class BlueprintValidationError extends Error {
 }
 
 /**
- * Load-time validation (spec §3.5, run in the daemon):
+ * Load-time validation (run in the daemon):
  *  - phase names non-empty and unique
  *  - `on_fail.to` must name a phase that exists
  *  - `envelope` must be assignable to EnvelopeBase
@@ -109,7 +109,7 @@ export function validateBlueprint(b: Blueprint): void {
 }
 
 /**
- * The envelope-extends-base check (spec §3.5): build `EnvelopeBase.merge(envelope)`
+ * The envelope-extends-base check: build `EnvelopeBase.merge(envelope)`
  * and assert it still accepts an EnvelopeBase instance.
  *
  * Phases normally use `EnvelopeBase.extend({...})`, which can add *required*

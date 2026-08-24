@@ -2,7 +2,7 @@ import { openSync, writeSync, closeSync } from "node:fs";
 import { readFileSync } from "node:fs";
 
 /**
- * The raw record file (spec §10): every raw pi JSONL line appended verbatim,
+ * The raw record file: every raw pi JSONL line appended verbatim,
  * by the tracer, *before* parsing. The DB is the queryable mirror; this file is
  * the record of truth. Opened once and written synchronously so ordering is
  * guaranteed and the read loop never awaits an async append.

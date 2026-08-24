@@ -20,7 +20,7 @@ export const router = createRouter<AppContext>({
 });
 
 router.map(routes, controller);
-// §16.12: a controller per route group — the run-detail group and the phases
+// a controller per route group — the run-detail group and the phases
 // group each map the controllers that render them (runs + runs/phases)
 router.map(routes.runs, runsController);
 router.map(routes.runs.phases, runsPhasesController);

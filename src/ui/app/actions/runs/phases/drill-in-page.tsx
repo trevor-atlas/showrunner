@@ -16,8 +16,8 @@ import { Document } from "../../document.tsx";
 import type { EnvelopeRow } from "../../../../../daemon/db.ts";
 
 /**
- * The phase drill-in page (spec §16.8): one stacked card per surface —
- * CONFIG (from the §13.3 blueprint snapshot), ENVELOPE (accepted + full
+ * The phase drill-in page: one stacked card per surface —
+ * CONFIG (from the blueprint snapshot), ENVELOPE (accepted + full
  * attempt history), GATES (pass/fail + override badges), SPEND (per-phase
  * tokens + USD), OUTPUT (raw_output.jsonl tail). Read-only: no mutation
  * controls on this page (the override button is T10b's ticket — the override
@@ -116,7 +116,7 @@ export function DrillInPage(handle: Handle<DrillInPageProps>) {
   };
 }
 
-/** §16.10 missing phase/run — 404 with a back-link to the run list. */
+/** missing phase/run — 404 with a back-link to the run list. */
 export interface NotFoundPageProps {
   /** the missing run id (when the run itself was not found) */
   runId: string;

@@ -12,7 +12,7 @@ export const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 
 /**
  * The first prompt's ack can lag while pi refreshes its model catalog (15s,
- * §8.1) — allow generous slack without blocking the loop forever. Corrections
+ *) — allow generous slack without blocking the loop forever. Corrections
  * go fire-and-forget (the settle signal gates the loop, not the ack).
  */
 export const FIRST_PROMPT_ACK_TIMEOUT_MS = 60_000;
@@ -21,19 +21,19 @@ export const FIRST_PROMPT_ACK_TIMEOUT_MS = 60_000;
 export const SIGKILL_AFTER_MS = 1_000;
 
 export interface PiSessionOptions {
-  /** create-or-continue session id (§8.1) */
+  /** create-or-continue session id */
   sessionId: string;
-  /** spawn cwd — there is no --cwd flag (verified), cwd is set via spawn (§8.1) */
+  /** spawn cwd — there is no --cwd flag (verified), cwd is set via spawn */
   cwd: string;
   /** extra env for the child (merged over process.env) */
   env?: Record<string, string>;
-  /** every raw stdout line (LF-split, §7.1), before parsing — feeds the tracer */
+  /** every raw stdout line (LF-split), before parsing — feeds the tracer */
   onLine?: (line: string, final?: boolean) => void;
-  /** stderr capture cap (§8.3) */
+  /** stderr capture cap */
   stderrLimit?: number;
   /** CLI entry override (default: SHOWRUNNER_PI_BINARY ?? PI_BINARY ?? "pi") */
   cliPath?: string;
-  /** CLI args override (default: the §8.1 RPC invocation) */
+  /** CLI args override (default: the RPC invocation) */
   args?: string[];
 }
 
@@ -48,15 +48,15 @@ interface PendingRequest {
 }
 
 /**
- * The real pi session driver (spec §8). Spawns `pi --mode rpc --session-id
+ * The real pi session driver. Spawns `pi --mode rpc --session-id
  * <id> --approve` with cwd = run.cwd (never `--session`, which errors on
  * absent sessions, and never `--cwd`, which does not exist — verified), writes
  * LF JSONL commands to stdin, reads the pure-JSONL stdout stream (LF-only
- * framing, §7.1; pi reroutes stray stdout to stderr in rpc mode), captures
+ * framing, ; pi reroutes stray stdout to stderr in rpc mode), captures
  * stderr, and owns the lifecycle: close stdin to reap (exit 0), or SIGTERM →
  * SIGKILL after 1s (the semantics of pi's bundled RpcClient.stop()).
  *
- * Backpressure (§7.1): the read loop never blocks on SQLite. Raw lines are
+ * Backpressure: the read loop never blocks on SQLite. Raw lines are
  * handed to the `onLine` callback synchronously — the tracer appends them to
  * raw_output.jsonl (the safe buffer) and pushes folded events to the queue
  * sink — and the RPC layer only touches in-memory maps. If the daemon stops
@@ -119,7 +119,7 @@ export class PiSession implements SessionDriver {
     });
     this.child = child;
 
-    // stderr: real diagnostics live here (§8.3) — bounded capture per run
+    // stderr: real diagnostics live here — bounded capture per run
     child.stderr?.on("data", (chunk: Buffer) => {
       this.stderrBytes += chunk.length;
       if (this.stderrBytes <= this.stderrLimit) this.stderrChunks.push(chunk.toString("utf8"));
@@ -127,7 +127,7 @@ export class PiSession implements SessionDriver {
     // a dead child's pipe must not crash the daemon with an unhandled 'error'
     child.stdin?.on("error", () => {});
 
-    // stdout: pure JSONL, LF-only framing (§7.1) — Node readline is non-compliant
+    // stdout: pure JSONL, LF-only framing — Node readline is non-compliant
     const decoder = new StringDecoder("utf8");
     const splitter = new LineSplitter();
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -141,7 +141,7 @@ export class PiSession implements SessionDriver {
     });
     child.on("close", (code: number | null) => {
       // flush any unterminated final line byte-identically BEFORE anything
-      // else — the tracer appends it without inventing a trailing newline (§10)
+      // else — the tracer appends it without inventing a trailing newline
       for (const line of splitter.push(decoder.end())) this.handleLine(line, false);
       for (const line of splitter.flush()) this.handleLine(line, true);
       this.exitCodeValue = code;
@@ -166,7 +166,7 @@ export class PiSession implements SessionDriver {
     return this.stderrChunks.join("");
   }
 
-  /** Send one command; resolves with the id-matched response (§8.4). */
+  /** Send one command; resolves with the id-matched response. */
   send(command: RpcCommand, timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS): Promise<RpcResponse> {
     const stdin = this.child.stdin;
     if (this.exitCodeValue !== null || !stdin || stdin.destroyed || !stdin.writable) {
@@ -218,7 +218,7 @@ export class PiSession implements SessionDriver {
     });
   }
 
-  /** stdin EOF → pi exits 0 (§8.3). Resolves when the process is gone. */
+  /** stdin EOF → pi exits 0. Resolves when the process is gone. */
   async close(): Promise<void> {
     try {
       this.child.stdin?.end();
@@ -255,13 +255,13 @@ export class PiSession implements SessionDriver {
   // ── line dispatch ─────────────────────────────────────────────────────────
 
   private handleLine(line: string, final: boolean): void {
-    // every raw line goes to the tracer first (append-before-parse, §10)
+    // every raw line goes to the tracer first (append-before-parse)
     this.onLine(line, final);
     const c = classifyLine(line);
     if (c.kind === "response") {
       this.handleResponse(c.evt!);
     } else if (c.kind === SETTLED_KIND) {
-      // §8.3: agent_settled is authoritative — fires only when no automatic
+      // agent_settled is authoritative — fires only when no automatic
       // retry/compaction/continuation remains. Latch FIRST (G1): a settle
       // with no waiter registered is remembered, not dropped.
       this.settleSeq += 1;

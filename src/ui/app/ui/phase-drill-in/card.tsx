@@ -2,7 +2,7 @@ import { css } from "remix/ui";
 import type { Handle, RemixNode } from "remix/ui";
 
 /**
- * The phase drill-in's stacked-card shell (§16.8): CONFIG / ENVELOPE / GATES /
+ * The phase drill-in's stacked-card shell: CONFIG / ENVELOPE / GATES /
  * SPEND / OUTPUT are one card each, in a linear stack (tabs deferred — v1
  * keeps it linear). Drill-in-only component set — T10a owns the shared
  * Gantt/EventFeed; this file is named `phase-drill-in/` so the ownership is

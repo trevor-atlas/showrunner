@@ -10,8 +10,8 @@ import { Document } from "./document.tsx";
 import { RunFilterForm } from "./public/run-filter-form.tsx";
 
 /**
- * The run list page (spec §16.6). Server-rendered: `runs` come from GET /runs
- * through the §13 api core in-process; the browser sees only rendered HTML.
+ * The run list page. Server-rendered: `runs` come from GET /runs
+ * through the api core in-process; the browser sees only rendered HTML.
  * Rows link to the run-detail route. The UI and the daemon share one process
  * (merged web server), so there is no "daemon down" shell state.
  */
@@ -81,13 +81,13 @@ export function RunListPage(handle: Handle<RunListPageProps>) {
 }
 
 /** The UI-level status of a run row — a pool-queued run is "queued" even
- * though its row status is "running" until the pool starts it (§5.4/F2). */
+ * though its row status is "running" until the pool starts it (F2). */
 export function runStatus(run: { status: string; queue_position?: number | null }): RunStatus {
   if (run.queue_position !== null && run.queue_position !== undefined) return "queued";
   return isRunStatus(run.status) ? run.status : "interrupted";
 }
 
-/** Sort started desc (§16.6), then apply the status filter (v1). */
+/** Sort started desc, then apply the status filter (v1). */
 export function filterRuns(runs: readonly RunListItem[], filter: string): RunListItem[] {
   const sorted = [...runs].sort((a, b) => (a.started_at < b.started_at ? 1 : a.started_at > b.started_at ? -1 : 0));
   if (filter === "all" || !isRunStatus(filter)) return sorted;

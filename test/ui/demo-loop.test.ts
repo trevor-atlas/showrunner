@@ -236,7 +236,7 @@ describe("demo-loop e2e (R7 #4/#5/#3/#6) — the completed fixture through the d
     try {
       daemon = await startDaemon({ dataDir: dir, port: 0 });
       const db = openDb(dbPathFor(dir));
-      // seed a pre-R2 run into the daemon's DB AFTER start (no §12.2 reconcile
+      // seed a pre-R2 run into the daemon's DB AFTER start (no reconcile
       // to flip the rows): phase_start payload carries NO cause
       const runId = "eeee5555-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
       const t = new Date().toISOString();
@@ -296,7 +296,7 @@ describe("demo-loop e2e (R7 #4/#5/#3/#6) — the completed fixture through the d
 
       // a SECOND run of the SAME blueprint module with a scripted package
       // envelope that asserts blocked (EnvelopeBase.blocked) — driven into
-      // the daemon's dataDir, the loop parks at the §3.2 blocked pause with
+      // the daemon's dataDir, the loop parks at the blocked pause with
       // package's segment OPEN (phase_start, no phase_end)
       const db = openDb(dbPathFor(dir));
       const cwd = mkdtempSync(join(tmpdir(), "showrunner-demo-loop-cwd-"));
@@ -316,7 +316,7 @@ describe("demo-loop e2e (R7 #4/#5/#3/#6) — the completed fixture through the d
       expect(tl).toMatch(/data-segment data-phase="package" data-visit="1" data-outcome="in_progress" data-segment-paused="true"/);
       expect((tl.match(/data-paused-stripe/g) ?? []).length).toBe(1);
       expect(page.html).toContain("data-now-cursor");
-      // the pause reason surfaces in the panel header (the §13 pause viewer)
+      // the pause reason surfaces in the panel header (the pause viewer)
       expect(tl).toContain("data-panel-pause-reason");
       expect(tl).toContain("blocked in phase");
       expect(tl).toContain("no release token configured");

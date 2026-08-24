@@ -119,7 +119,7 @@ test("runs lists nothing, then a submitted happy run is fully visible", async ()
   }
   expect(sawSuccess).toBe(true);
 
-  // the raw record (§10) is byte-identical to the fixture
+  // the raw record is byte-identical to the fixture
   const rawPath = join(runDirFor(dataDir, runId!), "raw_output.jsonl");
   expect(readFileSync(rawPath, "utf8")).toBe(readFileSync(fixturePath("happy"), "utf8"));
 });
@@ -160,7 +160,7 @@ test("a crash run surfaces as failed with a truncated tool call and needs_review
   expect(list.stdout).toContain("(needs review)");
 });
 
-test("a blueprint run shows the full §5 loop in watch: correction, envelope, gates, phases", () => {
+test("a blueprint run shows the full loop in watch: correction, envelope, gates, phases", () => {
   const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2"]);
   expect(submitted.status).toBe(0);
   const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
@@ -192,21 +192,21 @@ test("a blueprint run shows the full §5 loop in watch: correction, envelope, ga
   expect(list.stdout).toContain("2/2");
 
   // F3: the run workspace lives under the RUN dir ({data_dir}/runs/<run_id>/<phase>/outputs)
-  // — never the scratch cwd or the repo root (§9.1)
+  // — never the scratch cwd or the repo root
   const runDir = runDirFor(dataDir, runId!);
   expect(existsSync(join(runDir, "plan", "outputs", "envelope.json"))).toBe(true);
   expect(existsSync(join(blueprintCwd, "context_handoff"))).toBe(false);
   expect(existsSync(join(REPO_ROOT, "context_handoff"))).toBe(rootHadContextDir);
 });
 
-test("FINDING-1: --prompt rides the §13.3 args into the snapshot (the composed-prompt input)", async () => {
+test("FINDING-1: --prompt rides the args into the snapshot (the composed-prompt input)", async () => {
   const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2", "--prompt", "map the auth flow"]);
   expect(submitted.status).toBe(0);
   const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
   expect(runId).toBeDefined();
 
-  // §13.3: the snapshot records the submit-time args verbatim — the daemon
-  // composes the --prompt value into the run's first prompt (§8.2, [User request])
+  // the snapshot records the submit-time args verbatim — the daemon
+  // composes the --prompt value into the run's first prompt ([User request])
   const snap = JSON.parse(readFileSync(join(runDirFor(dataDir, runId!), "blueprint.json"), "utf8")) as {
     args: string[] | null;
   };

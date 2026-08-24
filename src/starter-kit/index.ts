@@ -1,14 +1,14 @@
 /**
- * @showrunner/starter-kit — the out-of-the-box Showrunner content (spec §15).
+ * @showrunner/starter-kit — the out-of-the-box Showrunner content.
  * Six agents, a shared gates library, the poll tool, ten
  * blueprints, and ten skill files — all of it a replace-this surface.
  */
 
-// Model roster (§15) — the replaceable "models that were good this week"
+// Model roster — the replaceable "models that were good this week"
 export { DEFAULT_MODEL_ROLE, MODELS, modelFor } from "./models.ts";
 export type { ModelRole, RosterEntry } from "./models.ts";
 
-// The six agents (§3.3)
+// The six agents
 export { AGENTS } from "./agents/index.ts";
 export { planner } from "./agents/planner.ts";
 export { builder } from "./agents/builder.ts";
@@ -35,7 +35,7 @@ export type {
   ShipEnvelope as ShipEnvelopeType,
 } from "./envelopes.ts";
 
-// The shared gates library (§3.4)
+// The shared gates library
 export {
   envelopeShape,
   filesExist,
@@ -56,7 +56,7 @@ export type {
   ReviewApprovedOptions,
 } from "./gates/index.ts";
 
-// The ten blueprints (§3.5)
+// The ten blueprints
 export { BLUEPRINTS } from "./blueprints/index.ts";
 export { default as promptBlueprint, promptBlueprint as makePromptBlueprint } from "./blueprints/prompt.ts";
 export { default as scoutBlueprint } from "./blueprints/scout.ts";

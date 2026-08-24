@@ -5,7 +5,7 @@ import type { BlueprintRun, RunResult } from "../../src/daemon/runner.ts";
 import { getControl } from "../../src/daemon/index.ts";
 
 /**
- * Scratch helpers for the starter-kit tests (spec §17 fixtures-vs-smokes
+ * Scratch helpers for the starter-kit tests (fixtures-vs-smokes
  * doctrine): every test builds its own scratch dirs under the OS tmpdir and
  * removes them on teardown — no residue in the repo root.
  *
