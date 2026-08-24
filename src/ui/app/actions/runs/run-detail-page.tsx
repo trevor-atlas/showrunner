@@ -2,7 +2,13 @@ import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
-import type { PauseView, RunDetail, TimelineView } from "../../../../daemon/contract.ts";
+import type { PauseView, RawTail, RunDetail, TimelineView } from "../../../../daemon/contract.ts";
+import type {
+  PhaseInputsData,
+  PhaseOutputsData,
+  PhaseSnapshotData,
+  PhaseSpendData,
+} from "../../lib/phase-data.ts";
 import { routes } from "../../routes.ts";
 import { fmtMoney, fmtRunId, fmtStartedAt } from "../../ui/format.ts";
 import { NeedsReviewBanner } from "../../ui/needs-review-banner.tsx";
@@ -13,6 +19,11 @@ import type {
   SerializableAgentSession,
   SerializableEnvelopeRow,
   SerializableGateResult,
+  SerializablePhaseInputs,
+  SerializablePhaseOutputs,
+  SerializablePhaseSnapshot,
+  SerializablePhaseSpend,
+  SerializableRawTail,
   SerializableTimelineView,
 } from "../public/run-live-region.tsx";
 import { RunLiveRegion } from "../public/run-live-region.tsx";
@@ -56,6 +67,14 @@ export interface RunDetailPageProps {
   /** the initial selection's envelopes/gates — server-rendered (R5) */
   initialEnvelopes: EnvelopeRow[];
   initialGates: GateResultWithOverride[];
+  /** the initial selection's #35 card surfaces — server-rendered (#41);
+   * null only when no phase is selectable */
+  initialSnapshot: PhaseSnapshotData | null;
+  initialInputs: PhaseInputsData | null;
+  initialOutputs: PhaseOutputsData | null;
+  initialSpend: PhaseSpendData | null;
+  /** the run-scoped RAW TRANSCRIPT tail — server-rendered (#41) */
+  initialRaw: RawTail;
   /** the full event history at load (initial feed + initial cursor) */
   events: FeedEvent[];
   /** the last event rowid — the poll loop starts from here */
@@ -77,6 +96,11 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       initialSelection,
       initialEnvelopes,
       initialGates,
+      initialSnapshot,
+      initialInputs,
+      initialOutputs,
+      initialSpend,
+      initialRaw,
       events,
       cursor,
       pause,
@@ -95,6 +119,14 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       initialSelection,
       initialEnvelopes: initialEnvelopes as unknown as SerializableEnvelopeRow[],
       initialGates: initialGates as unknown as SerializableGateResult[],
+      // #41: the initial selection's #35 card surfaces + the RAW tail widened
+      // at the client-entry boundary (plain JSON, structural widening only)
+      initialSnapshot: initialSnapshot as unknown as SerializablePhaseSnapshot | null,
+      initialInputs: initialInputs as unknown as SerializablePhaseInputs | null,
+      initialOutputs: initialOutputs as unknown as SerializablePhaseOutputs | null,
+      initialSpend: initialSpend as unknown as SerializablePhaseSpend | null,
+      initialRaw: initialRaw as unknown as SerializableRawTail,
+      rawHref: routes.runs.raw.href({ runId }),
       sessions: detail.sessions as unknown as SerializableAgentSession[],
       events,
       cursor,

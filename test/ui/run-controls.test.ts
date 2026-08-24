@@ -504,7 +504,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       const spend = await client.getSpend(runId);
       expect(spend.phases[0]).toMatchObject({ tokens_in: 5500 });
 
-      const { status, html } = await fetchHtml(routes.runs.phases.show.href({ runId, phase: "build" }));
+      // #41: the drill-in page folded into the run page — the SPEND card now
+      // renders on /runs/:runId?phase=build (server-side seed). Same honesty
+      // check: the run page's SPEND card reflects the exact SQL SUM.
+      const { status, html } = await fetchHtml(routes.runs.show.href({ runId }) + "?phase=build");
       expect(status).toBe(200);
       // 1 token × 5500 events — the spend endpoint's exact total (a
       // 10-page cap would show 5,000)

@@ -13,11 +13,23 @@ import {
   getPhaseEnvelopes,
   getPhaseGates,
   getPause,
+  getRaw,
   getRunDetail,
   getRunEvents,
   getTimeline,
   isApiError,
 } from "../../lib/daemon.ts";
+import {
+  gatherPhaseInputs,
+  gatherPhaseOutputs,
+  gatherPhaseSnapshot,
+  gatherPhaseSpend,
+  isFirstBlueprintPhase,
+  type PhaseInputsData,
+  type PhaseOutputsData,
+  type PhaseSnapshotData,
+  type PhaseSpendData,
+} from "../../lib/phase-data.ts";
 import { subscribeRun } from "../../../../daemon/live.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../../lib/live.ts";
 import { routes } from "../../routes.ts";
@@ -118,6 +130,24 @@ export default createController(routes.runs, {
         throw err;
       }
       return redirect(routes.runs.show.href({ runId }), 303);
+    },
+
+    /** raw — GET /runs/:runId/raw.json: the run-scoped raw_output.jsonl tail
+     * (issue #41). Mirrors `events`/`timeline` (same run-gone 404): the RAW
+     * TRANSCRIPT section SSR-seeds from renderRunDetail's getRaw and refetches
+     * this on every SSE change wake-up. Default 200 lines (apiRaw's default,
+     * capped 5000); the browser never talks to the daemon directly. */
+    async raw(context) {
+      const runId = context.params.runId;
+      try {
+        const tail = await getRaw(runId, { lines: RAW_TAIL_LINES });
+        return Response.json(tail);
+      } catch (err) {
+        if (isApi404(err)) {
+          return Response.json({ error: `run ${runId} not found` }, { status: 404 });
+        }
+        throw err;
+      }
     },
 
     async events(context) {
@@ -224,16 +254,36 @@ export async function renderRunDetail(
   const timeline = await getTimeline(runId);
   const selection = resolveInitialSelection(timeline, context.url.searchParams.get("phase"));
 
-  // R5: server-render the INITIAL selection's envelopes/gates (one phase
-  // only); later selections fetch client-side through the envelopes.json /
-  // gates.json proxies.
+  // R5 + #41: server-render the INITIAL selection's full card record (one
+  // phase only) — envelopes/gates AND the four #35 card surfaces
+  // (snapshot/inputs/outputs/spend) through the shared lib/phase-data.ts gather
+  // module. Later selections fetch client-side through the phase proxies. The
+  // async surfaces ride one Promise.all; the fs gathers are synchronous.
   let initialEnvelopes: EnvelopeRow[] = [];
   let initialGates: GateResultWithOverride[] = [];
+  let initialSnapshot: PhaseSnapshotData | null = null;
+  let initialInputs: PhaseInputsData | null = null;
+  let initialOutputs: PhaseOutputsData | null = null;
+  let initialSpend: PhaseSpendData | null = null;
   if (selection !== null) {
-    const [env, gates] = await Promise.all([getPhaseEnvelopes(runId, selection), getPhaseGates(runId, selection)]);
+    const phaseRow = detail.phases.find((p) => p.name === selection);
+    const [env, gates, spend] = await Promise.all([
+      getPhaseEnvelopes(runId, selection),
+      getPhaseGates(runId, selection),
+      phaseRow !== undefined ? gatherPhaseSpend(runId, phaseRow.id) : Promise.resolve(null),
+    ]);
     initialEnvelopes = env.envelopes;
     initialGates = gates.gates;
+    initialSpend = spend;
+    initialSnapshot = gatherPhaseSnapshot(runId, selection, detail.run.cwd, detail.phases[0]?.name);
+    const isFirst = isFirstBlueprintPhase(runId, selection, detail.phases[0]?.name);
+    initialInputs = gatherPhaseInputs(runId, selection, isFirst);
+    initialOutputs = gatherPhaseOutputs(runId, selection);
   }
+
+  // #41: the run-scoped RAW TRANSCRIPT tail (raw_output.jsonl) — SSR seed; the
+  // live region refetches raw.json on every SSE change wake-up.
+  const initialRaw = await getRaw(runId, { lines: RAW_TAIL_LINES });
 
   // the pause menu's content comes from the pause viewer; the override
   // select's target gates ride the SAME viewer call (override_targets —
@@ -253,6 +303,11 @@ export async function renderRunDetail(
       initialSelection={selection}
       initialEnvelopes={initialEnvelopes}
       initialGates={initialGates}
+      initialSnapshot={initialSnapshot}
+      initialInputs={initialInputs}
+      initialOutputs={initialOutputs}
+      initialSpend={initialSpend}
+      initialRaw={initialRaw}
       events={history.events}
       cursor={history.cursor}
       pause={pause}
@@ -262,6 +317,10 @@ export async function renderRunDetail(
     { status },
   );
 }
+
+/** The RAW TRANSCRIPT tail size (issue #41) — apiRaw's default is 200; the
+ * endpoint caps at 5000. One constant shared by the SSR seed + the proxy. */
+const RAW_TAIL_LINES = 200;
 
 /** `cursor` is an integer rowid; anything malformed reads as 0 (the start). */
 function parseCursor(raw: string | null): number {

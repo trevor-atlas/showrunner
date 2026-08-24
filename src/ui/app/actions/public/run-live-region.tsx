@@ -1,7 +1,13 @@
 import { clientEntry, css, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
-import type { PhaseEnvelopes, PhaseGates, TimelineView } from "../../../../daemon/contract.ts";
+import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView } from "../../../../daemon/contract.ts";
+import type {
+  PhaseInputsData,
+  PhaseOutputsData,
+  PhaseSnapshotData,
+  PhaseSpendData,
+} from "../../lib/phase-data.ts";
 import { routes } from "../../routes.ts";
 import type { FeedEvent } from "../../ui/public/event-feed.tsx";
 import { EventFeed } from "../../ui/public/event-feed.tsx";
@@ -9,6 +15,7 @@ import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./s
 import { computeTimelineLayout } from "../../ui/public/timeline-model.ts";
 import { Timeline } from "../../ui/public/timeline.tsx";
 import { TimelinePanel } from "../../ui/public/timeline-panel.tsx";
+import { RawTranscript } from "../../ui/public/raw-transcript.tsx";
 
 /**
  * The client-entry boundary widens the daemon wire types (client.ts/db.ts)
@@ -22,6 +29,13 @@ export type SerializableTimelineView = TimelineView & SerializableObject;
 export type SerializableEnvelopeRow = EnvelopeRow & SerializableObject;
 export type SerializableGateResult = GateResultWithOverride & SerializableObject;
 export type SerializableAgentSession = AgentSessionRow & SerializableObject;
+/** #41: the four #35 card surfaces + the RAW tail, widened at the client-entry
+ * boundary (plain JSON — structural widening only). */
+export type SerializablePhaseSnapshot = PhaseSnapshotData & SerializableObject;
+export type SerializablePhaseInputs = PhaseInputsData & SerializableObject;
+export type SerializablePhaseOutputs = PhaseOutputsData & SerializableObject;
+export type SerializablePhaseSpend = PhaseSpendData & SerializableObject;
+export type SerializableRawTail = RawTail & SerializableObject;
 
 /**
  * The run-detail LIVE region (R4/R5): the hydrated clientEntry
@@ -80,12 +94,24 @@ export type SerializableAgentSession = AgentSessionRow & SerializableObject;
  * "retry next tick" tolerance, now a single setTimeout with no poll loop. */
 const RETRY_MS = 1000;
 
-/** One selected phase's lazily-fetched panel data (per-phase cache). */
+/** One selected phase's lazily-fetched card data (per-phase cache). #41 folded
+ * the drill-in surfaces in, so a selection now caches the full card record:
+ * envelopes/gates PLUS the four #35 proxies (snapshot/inputs/outputs/spend).
+ * `null` = still loading; the matching *Error flag = the fetch failed (the card
+ * shows its error/loading state). */
 interface PhasePanelData {
   envelopes: EnvelopeRow[] | null;
   gates: GateResultWithOverride[] | null;
+  snapshot: PhaseSnapshotData | null;
+  inputs: PhaseInputsData | null;
+  outputs: PhaseOutputsData | null;
+  spend: PhaseSpendData | null;
   envelopesError: boolean;
   gatesError: boolean;
+  snapshotError: boolean;
+  inputsError: boolean;
+  outputsError: boolean;
+  spendError: boolean;
 }
 
 export interface RunLiveRegionProps extends SerializableProps {
@@ -100,6 +126,18 @@ export interface RunLiveRegionProps extends SerializableProps {
   /** the initial selection's envelopes/gates, server-rendered (R5) */
   initialEnvelopes: SerializableEnvelopeRow[];
   initialGates: SerializableGateResult[];
+  /** the initial selection's #35 card surfaces, server-rendered (#41); null
+   * only when no phase is selectable */
+  initialSnapshot: SerializablePhaseSnapshot | null;
+  initialInputs: SerializablePhaseInputs | null;
+  initialOutputs: SerializablePhaseOutputs | null;
+  initialSpend: SerializablePhaseSpend | null;
+  /** the run-scoped RAW TRANSCRIPT tail, server-rendered (#41); refetched on
+   * every SSE change wake-up */
+  initialRaw: SerializableRawTail;
+  /** the raw.json proxy href for this run (routes.runs.raw.href) — the RAW
+   * TRANSCRIPT refetch target */
+  rawHref: string;
   /** agent sessions for ALL phases (RunDetail.sessions) — the panel filters
    * to the selected phase */
   sessions: SerializableAgentSession[];
@@ -137,6 +175,11 @@ export const RunLiveRegion = clientEntry(
     // R6 pause surfacing: the pause viewer's reason (SSR seed) or the
     // reason captured live from the run_status → paused event
     let pauseReason: string | null = handle.props.pauseReason;
+    // #41: the run-scoped RAW TRANSCRIPT tail — SSR seed, then refetched on
+    // every SSE change wake-up (the ONLY per-signal card refetch; the phase
+    // cards load on selection, not per-signal — #38 kept that out of scope)
+    let raw: RawTail = handle.props.initialRaw;
+    let rawInflight = false;
     // R5: the selection survives polls because it lives here, not in props
     let selection: string | null = handle.props.initialSelection;
     let autoScroll = true;
@@ -157,8 +200,16 @@ export const RunLiveRegion = clientEntry(
       phaseData.set(handle.props.initialSelection, {
         envelopes: handle.props.initialEnvelopes,
         gates: handle.props.initialGates,
+        snapshot: handle.props.initialSnapshot,
+        inputs: handle.props.initialInputs,
+        outputs: handle.props.initialOutputs,
+        spend: handle.props.initialSpend,
         envelopesError: false,
         gatesError: false,
+        snapshotError: false,
+        inputsError: false,
+        outputsError: false,
+        spendError: false,
       });
     }
 
@@ -175,42 +226,97 @@ export const RunLiveRegion = clientEntry(
       if (name !== null) {
         const existing = phaseData.get(name);
         if (existing === undefined) {
-          phaseData.set(name, { envelopes: null, gates: null, envelopesError: false, gatesError: false });
+          phaseData.set(name, emptyPhaseData());
         }
         const data = phaseData.get(name)!;
-        // (re)fetch when anything is still missing — also retries after an
+        // (re)fetch when ANY surface is still missing — also retries after an
         // earlier fetch failed
-        if (data.envelopes === null || data.gates === null) void loadPhaseData(name);
+        if (
+          data.envelopes === null ||
+          data.gates === null ||
+          data.snapshot === null ||
+          data.inputs === null ||
+          data.outputs === null ||
+          data.spend === null
+        ) {
+          void loadPhaseData(name);
+        }
       }
       void handle.update();
     };
 
-    /** R5 lazy fetch: the envelopes.json / gates.json proxies (the browser
-     * never talks to the daemon). */
+    /** #41 lazy fetch: a selected phase's full card record through the six
+     * phase proxies (envelopes/gates + the four #35 surfaces). The browser
+     * never talks to the daemon. Same inflight dedup + per-surface error state
+     * as the old envelopes/gates fetch. */
     const loadPhaseData = async (name: string): Promise<void> => {
       if (inflight.has(name)) return; // a slow round-trip must not stack
       inflight.add(name);
       try {
         const runId = handle.props.runId;
-        const [envRes, gatesRes] = await Promise.all([
+        const [envRes, gatesRes, snapRes, inRes, outRes, spendRes] = await Promise.all([
           fetch(routes.runs.phases.envelopes.href({ runId, phase: name })),
           fetch(routes.runs.phases.gates.href({ runId, phase: name })),
+          fetch(routes.runs.phases.snapshot.href({ runId, phase: name })),
+          fetch(routes.runs.phases.inputs.href({ runId, phase: name })),
+          fetch(routes.runs.phases.outputs.href({ runId, phase: name })),
+          fetch(routes.runs.phases.spend.href({ runId, phase: name })),
         ]);
         const env: PhaseEnvelopes | null = envRes.ok ? ((await envRes.json()) as PhaseEnvelopes) : null;
         const gates: PhaseGates | null = gatesRes.ok ? ((await gatesRes.json()) as PhaseGates) : null;
         phaseData.set(name, {
           envelopes: env !== null ? env.envelopes : null,
           gates: gates !== null ? gates.gates : null,
+          snapshot: snapRes.ok ? ((await snapRes.json()) as PhaseSnapshotData) : null,
+          inputs: inRes.ok ? ((await inRes.json()) as PhaseInputsData) : null,
+          outputs: outRes.ok ? ((await outRes.json()) as PhaseOutputsData) : null,
+          spend: spendRes.ok ? ((await spendRes.json()) as PhaseSpendData) : null,
           envelopesError: !envRes.ok,
           gatesError: !gatesRes.ok,
+          snapshotError: !snapRes.ok,
+          inputsError: !inRes.ok,
+          outputsError: !outRes.ok,
+          spendError: !spendRes.ok,
         });
       } catch {
-        // transient failure — the panel shows the error state; selecting the
+        // transient failure — the cards show their error state; selecting the
         // phase again retries
-        phaseData.set(name, { envelopes: null, gates: null, envelopesError: true, gatesError: true });
+        phaseData.set(name, {
+          envelopes: null,
+          gates: null,
+          snapshot: null,
+          inputs: null,
+          outputs: null,
+          spend: null,
+          envelopesError: true,
+          gatesError: true,
+          snapshotError: true,
+          inputsError: true,
+          outputsError: true,
+          spendError: true,
+        });
       } finally {
         inflight.delete(name);
         if (selection === name) void handle.update();
+      }
+    };
+
+    /** #41: refetch the run-scoped RAW TRANSCRIPT tail on the SSE signal. A
+     * failure keeps the last tail (best-effort) and never disturbs the
+     * events/timeline refetch path (#38 semantics unchanged). */
+    const refreshRaw = async (): Promise<void> => {
+      if (rawInflight || typeof window === "undefined") return;
+      rawInflight = true;
+      try {
+        const res = await fetch(new URL(handle.props.rawHref, window.location.href));
+        if (res.ok) {
+          raw = (await res.json()) as RawTail;
+          await handle.update();
+        }
+      } catch {
+        // keep the last tail
+      } finally {
+        rawInflight = false;
       }
     };
 
@@ -331,7 +437,10 @@ export const RunLiveRegion = clientEntry(
       // LAST frame (terminal run_status) landing mid-poll would be lost, the
       // freeze would never happen, and the EventSource would leak on a done
       // run. poll's `polling` guard stays as belt-and-suspenders.
-      const notify = createCoalescedNotifier(poll);
+      // #41: each change wake-up drives the events/timeline refetch (poll, #38
+      // semantics unchanged) AND the run-scoped RAW TRANSCRIPT refetch. The
+      // per-phase cards are NOT refetched here — they load on selection only.
+      const notify = createCoalescedNotifier(() => Promise.all([poll(), refreshRaw()]).then(() => undefined));
       subscription = subscribeSse(handle.props.liveHref, { onchange: notify });
       handle.signal.addEventListener("abort", () => stopLive());
     }
@@ -357,8 +466,16 @@ export const RunLiveRegion = clientEntry(
             sessions={sessions}
             envelopes={data?.envelopes ?? null}
             gates={data?.gates ?? null}
+            snapshot={data?.snapshot ?? null}
+            inputs={data?.inputs ?? null}
+            outputs={data?.outputs ?? null}
+            spend={data?.spend ?? null}
             envelopesError={data?.envelopesError ?? false}
             gatesError={data?.gatesError ?? false}
+            snapshotError={data?.snapshotError ?? false}
+            inputsError={data?.inputsError ?? false}
+            outputsError={data?.outputsError ?? false}
+            spendError={data?.spendError ?? false}
             pauseReason={pauseReason}
           />
           <EventFeed
@@ -378,6 +495,9 @@ export const RunLiveRegion = clientEntry(
               }
             }}
           />
+          {/* #41: the run-scoped RAW TRANSCRIPT — collapsed, SSR-seeded, and
+          refetched on every SSE change wake-up (below the feed) */}
+          <RawTranscript raw={raw} />
         </div>
       );
     };
@@ -400,4 +520,22 @@ function isTrackedStatus(value: string): boolean {
 /** A terminal status — the timeline freezes + the poll stops. */
 function isTerminalStatus(value: string): boolean {
   return value === "success" || value === "failed";
+}
+
+/** A fresh, all-loading per-phase card cache entry (#41). */
+function emptyPhaseData(): PhasePanelData {
+  return {
+    envelopes: null,
+    gates: null,
+    snapshot: null,
+    inputs: null,
+    outputs: null,
+    spend: null,
+    envelopesError: false,
+    gatesError: false,
+    snapshotError: false,
+    inputsError: false,
+    outputsError: false,
+    spendError: false,
+  };
 }

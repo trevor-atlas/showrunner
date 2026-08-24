@@ -7,12 +7,12 @@ import { get, post, route } from "remix/routes";
  *   routes.home.href()                                   -> "/"
  *   routes.runs.show.href({ runId })                     -> "/runs/:runId"
  *   routes.runs.events.href({ runId })                   -> "/runs/:runId/events.json"
+ *   routes.runs.raw.href({ runId })                      -> "/runs/:runId/raw.json"
  *   routes.runs.timeline.href({ runId })                 -> "/runs/:runId/timeline.json" (R6 refetch)
  *   routes.runs.steer.href({ runId })                    -> "/runs/:runId/steer"   (POST)
  *   routes.runs.resume.href({ runId })                   -> "/runs/:runId/resume"  (POST)
  *   routes.runs.fail.href({ runId })                     -> "/runs/:runId/fail"    (POST)
  *   routes.runs.approve.href({ runId })                  -> "/runs/:runId/approve" (POST)
- *   routes.runs.phases.show.href({ runId, phase })       -> "/runs/:runId/phases/:phase"
  *   routes.runs.phases.envelopes.href({ runId, phase })  -> ".../phases/:phase/envelopes.json"
  *   routes.runs.phases.gates.href({ runId, phase })      -> ".../phases/:phase/gates.json"
  *   routes.runs.phases.override.href({ runId, phase })   -> ".../phases/:phase/override"      (POST)
@@ -46,6 +46,10 @@ export const routes = route({
   runs: {
     show: get("/runs/:runId"),
     events: get("/runs/:runId/events.json"),
+    // issue #41: the run-scoped raw_output.jsonl tail proxy — the RAW
+    // TRANSCRIPT section SSR-seeds from it and refetches on the SSE signal
+    // (mirrors events.json; the server reads getRaw in-process)
+    raw: get("/runs/:runId/raw.json"),
     // the run-scoped SSE change stream — wake-ups only, no payload
     live: get("/runs/:runId/events.sse"),
     // R6: the timeline.json refetch proxy — the live region polls this
@@ -58,7 +62,6 @@ export const routes = route({
     fail: post("/runs/:runId/fail"),
     approve: post("/runs/:runId/approve"),
     phases: {
-      show: get("/runs/:runId/phases/:phase"),
       // R5: the lazy envelopes/gates proxies — the browser fetches a selected
       // phase's data through these remix routes (never the daemon directly),
       // mirroring the events.json cursor proxy pattern

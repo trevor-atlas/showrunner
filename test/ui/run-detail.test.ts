@@ -542,45 +542,52 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       // now cursor — a paused run still renders it (acceptance: running/paused)
       expect(html).toContain('data-now-cursor');
 
-      // the R5 panel is server-rendered with the AUTO-SELECTED phase: build is
-      // the in_progress phase (R5), so its record renders at SSR
+      // #41 FOLD: the phase detail is server-rendered with the AUTO-SELECTED
+      // phase (build is the in_progress phase) as a HEADER + card grid below
+      // the chart — the old drill-in page folded in here.
       const panel = tl;
-      expect(panel).toContain('data-testid="timeline-panel"');
+      expect(panel).toContain('data-testid="phase-detail"');
       expect(panel).toContain('data-selected="build"');
+      // the phase HEADER: identity + lifecycle facts (name/agent/chip/visits/
+      // corrections-budget) — spend LEAVES the header (SPEND card only)
       expect(panel).toContain('data-phase-chip-status="in_progress"');
       expect(panel).toContain("agent builder");
       expect(panel).toContain("2 visits");
-      // budget usage for the current visit: v2's corrections (1) / budget (3)
       expect(panel).toContain("corrections 1 / budget 3");
-      expect(panel).toContain("spend $0.30");
-      // visit history newest-first: visit 2 before visit 1
+      // the one-render-site rule: NO spend meta in the header
+      expect(panel).not.toContain("spend $0.30");
+      // the labelled card grid renders every card slot (stable data-card ids)
+      for (const card of ["agent", "phase-config", "inputs", "outputs", "envelope", "gates", "spend", "sessions", "visit-history"]) {
+        expect(panel).toContain(`data-card="${card}"`);
+      }
+      // VISIT HISTORY card, newest-first: visit 2 before visit 1
       expect(pos('data-visit-block data-visit="2"')).toBeGreaterThan(-1);
       expect(pos('data-visit-block data-visit="2"')).toBeLessThan(pos('data-visit-block data-visit="1"'));
       expect((panel.match(/data-visit-block/g) ?? []).length).toBe(2);
-      // visit 2 is a flow re-run (R5: "Re-ran in normal order..."), visit 1 is
-      // a human restart (R5: the action + the actor) — exactly two cause lines
+      // visit 2 is a flow re-run, visit 1 a human restart — two cause lines
       expect(panel).toContain('data-cause="flow-rerun"');
       expect(panel).toContain("Re-ran in normal order after an upstream jump.");
       expect(panel).toContain('data-cause="human"');
       expect(panel).toContain("Started by a human action — restart by operator.");
       expect((panel.match(/data-cause=/g) ?? []).length).toBe(2);
-      // envelopes: build's one rejected attempt (violations + the correction
-      // that followed) — the lazy section renders the attempt list
+      // ENVELOPE card: build's one rejected attempt — the invalid attempt shows
+      // the correction that followed (violations surface on the GATES card)
       expect(panel).toContain('data-attempt-valid="0"');
-      expect(panel).toContain('data-envelope-violations');
       expect(panel).toContain("tests failed: expected 3, got 2 — fix t1");
-      // gates: build's failed testsPass gate from the gate_results table
+      // GATES card: build's failed testsPass gate from the gate_results table
       expect(panel).toContain('data-gate-row data-gate="testsPass" data-gate-pass="0"');
       expect(panel).toContain('data-gate-violations');
       expect(panel).toContain("expected 3 tests, got 2");
-      // sessions: build's two agent sessions (visits 1 + 2)
+      // SPEND card: build's per-phase tokens off the exact SQL SUM (one spend
+      // event: 500/120) — the ONLY render site for spend
+      expect(panel).toContain("tokens in 500 · out 120 · cache r/w 0/0");
+      // SESSIONS card: build's two agent sessions (visits 1 + 2)
       expect((panel.match(/data-session-row/g) ?? []).length).toBe(2);
       expect(panel).toContain('data-session-visit="2"');
       expect(panel).toContain("s-build2");
 
-      // the panel header links to the phase drill-in route (the old gantt's
-      // per-row drill-in links now live here)
-      expect(html).toContain(routes.runs.phases.show.href({ runId: RUN_A, phase: "build" }));
+      // the folded run page carries NO phase drill-in link (the page is gone)
+      expect(html).not.toContain("/phases/build");
 
       // ── the old single-bar gantt is GONE from the page ──────────────────
       expect(html).not.toContain('data-testid="gantt"');
@@ -665,18 +672,21 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       // visit history: plan's single flow visit renders no cause line
       expect((planTl.match(/data-visit-block/g) ?? []).length).toBe(1);
       expect(planTl).not.toContain("data-cause=");
-      // envelopes: the rejected attempt (violations + the correction that
-      // followed) then the valid one with its summary/artifacts/handoff
-      const envSection = planTl.slice(planTl.indexOf("data-panel-envelopes"), planTl.indexOf("data-panel-gates"));
+      // ENVELOPE card: the rejected attempt (violations + the correction that
+      // followed) then the valid one with its summary + handoff (artifacts
+      // moved to the OUTPUTS card — single owner). Slice the ENVELOPE card slot.
+      const envSection = planTl.slice(planTl.indexOf('data-card="envelope"'), planTl.indexOf('data-card="gates"'));
       expect(envSection).toContain('data-attempt-valid="0"');
-      expect(envSection).toContain('data-envelope-violations');
       expect(envSection).toContain("envelope did not parse");
       expect(envSection).toContain("resubmit a valid envelope");
       expect(envSection).toContain('data-attempt-valid="1"');
       expect(envSection).toContain("scoped the plan");
-      expect(envSection).toContain("plan.md");
       expect(envSection).toContain("build per the plan");
-      // gates: plan's passing testsPass gate
+      // OUTPUTS card owns artifact reconciliation: plan.md is claimed by the
+      // accepted envelope (no outputs/ dir here → flagged missing)
+      const outSection = planTl.slice(planTl.indexOf('data-card="outputs"'), planTl.indexOf('data-card="envelope"'));
+      expect(outSection).toContain('data-artifact="plan.md"');
+      // GATES card: plan's passing testsPass gate
       expect(planTl).toContain('data-gate-row data-gate="testsPass" data-gate-pass="1"');
 
       // ?phase=ghost (unknown) must NOT crash — falls back to auto-select
@@ -693,7 +703,8 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       expect(shipTl).toContain('data-phase-chip-status="pending"');
       expect(shipTl).toContain("0 visits");
       expect(shipTl).toContain("no visits yet");
-      expect(shipTl).toContain('data-envelopes-empty');
+      // the ENVELOPE + GATES cards render their empty states for a pending phase
+      expect(shipTl).toContain('data-envelope-empty');
       expect(shipTl).toContain('data-gates-empty');
     } finally {
       await daemon?.close();
@@ -1073,4 +1084,75 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // #41 FOLD safety net (ported from the deleted phase-drill-in.test.ts): the
+  // valuable drill-in assertions now key off the folded run page. A real scout
+  // run proves the fold wires the snapshot AGENT card, the accepted ENVELOPE,
+  // OUTPUTS' FINDINGS.md + artifact reconciliation, and SPEND onto
+  // /runs/:runId?phase=X server-side. (Override-badge + estimated-spend
+  // rendering is unit-covered by phase-cards.test.tsx; the drill-in-blueprint
+  // that exercised them end to end was deleted with the old page.)
+  it("#41 the folded run page server-renders a real phase's card grid via ?phase= (snapshot config, accepted envelope, FINDINGS.md, spend) + the RAW TRANSCRIPT; the drill-in route is gone", async () => {
+    const dir = tmpDir("detail-fold-port");
+    const cwd = tmpDir("detail-fold-port-cwd");
+    const restore = setDataDir(dir);
+    const scoutBlueprint = new URL("../../src/starter-kit/blueprints/scout.ts", import.meta.url).pathname;
+    let daemon: DaemonHandle | null = null;
+    try {
+      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      const { run_id: runId } = await client.submitRun({ blueprint: scoutBlueprint, cwd });
+      expect(runId).toBeTruthy();
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const { runs } = await client.listRuns();
+        if (runs.find((r) => r.id === runId)?.status === "success") break;
+        if (Date.now() > deadline) throw new Error("scout run did not reach success");
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      // ?phase=recon server-renders the folded card grid (no drill-in page)
+      const res = await fetchDetailUrl(routes.runs.show.href({ runId }) + "?phase=recon");
+      expect(res.status).toBe(200);
+      const html = res.html;
+      const tl = timelineRegion(html);
+      expect(tl).toContain('data-testid="phase-detail"');
+      expect(tl).toContain('data-selected="recon"');
+
+      // AGENT card: the phase's snapshot config (what actually ran, not the
+      // live module) — a real snapshot, not the fixture-run "no snapshot" state
+      const agent = tl.slice(tl.indexOf('data-card="agent"'), tl.indexOf('data-card="phase-config"'));
+      expect(agent).toContain("agent:");
+      expect(agent).toContain("model:");
+      expect(agent).not.toContain("no blueprint snapshot");
+
+      // OUTPUTS card owns FINDINGS.md + artifact reconciliation (single owner):
+      // the scout's findings render readably; every claimed artifact exists
+      const outputs = tl.slice(tl.indexOf('data-card="outputs"'), tl.indexOf('data-card="envelope"'));
+      expect(outputs).toContain("FINDINGS.md");
+      expect(outputs).toContain("src/index.ts is the entry point");
+      expect(outputs).not.toContain("⚠"); // no artifact listed-but-missing
+
+      // ENVELOPE card: the accepted envelope's readable surface
+      const envelope = tl.slice(tl.indexOf('data-card="envelope"'), tl.indexOf('data-card="gates"'));
+      expect(envelope).toContain("ACCEPTED ENVELOPE");
+
+      // SPEND card renders per-phase tokens (the ONE spend render site)
+      expect(tl).toContain('data-card="spend"');
+      expect(tl).toContain("tokens in ");
+
+      // the run-scoped RAW TRANSCRIPT section: collapsed, SSR-seeded, run output
+      expect(html).toContain('data-testid="raw-transcript"');
+      expect(html).toContain("RAW TRANSCRIPT");
+
+      // the standalone drill-in route is GONE — 404, no redirect
+      const gone = await router.fetch(new Request("http://localhost" + `/runs/${runId}/phases/recon`));
+      expect(gone.status).toBe(404);
+    } finally {
+      await daemon?.close();
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, { timeout: 30_000 });
 });
