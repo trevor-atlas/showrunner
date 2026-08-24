@@ -16,7 +16,7 @@ import type {
   SerializableTimelineView,
 } from "../public/run-live-region.tsx";
 import { RunLiveRegion } from "../public/run-live-region.tsx";
-import { StatusPill, isRunStatus, type RunStatus } from "../../ui/status-pill.tsx";
+import { StatusPill, isRunStatus, type RunStatus } from "../../ui/public/status-pill.tsx";
 import { Document } from "../document.tsx";
 
 /**

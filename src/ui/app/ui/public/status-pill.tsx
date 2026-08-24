@@ -27,6 +27,15 @@ export function isRunStatus(value: string): value is RunStatus {
   return (RUN_STATUSES as readonly string[]).includes(value);
 }
 
+/** The UI-level status of a run row — a pool-queued run is "queued" even
+ * though its row status is "running" until the pool starts it (F2). Moved here
+ * (from run-list-page) so the browser list graph — the clientEntry + the pure
+ * list model — can fold a run to its pill status without a server-only import. */
+export function runStatus(run: { status: string; queue_position?: number | null }): RunStatus {
+  if (run.queue_position !== null && run.queue_position !== undefined) return "queued";
+  return isRunStatus(run.status) ? run.status : "interrupted";
+}
+
 export interface StatusPillProps {
   status: RunStatus;
   /** 1-based spawn-queue position — rendered for queued runs */

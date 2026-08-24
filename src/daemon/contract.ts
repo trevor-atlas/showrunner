@@ -41,6 +41,11 @@ export interface RunListItem extends RunRow {
   /** 1-based spawn-queue position for pool-queued runs; null when not queued */
   queue_position: number | null;
   phase_counts: Record<string, number>;
+  /** per-run phase extent (reused from runPhaseExtents) — the run-list
+   * duration column derives `(max_phase_ended_at ?? now) - min_phase_started_at`
+   * from these; both null when no phase has started (duration sorts last). */
+  min_phase_started_at: string | null;
+  max_phase_ended_at: string | null;
 }
 
 export interface PhaseSummary extends PhaseRow {

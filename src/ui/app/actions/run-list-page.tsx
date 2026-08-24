@@ -3,22 +3,24 @@ import { css } from "remix/ui";
 
 import type { RunListItem } from "../../../daemon/contract.ts";
 import { routes } from "../routes.ts";
-import { EmptyState } from "../ui/empty-state.tsx";
-import { fmtMoney, fmtRunId, fmtStartedAt } from "../ui/format.ts";
-import { StatusPill, isRunStatus, type RunStatus } from "../ui/status-pill.tsx";
 import { Document } from "./document.tsx";
-import { RunFilterForm } from "./public/run-filter-form.tsx";
+import { RunListLive, type SerializableRunListItem } from "./public/run-list-live.tsx";
 
 /**
  * The run list page. Server-rendered: `runs` come from GET /runs
- * through the api core in-process; the browser sees only rendered HTML.
- * Rows link to the run-detail route. The UI and the daemon share one process
- * (merged web server), so there is no "daemon down" shell state.
+ * through the api core in-process; the browser sees the rendered HTML on first
+ * paint. The page shell (the document + heading) stays server-side; the live
+ * toolbar + table are the `RunListLive` clientEntry, which SSR-renders the
+ * initial (filtered) rows and then goes push-live off the `/live.sse` ledger
+ * stream (issue #39) — the old manual refresh button is gone.
+ *
+ * The UI and the daemon share one process (merged web server), so there is no
+ * "daemon down" shell state.
  */
 
 export interface RunListPageProps {
   runs: RunListItem[];
-  /** current status filter ("all" or a RunStatus) */
+  /** current status filter ("all" or a RunStatus) — the SSR deep link */
   filter: string;
   /** filter options — "all" then every RunStatus */
   statuses: string[];
@@ -27,7 +29,6 @@ export interface RunListPageProps {
 export function RunListPage(handle: Handle<RunListPageProps>) {
   return () => {
     const { runs, filter, statuses } = handle.props;
-    const visible = filterRuns(runs, filter);
     const title = `Showrunner · runs`;
 
     return (
@@ -35,63 +36,21 @@ export function RunListPage(handle: Handle<RunListPageProps>) {
         <main mix={pageStyle}>
           <header mix={headerStyle}>
             <h1 mix={titleStyle}>Showrunner · runs</h1>
-            <RunFilterForm
-              action={routes.home.href()}
-              statuses={statuses}
-              current={filter}
-            />
           </header>
 
-          {visible.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <table mix={tableStyle}>
-              <thead>
-                <tr>
-                  <th>RUN</th>
-                  <th>BLUEPRINT</th>
-                  <th>STATUS</th>
-                  <th>STARTED</th>
-                  <th>SPEND</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((run) => (
-                  <tr key={run.id}>
-                    <td>
-                      <a href={routes.runs.show.href({ runId: run.id })} mix={runLinkStyle}>
-                        {fmtRunId(run.id)}
-                      </a>
-                    </td>
-                    <td mix={monoStyle}>{run.blueprint}</td>
-                    <td>
-                      <StatusPill status={runStatus(run)} queuePosition={run.queue_position} />
-                    </td>
-                    <td mix={monoStyle}>{fmtStartedAt(run.started_at)}</td>
-                    <td mix={monoStyle}>{run.queue_position === null ? fmtMoney(run.spend_usd) : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <RunListLive
+            // the client-entry boundary: the daemon wire values are plain JSON,
+            // so the SerializableProps widening is structural only (see the
+            // region's SerializableRunListItem type)
+            runs={runs as unknown as SerializableRunListItem[]}
+            statuses={statuses}
+            filter={filter}
+            runsHref={routes.homeRuns.href()}
+          />
         </main>
       </Document>
     );
   };
-}
-
-/** The UI-level status of a run row — a pool-queued run is "queued" even
- * though its row status is "running" until the pool starts it (F2). */
-export function runStatus(run: { status: string; queue_position?: number | null }): RunStatus {
-  if (run.queue_position !== null && run.queue_position !== undefined) return "queued";
-  return isRunStatus(run.status) ? run.status : "interrupted";
-}
-
-/** Sort started desc, then apply the status filter (v1). */
-export function filterRuns(runs: readonly RunListItem[], filter: string): RunListItem[] {
-  const sorted = [...runs].sort((a, b) => (a.started_at < b.started_at ? 1 : a.started_at > b.started_at ? -1 : 0));
-  if (filter === "all" || !isRunStatus(filter)) return sorted;
-  return sorted.filter((run) => runStatus(run) === filter);
 }
 
 const pageStyle = css({
@@ -115,42 +74,4 @@ const titleStyle = css({
   fontSize: "var(--font-size-title)",
   fontWeight: 800,
   letterSpacing: "-0.02em",
-});
-
-const tableStyle = css({
-  width: "100%",
-  borderCollapse: "collapse",
-  font: "inherit",
-  "& th, & td": {
-    textAlign: "left",
-    padding: "0.5rem 0.75rem",
-    borderBottom: "1px solid var(--border)",
-    fontSize: "var(--font-size-md)",
-  },
-  "& th": {
-    fontSize: "var(--font-size-xs)",
-    textTransform: "lowercase",
-    letterSpacing: "0.06em",
-    color: "var(--muted-foreground)",
-    fontWeight: 700,
-  },
-  "& tbody tr:hover": {
-    background: "var(--muted)",
-  },
-});
-
-const runLinkStyle = css({
-  color: "inherit",
-  textDecoration: "none",
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--font-size-md)",
-  "&:hover": {
-    textDecoration: "underline",
-    color: "var(--status-running)",
-  },
-});
-
-const monoStyle = css({
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--font-size-md)",
 });

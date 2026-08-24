@@ -5,7 +5,7 @@ import { assetServer } from "../assets.ts";
 import { listRuns } from "../lib/daemon.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../lib/live.ts";
 import { routes } from "../routes.ts";
-import { RUN_STATUSES, isRunStatus } from "../ui/status-pill.tsx";
+import { RUN_STATUSES, isRunStatus } from "../ui/public/status-pill.tsx";
 import { RunListPage } from "./run-list-page.tsx";
 
 /**
@@ -42,6 +42,10 @@ export default createController(routes, {
       const rawFilter = context.url.searchParams.get("status") ?? "all";
       const filter = isRunStatus(rawFilter) ? rawFilter : "all";
 
+      // The initial runs are rendered UNFILTERED into the live clientEntry;
+      // the entry applies the ?status= filter at render (so SSR for
+      // ?status=failed still shows only failed pills) AND keeps the full set
+      // to filter live as the toolbar changes without a round-trip.
       const { runs } = await listRuns();
 
       return context.render(
@@ -51,6 +55,16 @@ export default createController(routes, {
           statuses={["all", ...RUN_STATUSES]}
         />,
       );
+    },
+
+    /** homeRuns — GET /runs-list.json: the run-list snapshot proxy the
+     * landing clientEntry refetches on every global ledger change. Mirrors
+     * the run-scoped events proxy (runs/controller.tsx): listRuns() in-process
+     * against daemon state, returned as JSON { runs }. The browser never talks
+     * to the daemon — it only refetches this rendered snapshot. */
+    async homeRuns() {
+      const { runs } = await listRuns();
+      return Response.json({ runs });
     },
   },
 });

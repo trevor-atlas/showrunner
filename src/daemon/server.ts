@@ -235,13 +235,23 @@ export function apiStats(state: ApiState): RunStats {
 }
 
 export function apiListRuns(state: ApiState): { runs: RunListItem[] } {
-  const runs = listRuns(state.db).map((r) => ({
-    ...r,
-    phase_counts: phaseStatusCounts(state.db, r.id),
-    // queue position (F2 from the T01b review): 1-based spawn-queue
-    // position for pool-queued runs, null when not queued
-    queue_position: state.pool.position(r.id),
-  }));
+  // Reuse the runPhaseExtents rollup (the stats endpoint's duration source):
+  // one MIN(started)/MAX(ended) row per run, keyed by id, merged onto each
+  // list item so the run-list duration column derives from the SAME
+  // aggregation instead of a duplicated per-run extent query.
+  const extents = new Map(runPhaseExtents(state.db).map((e) => [e.id, e]));
+  const runs = listRuns(state.db).map((r) => {
+    const extent = extents.get(r.id);
+    return {
+      ...r,
+      phase_counts: phaseStatusCounts(state.db, r.id),
+      // queue position (F2 from the T01b review): 1-based spawn-queue
+      // position for pool-queued runs, null when not queued
+      queue_position: state.pool.position(r.id),
+      min_phase_started_at: extent?.min_phase_started_at ?? null,
+      max_phase_ended_at: extent?.max_phase_ended_at ?? null,
+    };
+  });
   return { runs };
 }
 

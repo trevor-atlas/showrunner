@@ -31,6 +31,11 @@ export const routes = route({
   live: get("/live.sse"),
   // — the run list
   home: get("/"),
+  // — the run-list snapshot proxy (issue #39): the landing clientEntry
+  // refetches this on every global ledger change and re-renders. PATH PINNED
+  // to /runs-list.json (NOT /runs.json — that would match routes.runs.show
+  // /runs/:runId with runId="runs.json").
+  homeRuns: get("/runs-list.json"),
   // — run detail, the events.json cursor proxy, the control
   // verbs (steer/resume/fail/approve), and the phase drill-in group
   runs: {
