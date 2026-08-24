@@ -1,6 +1,6 @@
 /**
- * @showrunner/starter-kit — the out-of-the-box Showrunner content (spec §15,
- * PLAN §14). Six agents, a shared gates library, the poll tool, ten
+ * @showrunner/starter-kit — the out-of-the-box Showrunner content (spec §15).
+ * Six agents, a shared gates library, the poll tool, ten
  * blueprints, and ten skill files — all of it a replace-this surface.
  */
 
@@ -17,7 +17,7 @@ export { reviewer } from "./agents/reviewer.ts";
 export { documenter } from "./agents/documenter.ts";
 export { ship } from "./agents/ship.ts";
 
-// The envelope schemas (ADR-0002) the six agents' phases parse against
+// The envelope schemas the six agents' phases parse against
 export {
   BuildEnvelope,
   DocumentEnvelope,

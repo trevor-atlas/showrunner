@@ -2,7 +2,7 @@ import { z } from "zod";
 import { EnvelopeBase } from "../core/index.ts";
 
 /**
- * The six agents' output contracts (ADR-0002): each extends EnvelopeBase with
+ * The six agents' output contracts: each extends EnvelopeBase with
  * the fields its phase's gates care about. Outcome is decided by parse + gates,
  * never by the agent's claim — these schemas are what a phase's envelope
  * parse enforces and what `envelopeShape` can double-check.

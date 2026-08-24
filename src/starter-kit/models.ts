@@ -1,5 +1,5 @@
 /**
- * The replaceable model roster (PLAN §14 — the replace-this doctrine).
+ * The replaceable model roster (the replace-this doctrine).
  *
  * Agents pick models by ROLE here, not by hardcoded ids. Swap the ids below
  * for the models that are good in YOUR week and every agent follows. This is

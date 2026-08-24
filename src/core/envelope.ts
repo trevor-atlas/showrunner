@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The envelope base (spec §3.2, ADR-0002).
+ * The envelope base (spec §3.2).
  *
  * There is no `status` field: outcome is determined by parse + gates, never by
  * the agent's claim. `blocked` is the one agent-asserted signal: it
@@ -26,5 +26,5 @@ export const EnvelopeBase = z.object({
 
 export type Envelope = z.infer<typeof EnvelopeBase>;
 
-/** The envelope a phase declares, extended from EnvelopeBase (ADR-0002). */
+/** The envelope a phase declares, extended from EnvelopeBase. */
 export type PhaseEnvelope<S extends z.ZodTypeAny> = z.infer<S>;

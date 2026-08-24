@@ -11,7 +11,11 @@
 - WAL mode, `synchronous = NORMAL`, `journal_mode = WAL`, `foreign_keys = ON`.
 - All writes from the daemon's single writer connection. Readers open separate read-only connections (CLI, UI, `tail`).
 
-### 4.2 Seven tables
+### 4.2 Tables
+
+The base migration creates seven tables; a v2 migration (additive, T03) added
+full attempt history and the audited override trail, so the current schema is
+eight tables:
 
 ```sql
 CREATE TABLE runs (
@@ -43,7 +47,7 @@ CREATE TABLE events (
   run_id        TEXT NOT NULL REFERENCES runs(id),
   phase_id      TEXT REFERENCES phases(id),
   agent_session_id TEXT REFERENCES agent_sessions(id),
-  type          TEXT NOT NULL,            -- §5 taxonomy
+  type          TEXT NOT NULL,            -- §6 taxonomy
   ts            TEXT NOT NULL,            -- ISO-8601, daemon wall clock
   data          TEXT NOT NULL             -- JSON payload; shape by type
 );
@@ -88,6 +92,28 @@ CREATE TABLE processes (
 );
 ```
 
+v2 (T03) — additive only: every envelope attempt is now a row (including
+zod-rejected / unreadable ones), each attempt carries the gate violations that
+rejected it and the correction message issued after it, and gate overrides
+(§5.3) are audited in their own table — the original `gate_results` row is
+KEPT (the audit trail is the point):
+
+```sql
+ALTER TABLE envelopes ADD COLUMN valid INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE envelopes ADD COLUMN violations TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE envelopes ADD COLUMN correction TEXT;
+
+CREATE TABLE gate_overrides (
+  id             TEXT PRIMARY KEY,
+  gate_result_id TEXT NOT NULL REFERENCES gate_results(id),
+  run_id         TEXT NOT NULL REFERENCES runs(id),
+  envelope_id    TEXT NOT NULL REFERENCES envelopes(id),
+  by             TEXT NOT NULL,
+  reason         TEXT NOT NULL,
+  created_at     TEXT NOT NULL
+);
+```
+
 **Why `events.id` is `INTEGER PRIMARY KEY`**: SQLite aliases that to `rowid`; the cursor query (`where rowid > ? … limit 500`) is an index scan on `(run_id, id)`. Append-only, never updated, never deleted — events are an audit log.
 
 ### 4.3 The cursor read contract
@@ -112,13 +138,13 @@ select * from events where run_id = ? and rowid > ? order by rowid limit 500;
 
 ## 6 · Event taxonomy
 
-PLAN §3.3 leaves the count as "ten harness event types (final enumeration at implementation)" — this section is that final enumeration, resolving the placeholder. Every event row: `{ id, run_id, phase_id, agent_session_id, type, ts, data }`.
+Every event row: `{ id, run_id, phase_id, agent_session_id, type, ts, data }`.
 
 | # | type | emitted when | data (JSON) |
 |---|---|---|---|
 | 1 | `run_submitted` | run accepted by daemon | `{ blueprint, cwd }` |
 | 2 | `run_status` | run-level status change | `{ from, to, reason? }` |
-| 3 | `phase_start` | phase begins (after approval, before spawn) | `{ phase, agent, visit, budget }` |
+| 3 | `phase_start` | phase begins (after approval, before spawn) | `{ phase, agent, visit, budget, cause? }` — `cause` (R2): `flow` \| `on_fail {from_phase, from_visit}` \| `human {action, by?}`, optional for pre-R2 rows |
 | 4 | `phase_end` | phase terminal | `{ phase, status, visits, corrections, spend_usd }` |
 | 5 | `agent_start` | pi subprocess spawned | `{ agent, pi_session_id, pid, model }` |
 | 6 | `agent_end` | pi reports the phase's agent fully settled (`agent_settled`; pi's per-run `agent_end` events are folded, §7.4) | `{ agent, pi_session_id, exit, ok }` |
@@ -129,7 +155,7 @@ PLAN §3.3 leaves the count as "ten harness event types (final enumeration at im
 | 11 | `human_action` | steer / approve / override / restart / fail | `{ action, by?, detail }` |
 | 12 | `spend` | usage deltas folded from pi message/turn usage fields (§7.3) | `{ phase, tokens_in, tokens_out, cache_read, cache_write, usd }` |
 
-(PLAN's "ten" was an approximation; the categories it names — run/phase lifecycle, agent lifecycle, tool calls, envelopes, gate results, corrections, human actions, spend — map onto the twelve concrete types above. `tool_call`, `envelope`, `gate_result`, `spend`, and `human_action` derive from raw pi events + daemon logic rather than being raw pi events themselves; see §7.)
+(The categories design-era planning named — run/phase lifecycle, agent lifecycle, tool calls, envelopes, gate results, corrections, human actions, spend — map onto the twelve concrete types above. `tool_call`, `envelope`, `gate_result`, `spend`, and `human_action` derive from raw pi events + daemon logic rather than being raw pi events themselves; see §7.)
 
 **Naming rule for `tool_call`**: name the row the way you'd read it aloud — `bash: ls -la src`, `edit: src/core/src/index.ts`. The `data` row keeps the structured `{tool, tool_call_id, args, result_snippet, ok, duration_ms, agent}`.
 

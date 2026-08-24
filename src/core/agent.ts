@@ -1,5 +1,5 @@
 /**
- * An agent is a pure doer - no output contract of its own (ADR-0001, ADR-0002).
+ * An agent is a pure doer - no output contract of its own.
  * The output contract is declared by the phase that uses it.
  */
 export interface Agent {

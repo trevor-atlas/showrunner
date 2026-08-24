@@ -14,7 +14,7 @@ spawn("pi", ["--mode", "rpc", "--session-id", <id>, "--approve"], { cwd: run.cwd
 ```
 
 - `--mode rpc` — long-lived RPC process: reads JSON commands on stdin, writes JSONL events/responses on stdout, never exits on its own. Terminates when stdin closes (exit 0), on SIGTERM (exit **143**), or SIGHUP (exit **129**).
-- **`--session-id <id>` is the create-or-continue flag** (verified: plain `--session <id>` *errors* with exit 1 when the session is not found — the daemon must use `--session-id`). The same id reused across corrections, steering, and resumption keeps the full context window intact (PLAN §6.5). Ids must match `^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`; the daemon derives them like `<run8>_<phase>_v<visit>`.
+- **`--session-id <id>` is the create-or-continue flag** (verified: plain `--session <id>` *errors* with exit 1 when the session is not found — the daemon must use `--session-id`). The same id reused across corrections, steering, and resumption keeps the full context window intact. Ids must match `^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`; the daemon derives them like `<run8>_<phase>_v<visit>`.
 - **No initial prompt on the command line** (verified): RPC mode ignores positional messages, rejects `@file` args, and skips piped stdin (stdin is the command channel). The daemon must send the composed prompt (§8.2) as the first command: `{"type":"prompt","message":…}` — acknowledged by `{"type":"response","command":"prompt","success":true}`. The model catalog may refresh in the background (15s timeout), so the first command can be slow.
 - **`--approve` is project trust, not tool approval** (verified): pi has no permission popups at all; `--approve` merely trusts the project's local `.pi` resources (settings/extensions/skills) for this run. `require_approval` phases remain the *human* approval seam — orthogonal.
 - **cwd**: there is no `--cwd` flag (verified); the daemon sets the working directory via the spawn `cwd` option. Config dir via env `PI_CODING_AGENT_DIR`; session dir via `--session-dir` (or `PI_CODING_AGENT_SESSION_DIR`).
@@ -49,7 +49,7 @@ Return your final result as a JSON object matching this schema, written to
 [Tools available] <agent.tools>
 ```
 
-The envelope schema is rendered into the prompt (ADR-0002) so the agent knows what to return; the daemon *reads* the file the agent writes, never trusts the prompt echo.
+The envelope schema is rendered into the prompt so the agent knows what to return; the daemon *reads* the file the agent writes, never trusts the prompt echo.
 
 ### 8.3 Completion & crash detection
 
@@ -107,7 +107,7 @@ At spawn, the harness walks each `context` entry (agent defaults, then phase-lev
 2. If it resolves to a readable file → read and inline its contents into the prompt.
 3. Otherwise → treat the string as literal content.
 
-Exact paths only; **no globs**. Collision rule (PLAN §18): a literal string that happens to match a real filepath gets read as a file; no escape syntax until something needs it.
+Exact paths only; **no globs**. Collision rule: a literal string that happens to match a real filepath gets read as a file; no escape syntax until something needs it.
 
 ### 9.3 Zero-friction handoff
 
@@ -122,14 +122,14 @@ The predecessor's `envelope.json` and every listed artifact are materialized int
 ### 11.1 Spend
 
 - **Primary source**: pi's own reported cost — `Usage.cost.total` on `message_update`/`message_end`/`turn_end` and the `get_session_stats` aggregate (verified: pi reports dollar cost, not just tokens). The tracer diffs per (phase, visit) into `spend` deltas.
-- **Roster** (`{data_dir}/prices.json`) is the *fallback/estimate* path for providers whose `cost` comes back zero/absent: `{ model: { in_per_mtok, out_per_mtok } }`, replaceable by design (PLAN §16). Missing model → `usd: null`.
+- **Roster** (`{data_dir}/prices.json`) is the *fallback/estimate* path for providers whose `cost` comes back zero/absent: `{ model: { in_per_mtok, out_per_mtok } }`, replaceable by design. Missing model → `usd: null`.
 - Aggregations: per message/turn → per phase → per run.
 - **The numbers are pi's, not ours**: the roster only fills gaps, and estimated spend is flagged as such in the UI.
 
 ### 11.2 Dashboard surfaces (derived from events)
 
 - **Run list**: runs + status + spend.
-- **Gantt** (per phase): duration, corrections, visits, spend.
+- **Run detail** (timeline chart): duration, corrections, visits, spend per phase.
 - **Phase drill-in**: agent config used, prompt, token usage, envelope, gate results, simplified output feed "as though we were viewing it in the TUI."
 
 
@@ -162,6 +162,7 @@ HTTP on **one** local TCP listener: `http://127.0.0.1:44100` (`SHOWRUNNER_PORT` 
 | `GET /api/runs` | run list: id, blueprint, status, started/ended, spend, queue position |
 | `GET /api/runs/:id` | run detail: phases (status, visits, corrections, spend), envelope count, needs_review |
 | `GET /api/runs/:id/events?cursor=<rowid>&limit=500` | the cursor query (§4.3), plus `next_cursor` |
+| `GET /api/runs/:id/timeline` | per-visit segments folded from `phase_start`/`phase_end` (R3): blueprint-order phases, each with its visit segments (`{ visit, started_at, ended_at, outcome, corrections, envelope_attempts, cause }`) — the run-detail chart and panel render from this |
 | `GET /api/runs/:id/pause` | the pause view (menu actions available for a paused run) |
 | `GET /api/runs/:id/phases/:phase/envelopes` | envelope history for a phase (all attempts) |
 | `GET /api/runs/:id/phases/:phase/gates` | gate results, incl. overridden |

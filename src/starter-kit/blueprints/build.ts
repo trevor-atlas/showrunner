@@ -4,7 +4,7 @@ import { BuildEnvelope } from "../envelopes.ts";
 import { envelopeShape } from "../gates/index.ts";
 
 /**
- * build — the plan already exists (PLAN §14): one builder phase that
+ * build — the plan already exists: one builder phase that
  * implements it. No tests/lint here by design — that is build_test's job;
  * this is the "just build it" path.
  *

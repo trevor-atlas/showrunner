@@ -1,7 +1,7 @@
 # Showrunner UI — Agent Guide
 
-The Showrunner dashboard (`@showrunner/ui`): the remix@next (v3 beta) run-list
-UI. Built on the `remix` package only — **not React** (spec §16.1). See
+The Showrunner dashboard (`@showrunner/ui`): the remix@next (v3 beta) dashboard.
+Built on the `remix` package only — **not React** (spec §16.1). See
 `docs/spec/05-ui-dashboard.md` §16 and the guides at https://guides.remix.run
 (§16.2: read start-here, request-handling, routing-and-controllers,
 rendering-ui, streaming-ui-with-frames, data-and-validation, files-and-assets,
@@ -31,15 +31,17 @@ so running the UI tests from the repo root misses this package's
   IN-PROCESS to boot a full daemon, then serves the remix router on the same
   merged TCP listener via `src/daemon/web.ts` (port 44100, `SHOWRUNNER_PORT`).
 - `hmr.ts` — remix's HMR runner (unchanged); spawns `server.ts` as its HMR child.
-- `app/routes.ts` — the typed route map (`remix/routes`): `/` and the §16.12 run-detail group.
+- `app/routes.ts` — the typed route map (`remix/routes`): `/`, the run-detail group (`/runs/:runId`, `/runs/:runId/events.json`, `/runs/:runId/timeline.json`, the control POST routes, and `/runs/:runId/phases/:phase` + its `envelopes.json`/`gates.json` proxies + control POST routes), and the colocated asset server.
 - `app/router.ts` — middleware (`staticFiles` + `render`) and controller mapping.
 - `app/actions/controller.tsx` — the `/` action: fetches GET /runs SERVER-SIDE
   via `app/lib/daemon.ts` and renders `RunListPage`. Never call the daemon from
   the browser — no CORS, no daemon credentials in the browser (§16.4/§16.5).
 - `app/actions/run-list-page.tsx` — the §16.6 run list (table, filter, refresh).
-- `app/actions/runs/` — the run-detail group: `/runs/:runId` (header, control bar, gantt, live feed), `events.json` (cursor proxy for the feed's clientEntry), and phase drill-in — all live.
-- `app/actions/public/` — the browser runtime entry + the `RunFilterForm` clientEntry.
-- `app/ui/` — shared components (`StatusPill`, `EmptyState`) and `format.ts`.
+- `app/actions/runs/` — the run-detail group: `/runs/:runId` (header, control bar, timeline chart, detail panel, live feed), the `events.json` + `timeline.json` cursor/timeline proxies, the phase drill-in group, and the control POST routes (§16.9).
+- `app/actions/runs/phases/` — the phase drill-in page (config, envelope, gates, spend, output) plus the lazy `envelopes.json`/`gates.json` proxies and the phase-scoped control verbs.
+- `app/actions/public/` — the browser runtime entry, the `RunFilterForm` and `RunLiveRegion` clientEntries.
+- `app/ui/` — shared components (`StatusPill`, `EmptyState`, `NeedsReviewBanner`, `PauseMenu`, phase drill-in cards) and `format.ts`.
+- `app/ui/public/` — the browser module graph: the timeline chart + panel (`timeline.tsx`, `timeline-panel.tsx`, `timeline-model.ts`), the `EventFeed`, and the browser-local `format.ts` copies.
 - `app/lib/daemon.ts` — the server-side daemon data layer: calls the §13 api
   core (src/daemon/server.ts) IN-PROCESS against the state held by
   src/daemon/web-state.ts (the merged web server — no socket round trip).
@@ -53,4 +55,4 @@ so running the UI tests from the repo root misses this package's
   `clientEntry(import.meta.url, ...)` — props must be `SerializableProps`.
 - No React, no react-router, no hooks, no styling library — `remix/ui`'s
   `css()`, `mix`, `on(...)` are the stack.
-- `remix` is pinned exactly (`3.0.0-beta.10`, ADR-0004) — do not float it.
+- `remix` is pinned exactly (`3.0.0-beta.10`) — do not float it.

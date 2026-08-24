@@ -7,7 +7,7 @@ import { BuildEnvelope, PlanEnvelope, ReviewEnvelope, ShipEnvelope } from "../en
 import { envelopeShape, lintClean, matchesPlan, reviewApproved, testsPass } from "../gates/index.ts";
 
 /**
- * everything — the work is real and its shape is not obvious (PLAN §14):
+ * everything — the work is real and its shape is not obvious:
  * plan, build, test, review, ship. Like plan_build_test but heavier: the plan
  * itself requires a human approval before anything is built (require_approval
  * on the plan phase), and every phase carries a larger correction budget.

@@ -2,7 +2,7 @@
  * Formatting helpers for the BROWSER module graph (spec §16.10). The asset
  * boundary (`allowFiles: ['app/routes.ts', 'app/**\u200b/public/**']`) means
  * browser-reachable modules cannot import `app/ui/format.ts` — the clientEntry
- * graph (gantt, event-feed, run-live-region) gets these local copies. The
+ * graph (timeline, event-feed, run-live-region) gets these local copies. The
  * server-only pages reuse `app/ui/format.ts` directly.
  */
 

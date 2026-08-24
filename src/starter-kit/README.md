@@ -1,6 +1,6 @@
 # @showrunner/starter-kit
 
-The out-of-the-box Showrunner content (spec §15, PLAN §14). Six agent modules,
+The out-of-the-box Showrunner content (spec §15). Six agent modules,
 a shared gates library, the `poll` tool, ten blueprint modules, and ten skill
 files — **all of it a replace-this surface**.
 
@@ -8,7 +8,7 @@ files — **all of it a replace-this surface**.
 
 ```
 src/models.ts               the replaceable model roster (edit ONE file to retarget every agent)
-src/envelopes.ts            the six agents' output contracts (ADR-0002)
+src/envelopes.ts            the six agents' output contracts
 src/agents/                 the six doers: planner, builder, scout, reviewer, documenter, ship
 src/gates/                  shared gates: testsPass, lintClean, matchesPlan, envelopeShape,
                             filesExist, reviewApproved (+ inputsDirFor / workspaceShell helpers)
@@ -17,6 +17,7 @@ src/blueprints/fake-pi/     scripted FakePi sessions for the CLI path (generated
 src/tools/poll.ts           the poll tool (a pi extension; install like the skills)
 skills/                     the ten skill files (install by copying into ~/.pi/agent/skills)
 test/                       STARTER tests — replace them with yours (spec §17)
+                            (they live at the repo root: test/starter-kit/)
 ```
 
 ## The mapping: skill → blueprint → agents & gates
@@ -35,8 +36,8 @@ test/                       STARTER tests — replace them with yours (spec §17
 | `everything` | `everything.ts` | plan → build → review → ship | all of the above; plan AND ship `require_approval`; heavier budgets | the work is real and its shape is not obvious |
 
 Skill **names** use hyphens (`plan-build` — the Agent Skills standard allows only
-lowercase a-z, 0-9, hyphens); blueprint **names/modules** use the underscores from
-PLAN §14's table (`plan_build`). The skill names are what pi's model sees;
+lowercase a-z, 0-9, hyphens); blueprint **names/modules** use the underscores
+(`plan_build`). The skill names are what pi's model sees;
 the blueprint names are what the run loop records.
 
 ## The command gates (`testsPass`, `lintClean`)
@@ -75,7 +76,7 @@ the real pi binary by default (auto-detected on PATH). Regenerate the fixture
 sessions after editing the fixture builders:
 
 ```bash
-bun --cwd src/starter-kit gen:fixtures      # scripts/generate-fake-pi-sessions.ts
+bun run gen:fixtures      # scripts/generate-fake-pi-sessions.ts
 ```
 
 **`--prompt` is wired**: the spec's skill files pass the user's goal as
@@ -118,7 +119,7 @@ cp -R src/starter-kit/skills/* ~/.pi/agent/skills/
 Pi loads only each skill's `description` at startup — make yours specific; the
 full SKILL.md loads on demand (progressive disclosure).
 
-## The replace-this doctrine (PLAN §14)
+## The replace-this doctrine
 
 Everything in this package is a **starter** — the tests it ships are not your
 tests, the prompts describe a demo app not your domain, and the roster names
@@ -132,20 +133,20 @@ an obvious file:
 | the output contracts | `src/envelopes.ts` (the gates and prompts follow) |
 | the gates' commands | the defaults in `src/gates/index.ts` or per-phase options |
 | a blueprint's wiring | its file in `src/blueprints/` (phases, gates, budgets, `on_fail`, `require_approval`) |
-| the shipped tests | `test/` — they prove the machinery (spec §17 fixtures), not your project |
+| the shipped tests | `test/starter-kit/` — they prove the machinery (spec §17 fixtures), not your project |
 
 ## Dev
 
+The kit is part of the one-package repo (no own `package.json`/`tsconfig`), so
+the root commands drive it:
+
 ```bash
-bun install --cwd src/starter-kit
-bun --cwd src/starter-kit test          # 23 starter tests: fixtures, gates, skills
-bunx tsc -p src/starter-kit/tsconfig.json
+bun test test/starter-kit/     # the kit's tests: fixtures, gates, skills
+bun run typecheck              # one tsconfig for the whole repo
+bun run gen:fixtures           # regenerate src/starter-kit/blueprints/fake-pi/*
 ```
 
 Notes:
 
-- The daemon is imported **relatively** in the tests (`../../daemon/src/...`), not
-  as a package dep — bun 1.4 cannot resolve a `file:` dep's own `file:` deps
-  (same reason the CLI imports the daemon relatively).
 - Tests build scratch dirs under the OS tmpdir and remove them on teardown —
   no residue in the repo.

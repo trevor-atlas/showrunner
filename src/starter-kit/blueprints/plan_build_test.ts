@@ -7,7 +7,7 @@ import { BuildEnvelope, PlanEnvelope, ReviewEnvelope, ShipEnvelope } from "../en
 import { envelopeShape, lintClean, matchesPlan, reviewApproved, testsPass } from "../gates/index.ts";
 
 /**
- * plan_build_test — the standard chain (PLAN §14): plan, build, gate
+ * plan_build_test — the standard chain: plan, build, gate
  * (test, lint), review, ship. The build must pass tests + typecheck AND
  * reference the plan; the review must approve; a rejected review routes back
  * to the builder (bounded revise loop); and the ship phase pauses for a human

@@ -4,7 +4,7 @@ import { PlanEnvelope } from "../envelopes.ts";
 import { envelopeShape } from "../gates/index.ts";
 
 /**
- * plan — the spec before any code (PLAN §14): one planner phase that produces
+ * plan — the spec before any code: one planner phase that produces
  * a plan document. The envelope must satisfy PlanEnvelope — a plan_path is
  * required, so a planner that wrote no plan cannot pass.
  *

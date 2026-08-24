@@ -4,7 +4,7 @@ import { DocumentEnvelope } from "../envelopes.ts";
 import { envelopeShape, filesExist } from "../gates/index.ts";
 
 /**
- * document — write up what just shipped (PLAN §14): the git diff goes in via
+ * document — write up what just shipped: the git diff goes in via
  * the prompt/context, the documenter produces docs, and the filesExist gate
  * refuses an envelope that lists no artifacts — docs must actually have been
  * written, not just promised.

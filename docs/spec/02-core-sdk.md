@@ -7,13 +7,13 @@
 
 ### 3.1 Dependencies
 
-- `zod` (validation — the one validation story, ADR-0001).
+- `zod` (validation — the one validation story).
 - Nothing else at runtime. No pi imports, no UI imports, no SQLite client in `core` (the daemon owns the DB; `core` owns shapes and the loop).
 
 ### 3.2 Envelope
 
 ```ts
-// The base, extended per phase (ADR-0002).
+// The base, extended per phase.
 export const EnvelopeBase = z.object({
   summary: z.string(),                    // what this agent did, for humans
   artifacts: z.array(z.string()),         // paths in <run_id>/<phase>/outputs (run record dir, §9.1)
@@ -26,12 +26,12 @@ export type Envelope = z.infer<typeof EnvelopeBase>;
 export type PhaseEnvelope<S extends z.ZodTypeAny> = z.infer<S>;
 ```
 
-**Semantics** (from PLAN §6.4): there is no `status` field. Outcome is determined by parse + gates, never by the agent's claim. `blocked` is the one agent-asserted signal: it short-circuits to the human pause *before* gates, burning no corrections, and is never routed through `on_fail`.
+**Semantics**: there is no `status` field. Outcome is determined by parse + gates, never by the agent's claim. `blocked` is the one agent-asserted signal: it short-circuits to the human pause *before* gates, burning no corrections, and is never routed through `on_fail`.
 
 ### 3.3 Agent
 
 ```ts
-// A pure doer — no output contract of its own (ADR-0001, ADR-0002).
+// A pure doer — no output contract of its own.
 export interface Agent {
   name: string;
   model: string;                          // from the replaceable model roster
@@ -45,7 +45,7 @@ export function defineAgent(a: Agent): Agent;
 ### 3.4 Gate
 
 ```ts
-// Plain function, first-class (ADR-0001).
+// Plain function, first-class.
 export type Gate = (
   envelope: Envelope,
   ctx: GateContext,                       // workspace path, phase, run — see §3.7
@@ -78,7 +78,7 @@ export function defineBlueprint(b: Blueprint): Blueprint;
 ```
 
 **Validation at load time** (zod, in the daemon):
-- `on_fail.to` must name a phase that exists (cycles allowed — the loop guard still terminates, PLAN §18).
+- `on_fail.to` must name a phase that exists (cycles allowed — the loop guard still terminates).
 - Phase names unique.
 - `envelope` must be assignable to `EnvelopeBase` (zod `.extend()` guarantees this structurally; check by building `EnvelopeBase.merge(phase.envelope)` and asserting it parses an `EnvelopeBase` instance).
 
@@ -181,7 +181,7 @@ A run is `running` while a phase is `in_progress`; `paused` when parked on a hum
 9. record envelope (envelopes row + envelope.json) → next phase (or success)
 ```
 
-**Correction budget** (`budget`, default 3): counts *corrections within the visit*. Exhaustion → `on_fail` if wired, else PAUSE(menu). **Visit guard** (`max_visits`, default 3): counts *visits*, so `reviewer → builder → reviewer` cycles always terminate or pause (PLAN §18).
+**Correction budget** (`budget`, default 3): counts *corrections within the visit*. Exhaustion → `on_fail` if wired, else PAUSE(menu). **Visit guard** (`max_visits`, default 3): counts *visits*, so `reviewer → builder → reviewer` cycles always terminate or pause.
 
 ### 5.3 The pause menu (any pause)
 
@@ -202,7 +202,7 @@ A run is `running` while a phase is `in_progress`; `paused` when parked on a hum
 
 ### 5.5 Gate execution
 
-Gates are arbitrary TS in the blueprint module. v1 runs them **in the daemon process** (the blueprint is trusted code by construction — ADR-0001). Isolation via a worker/`node:vm` boundary is deferred unless a blueprint needs it; the failure mode is a thrown gate, which is caught and treated as a violation with the error text (so a crashing gate never crashes the daemon).
+Gates are arbitrary TS in the blueprint module. v1 runs them **in the daemon process** (the blueprint is trusted code by construction). Isolation via a worker/`node:vm` boundary is deferred unless a blueprint needs it; the failure mode is a thrown gate, which is caught and treated as a violation with the error text (so a crashing gate never crashes the daemon).
 
 
 

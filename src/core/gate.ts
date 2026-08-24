@@ -31,7 +31,7 @@ export interface GateContext extends RunContext {
 export type GateResult = { pass: true } | { pass: false; violations: string[] };
 
 /**
- * A gate is a plain first-class function (ADR-0001). It runs in the daemon
+ * A gate is a plain first-class function. It runs in the daemon
  * process after parse succeeds and after the `blocked` short-circuit. Gate
  * violations feed the correction message verbatim.
  */

@@ -1,4 +1,4 @@
-// The ten starter blueprints (PLAN §14's table). Skill name → blueprint:
+// The ten starter blueprints. Skill name → blueprint:
 //   prompt           → prompt           (default: planner; edit to pick the agent)
 //   scout            → scout
 //   plan             → plan
