@@ -190,6 +190,28 @@ export interface PauseView {
   note?: string;
 }
 
+/**
+ * GET /api/stats — the all-time landing KPI/chart contract (one shared wire
+ * shape). `status_counts` is keyed by RAW `runs.status` (queued is a pool
+ * state, not a DB status; it is reported separately as `queued_count`).
+ * `success_rate` is success ÷ (success + failed) only — interrupted is NOT in
+ * the denominator — and is null when there are zero terminal runs.
+ * `avg_duration_ms` is the mean phase-extent duration over terminal runs, null
+ * when no terminal run has a measurable duration. Spend totals come from the
+ * spend events, not `phases.spend_usd`.
+ */
+export interface RunStats {
+  runs_count: number;
+  status_counts: Record<string, number>;
+  queued_count: number;
+  success_rate: number | null;
+  reported_usd: number;
+  estimated_usd: number;
+  avg_duration_ms: number | null;
+  spend_by_day: { day: string; reported_usd: number; estimated_usd: number }[];
+  blueprints: { blueprint: string; runs: number }[];
+}
+
 export interface DaemonStatus {
   ok: boolean;
   pid: number;

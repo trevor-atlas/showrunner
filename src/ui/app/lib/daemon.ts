@@ -29,6 +29,7 @@ import {
   apiResume,
   apiRunDetail,
   apiSpend,
+  apiStats,
   apiSteerRun,
   apiTimeline,
 } from "../../../daemon/server.ts";
@@ -44,6 +45,7 @@ import type {
   RawTail,
   RunDetail,
   RunListItem,
+  RunStats,
   SpendBreakdown,
   TimelineView,
 } from "../../../daemon/contract.ts";
@@ -88,6 +90,11 @@ export async function getSpend(runId: string): Promise<SpendBreakdown> {
 /** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
 export async function getTimeline(runId: string): Promise<TimelineView> {
   return apiTimeline(requireWebState(), runId);
+}
+
+/** GET /api/stats — the all-time landing KPI/chart aggregate. */
+export async function getStats(): Promise<RunStats> {
+  return apiStats(requireWebState());
 }
 
 /** GET /runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */

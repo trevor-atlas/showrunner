@@ -35,6 +35,7 @@ import type {
   RawTail,
   RunDetail,
   RunListItem,
+  RunStats,
   SegmentCause,
   SpendBreakdown,
   SteerBody,
@@ -60,6 +61,7 @@ export type {
   RawTail,
   RunDetail,
   RunListItem,
+  RunStats,
   SegmentCause,
   SpendBreakdown,
   SteerBody,
@@ -145,6 +147,11 @@ export class DaemonClient {
   /** GET /api/status — health + pool utilization + run status counts (T07). */
   status(): Promise<DaemonStatus> {
     return this.typed("GET", "/api/status");
+  }
+
+  /** GET /api/stats — the all-time landing KPI/chart aggregate. */
+  getStats(): Promise<RunStats> {
+    return this.typed("GET", "/api/stats");
   }
 
   /** GET /api/runs — the run list, each with queue position. */

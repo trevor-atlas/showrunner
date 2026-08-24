@@ -301,6 +301,34 @@ export function listRuns(db: Database): RunWithSpend[] {
   ).all();
 }
 
+/** Per-run phase-extent rollup — the stats endpoint's duration source. One
+ * row per run over `runs LEFT JOIN phases GROUP BY r.id`, carrying the run's
+ * own id/status/blueprint/started_at/ended_at alongside MIN(phases.started_at)
+ * and MAX(phases.ended_at). SQL MIN/MAX skip NULLs, so skipped/pending phases
+ * (no started_at/ended_at) drop out naturally — the phase extent is the span
+ * of the phases that actually ran. The AVERAGE stays a JS derivation (no SQL
+ * AVG, matching the repo-wide "durations are derived" convention). */
+export interface RunPhaseExtent {
+  id: string;
+  status: string;
+  blueprint: string;
+  started_at: string;
+  ended_at: string | null;
+  min_phase_started_at: string | null;
+  max_phase_ended_at: string | null;
+}
+
+export function runPhaseExtents(db: Database): RunPhaseExtent[] {
+  return q<RunPhaseExtent>(
+    db,
+    `SELECT r.id, r.status, r.blueprint, r.started_at, r.ended_at,
+       MIN(p.started_at) AS min_phase_started_at,
+       MAX(p.ended_at) AS max_phase_ended_at
+     FROM runs r LEFT JOIN phases p ON p.run_id = r.id
+     GROUP BY r.id ORDER BY r.started_at DESC`,
+  ).all();
+}
+
 // ── phases ───────────────────────────────────────────────────────────────────
 
 export function insertPhase(db: Database, p: PhaseRow): void {
@@ -401,6 +429,34 @@ export function sumSpendTokenTotals(
     });
   }
   return out;
+}
+
+/** Per-run reported-vs-estimated spend split, summed from the spend EVENTS
+ * (not `phases.spend_usd`). The events table is the source because
+ * `phases.spend_usd` LAGS after crash recovery: backfill folds spend events
+ * only and never calls updatePhase (src/daemon/backfill.ts), so a recovered
+ * run's phase rows understate spend while its events do not. Mirrors the
+ * sumEstimatedPhaseSpend json_extract pattern: type='spend', usd non-null
+ * (usd:null spend events — reported-zero with no roster entry, src/daemon/
+ * tracer.ts — are excluded), split on the `estimated` flag. */
+export interface RunSpendSplit {
+  run_id: string;
+  reported_usd: number;
+  estimated_usd: number;
+}
+
+export function runSpendSplit(db: Database): RunSpendSplit[] {
+  return q<RunSpendSplit>(
+    db,
+    `SELECT run_id,
+       SUM(CASE WHEN json_extract(data, '$.estimated') = 1
+                THEN 0 ELSE CAST(json_extract(data, '$.usd') AS REAL) END) AS reported_usd,
+       SUM(CASE WHEN json_extract(data, '$.estimated') = 1
+                THEN CAST(json_extract(data, '$.usd') AS REAL) ELSE 0 END) AS estimated_usd
+     FROM events
+     WHERE type = 'spend' AND json_extract(data, '$.usd') IS NOT NULL
+     GROUP BY run_id`,
+  ).all();
 }
 
 /** The per-phase spend shape for the three surfaces (run detail, spend
