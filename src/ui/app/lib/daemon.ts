@@ -28,6 +28,7 @@ import {
   apiRunDetail,
   apiSpend,
   apiSteerRun,
+  apiTimeline,
 } from "../../../daemon/server.ts";
 import { requireWebState } from "../../../daemon/web-state.ts";
 import type {
@@ -40,6 +41,7 @@ import type {
   RunDetail,
   RunListItem,
   SpendBreakdown,
+  TimelineView,
 } from "../../../daemon/client.ts";
 
 /** The run list rows (§13.1) — in-process against the daemon's state. */
@@ -65,6 +67,11 @@ export async function getPhaseGates(runId: string, phase: string): Promise<Phase
 /** GET /runs/:id/spend — per-phase spend breakdown (+ estimated markers). */
 export async function getSpend(runId: string): Promise<SpendBreakdown> {
   return apiSpend(requireWebState(), runId) as unknown as SpendBreakdown;
+}
+
+/** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
+export async function getTimeline(runId: string): Promise<TimelineView> {
+  return apiTimeline(requireWebState(), runId) as unknown as TimelineView;
 }
 
 /** GET /runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */

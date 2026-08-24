@@ -1,6 +1,7 @@
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 import type { EventRow } from "../core/index.ts";
+import type { PhaseStatus, RunStatus } from "../core/run.ts";
 
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride, PhaseRow, RunRow } from "./db.ts";
 
@@ -83,6 +84,53 @@ export interface SpendBreakdown {
   spend_usd: number;
   estimated_spend_usd: number;
   phases: { id: string; name: string; status: string; spend_usd: number; estimated_spend_usd: number }[];
+}
+
+// ── R3: the timeline view (GET /runs/:id/timeline) ──────────────────────────
+// The server derives per-visit segments by folding the run's phase_start /
+// phase_end events (spec R3) — the derivation lives server-side, in one
+// tested place. The wire shapes below are the contract apiTimeline honors.
+
+export type SegmentCause =
+  | { kind: "flow" }
+  | { kind: "on_fail"; from_phase: string; from_visit: number }
+  | { kind: "human"; action: string; by?: string };
+
+export interface TimelineSegment {
+  visit: number;
+  started_at: string;
+  ended_at: string | null; // null = visit still open
+  outcome: "in_progress" | "success" | "failed" | "skipped" | "interrupted";
+  /** correction events in this visit */
+  corrections: number;
+  /** envelope events in this visit */
+  envelope_attempts: number;
+  /** the phase_start payload's cause verbatim; null on runs recorded before R2 */
+  cause: SegmentCause | null;
+}
+
+export interface TimelinePhase {
+  phase_id: string;
+  name: string;
+  agent: string;
+  status: PhaseStatus; // current, from the phases row
+  visits: number;
+  budget: number;
+  spend_usd: number;
+  estimated_spend_usd: number;
+  /** ordered by visit; empty for pending phases */
+  segments: TimelineSegment[];
+}
+
+export interface TimelineView {
+  run_id: string;
+  blueprint: string;
+  status: RunStatus;
+  needs_review: boolean;
+  started_at: string; // ISO-8601 UTC, like everything else
+  ended_at: string | null;
+  /** blueprint order (same order as RunDetail.phases) */
+  phases: TimelinePhase[];
 }
 
 export interface RawTail {
@@ -243,6 +291,12 @@ export class DaemonClient {
   /** GET /api/runs/:id/spend — per-phase spend breakdown (+ estimated markers). */
   getSpend(runId: string): Promise<SpendBreakdown> {
     return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/spend`);
+  }
+
+  /** GET /api/runs/:id/timeline (R3) — per-visit segments derived from the
+   * run's phase_start/phase_end events, in blueprint order. */
+  getTimeline(runId: string): Promise<TimelineView> {
+    return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/timeline`);
   }
 
   /** GET /api/runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */

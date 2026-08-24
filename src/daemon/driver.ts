@@ -147,7 +147,9 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
 
   emit("run_submitted", { blueprint: `fixture:${opts.fixture}`, cwd }, { phase_id: null, agent_session_id: null });
   emit("run_status", { from: "submitted", to: "running" }, { phase_id: null, agent_session_id: null });
-  emit("phase_start", { phase, agent, visit, budget }, { phase_id: phaseId });
+  // R2: the fixture submit path is always visit 1 of one phase, entered by
+  // normal forward execution — cause flow
+  emit("phase_start", { phase, agent, visit, budget, cause: { kind: "flow" } }, { phase_id: phaseId });
 
   const rawFile = new RawOutputFile(join(runDir, "raw_output.jsonl"));
   const tracer = new Tracer({

@@ -15,6 +15,7 @@ import {
   cursorEvents,
   driveResumedRun,
   EventSink,
+  getControl,
   getRun,
   isEnvelopeApproved,
   listAgentSessions,
@@ -117,6 +118,16 @@ function closeEnv(env: { dir: string; db: { close(): void }; cwd: string }): voi
 
 function eventTypes(db: ReturnType<typeof openDb>, runId: string): string[] {
   return cursorEvents(db, runId, 0, 10_000).map((e) => e.type);
+}
+
+/** Poll until fn() is true — the loop runs on its own event-loop ticks. */
+async function waitFor(fn: () => boolean, timeoutMs = 10_000, label = "condition"): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (fn()) return;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise((r) => setTimeout(r, 25));
+  }
 }
 
 // ── §11.1 spend aggregation (roster estimates flow into phase/run totals) ────
@@ -452,6 +463,242 @@ test("loop guard: an on_fail cycle pauses once any phase hits max_visits", async
     const sessions = listAgentSessions(env.db, run.run_id).map((s) => s.pi_session_id);
     expect(sessions).toContain(`${run.run_id.slice(0, 8)}_build_v2`);
     expect(sessions).toContain(`${run.run_id.slice(0, 8)}_review_v2`);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── R1: phase-row lifecycle on revisit ──────────────────────────────────────
+
+test("R1: a revisit re-opens the row — in_progress, ended_at NULL, corrections reset — without moving started_at", async () => {
+  const env = openEnv("runner-r1-lifecycle");
+  try {
+    const seen: Array<{
+      visit: number;
+      status: string;
+      started_at: string | null;
+      ended_at: string | null;
+      corrections: number;
+    }> = [];
+    const blueprint = defineBlueprint({
+      name: "r1",
+      phases: [
+        // an on_fail SELF-loop: build's own failure revisits build — the R1
+        // scenario (one phases row driven by multiple visits)
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "build" } },
+      ],
+      // the hook runs INSIDE driveVisit, right after the row update — it sees
+      // the row mid-visit, the exact state the R1 invariant constrains
+      onPhaseStart: async (ctx) => {
+        const row = listPhases(env.db, ctx.run_id).find((p) => p.name === "build")!;
+        seen.push({
+          visit: row.visits,
+          status: row.status,
+          started_at: row.started_at,
+          ended_at: row.ended_at,
+          corrections: row.corrections,
+        });
+      },
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]) }, // the last turn repeats (§17)
+      maxVisits: 2, // after visit 2 the guard pauses the run
+    });
+    expect((await run.done).status).toBe("paused");
+
+    // both visits observed mid-flight: in_progress, ended_at NULL, corrections
+    // reset to 0 at visit start; started_at is the FIRST visit's — untouched
+    expect(seen).toHaveLength(2);
+    const [v1, v2] = seen;
+    expect(v1!.visit).toBe(1);
+    expect(v2!.visit).toBe(2);
+    expect(v1!.status).toBe("in_progress");
+    expect(v2!.status).toBe("in_progress");
+    expect(v1!.ended_at).toBeNull();
+    expect(v2!.ended_at).toBeNull();
+    expect(v1!.corrections).toBe(0);
+    expect(v2!.corrections).toBe(0);
+    expect(v2!.started_at).toBe(v1!.started_at);
+    // the invariant: no observed visit ever showed in_progress + non-null ended_at
+    for (const s of seen) {
+      expect(s.status !== "in_progress" || s.ended_at === null).toBe(true);
+    }
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── R2: phase_start cause (why each visit started) ──────────────────────────
+
+test("R2 cause: forward visits are flow; the on_fail target stamps the failed phase+visit; downstream re-runs flow again", async () => {
+  const env = openEnv("runner-r2-causes");
+  try {
+    const blueprint = defineBlueprint({
+      name: "escalate",
+      phases: [
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "rescue" } },
+        { name: "rescue", agent: agent("rescuer"), envelope: QualityEnvelope, gates: [], budget: 3 },
+        { name: "report", agent: agent("reporter"), envelope: QualityEnvelope, gates: [], budget: 3 },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: {
+        build: session([settledTurn(), settledTurn()]),
+        rescue: session([settledTurn({ quality: 8 })]),
+        report: session([settledTurn({ quality: 8 })]),
+      },
+    });
+    expect((await run.done).status).toBe("success");
+
+    const starts = cursorEvents(env.db, run.run_id, 0, 10_000)
+      .filter((e) => e.type === "phase_start")
+      .map((e) => e.data as { phase: string; visit: number; cause?: unknown });
+    // build: forward flow; rescue: the on_fail jump target (build's visit 1
+    // failed and jumped here); report: reached by normal forward execution
+    // AFTER the jump — flow again, never on_fail
+    expect(starts.map((s) => [s.phase, s.visit, s.cause])).toEqual([
+      ["build", 1, { kind: "flow" }],
+      ["rescue", 1, { kind: "on_fail", from_phase: "build", from_visit: 1 }],
+      ["report", 1, { kind: "flow" }],
+    ]);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("R2 cause: a human restart-fresh at a budget pause stamps { kind: 'human', action: 'restart' }", async () => {
+  const env = openEnv("runner-r2-restart");
+  try {
+    const blueprint = defineBlueprint({
+      name: "stuck",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1 }],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]) },
+    });
+    expect((await run.done).status).toBe("paused"); // budget pause, visit 1
+
+    const starts = (): Array<{ visit: number; cause?: unknown }> =>
+      cursorEvents(env.db, run.run_id, 0, 10_000)
+        .filter((e) => e.type === "phase_start")
+        .map((e) => {
+          const d = e.data as { visit: number; cause?: unknown };
+          return { visit: d.visit, cause: d.cause };
+        });
+    expect(starts()).toEqual([{ visit: 1, cause: { kind: "flow" } }]);
+
+    // the human restarts fresh: visit 2 starts by human action, not flow
+    getControl(run.run_id)!.restartFresh("operator");
+    await waitFor(() => starts().some((s) => s.visit === 2), 10_000, "visit 2 phase_start");
+    expect(starts().find((s) => s.visit === 2)!.cause).toEqual({
+      kind: "human",
+      action: "restart",
+      by: "operator",
+    });
+
+    // cleanup: fail the run out of its second pause
+    getControl(run.run_id)!.fail("operator");
+    expect((await run.terminal).status).toBe("failed");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("R2 cause: a steer queued at a budget pause rides the restart continuation; the visit stamps the human restart verb", async () => {
+  const env = openEnv("runner-r2-steer");
+  try {
+    const blueprint = defineBlueprint({
+      name: "stuck",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1 }],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]) },
+    });
+    expect((await run.done).status).toBe("paused");
+
+    // a steer alone never resolves a pause (§5.3: queued + stays paused); the
+    // menu's "steer then the visit continues" proceeds via restart-fresh, and
+    // the queued steer rides the new visit's session (edge-cases pattern)
+    const control = getControl(run.run_id)!;
+    control.steer("try harder", "operator");
+    expect(control.queuedSteerCount).toBe(1); // queued — no live session
+    control.restartFresh("operator");
+
+    const starts = (): Array<{ visit: number; cause?: unknown }> =>
+      cursorEvents(env.db, run.run_id, 0, 10_000)
+        .filter((e) => e.type === "phase_start")
+        .map((e) => {
+          const d = e.data as { visit: number; cause?: unknown };
+          return { visit: d.visit, cause: d.cause };
+        });
+    await waitFor(() => starts().some((s) => s.visit === 2), 10_000, "visit 2 phase_start");
+    // the visit was started by the human's restart-fresh — NOT flow, and the
+    // queued steer is delivery (evidence), not a visit-starting cause
+    expect(starts().find((s) => s.visit === 2)!.cause).toEqual({
+      kind: "human",
+      action: "restart",
+      by: "operator",
+    });
+
+    // cleanup: fail the run out of its second pause
+    getControl(run.run_id)!.fail("operator");
+    expect((await run.terminal).status).toBe("failed");
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("R2 cause: a human restart at a guard pause overrides the pending on_fail cause", async () => {
+  const env = openEnv("runner-r2-guard");
+  try {
+    const blueprint = defineBlueprint({
+      name: "cycle",
+      phases: [
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "build" } },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]) },
+      maxVisits: 2,
+    });
+    // v1 fails → on_fail → v2 fails → on_fail → the guard parks the run (2 >= 2)
+    expect((await run.done).status).toBe("paused");
+
+    const starts = (): Array<{ visit: number; cause?: unknown }> =>
+      cursorEvents(env.db, run.run_id, 0, 10_000)
+        .filter((e) => e.type === "phase_start")
+        .map((e) => {
+          const d = e.data as { visit: number; cause?: unknown };
+          return { visit: d.visit, cause: d.cause };
+        });
+    expect(starts()).toEqual([
+      { visit: 1, cause: { kind: "flow" } },
+      { visit: 2, cause: { kind: "on_fail", from_phase: "build", from_visit: 1 } },
+    ]);
+
+    // the human restarts at the guard pause: the bypassed visit 3 is a HUMAN
+    // restart — the pending on_fail cause (build visit 2's jump) must not leak
+    getControl(run.run_id)!.restartFresh("operator");
+    await waitFor(() => starts().some((s) => s.visit === 3), 10_000, "visit 3 phase_start");
+    expect(starts().find((s) => s.visit === 3)!.cause).toEqual({
+      kind: "human",
+      action: "restart",
+      by: "operator",
+    });
+
+    // cleanup: fail the run out of its second pause
+    getControl(run.run_id)!.fail("operator");
+    expect((await run.terminal).status).toBe("failed");
   } finally {
     closeEnv(env);
   }
@@ -1145,6 +1392,16 @@ test("§12 resume continues from the interrupted phase: success phases not re-ru
           (e.data as { from: string; to: string }).to === "running",
       ),
     ).toBe(true);
+    // R2: the resumed visit's phase_start is a human "resume" (the §12 continue
+    // verb) — with the operator who requested it, mirroring the human_action
+    const buildStart = events.find(
+      (e) => e.type === "phase_start" && (e.data as { phase: string }).phase === "build",
+    )!;
+    expect((buildStart.data as { cause?: unknown }).cause).toEqual({
+      kind: "human",
+      action: "resume",
+      by: "operator",
+    });
   } finally {
     closeEnv(env);
   }

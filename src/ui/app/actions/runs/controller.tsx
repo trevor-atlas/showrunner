@@ -3,25 +3,26 @@ import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
 import type { EventRow } from "../../../../core/index.ts";
+import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
 
-import { readBlueprintSnapshot } from "../../lib/blueprint-snapshot.ts";
 import {
   controlApprove,
   controlFail,
   controlResume,
   controlSteer,
+  getPhaseEnvelopes,
   getPhaseGates,
   getPause,
   getRunDetail,
   getRunEvents,
+  getTimeline,
   isApiError,
 } from "../../lib/daemon.ts";
 import { routes } from "../../routes.ts";
 import type { ControlError } from "../../ui/pause-menu.tsx";
 import { apiControlError, steerFormSchema, validationError } from "./control-forms.ts";
-import type { LivePhase } from "../public/run-live-region.tsx";
+import { resolveInitialSelection } from "../../ui/public/timeline-model.ts";
 import { NotFoundPage, RunDetailPage } from "./run-detail-page.tsx";
-import { orderPhases } from "./phase-order.ts";
 
 /**
  * Run-detail group (T10a + T10b, issues #15/#20): `/runs/:runId`, the
@@ -131,6 +132,26 @@ export default createController(routes.runs, {
         throw err;
       }
     },
+
+    /** R6: the timeline.json refetch proxy — GET /runs/:id/timeline.json
+     * through the §13 api core in-process, returned as the R3 TimelineView
+     * JSON. Mirrors `events` (the same run-gone 404): the live region polls
+     * this alongside events.json each tick and replaces the chart's timeline
+     * snapshot, so the open bubble extends to now and new segments appear
+     * without a page reload. */
+    async timeline(context) {
+      const runId = context.params.runId;
+
+      try {
+        const view = await getTimeline(runId);
+        return Response.json(view);
+      } catch (err) {
+        if (isApi404(err)) {
+          return Response.json({ error: `run ${runId} not found` }, { status: 404 });
+        }
+        throw err;
+      }
+    },
   },
 });
 
@@ -143,7 +164,11 @@ export default createController(routes.runs, {
  * the form that submitted it — the page state still comes from the daemon).
  */
 export async function renderRunDetail(
-  context: { params: { runId: string }; render(node: unknown, init?: ResponseInit): Response | Promise<Response> },
+  context: {
+    params: { runId: string };
+    url: URL;
+    render(node: unknown, init?: ResponseInit): Response | Promise<Response>;
+  },
   runId: string,
   controlError: ControlError | null = null,
   status = 200,
@@ -162,21 +187,23 @@ export async function renderRunDetail(
   // first poll starts from the last rowid and only ever sees what's new.
   const history = await collectEvents(runId);
 
-  // §16.7: gantt rows in BLUEPRINT order — the §13.1 phases array is
-  // ordered by started_at (SQLite sorts pending NULLs first), so reorder
-  // from the §13.3 snapshot (or phase_start events when none exists).
-  const snapshot = readBlueprintSnapshot(runId);
-  const blueprintOrder = snapshot.doc?.phases.map((p) => p.name) ?? null;
-  const livePhases: LivePhase[] = orderPhases(detail.phases, history.events, blueprintOrder).map((p) => ({
-    name: p.name,
-    agent: p.agent,
-    status: p.status,
-    corrections: p.corrections,
-    visits: p.visits,
-    spend_usd: p.spend_usd,
-    started_at: p.started_at,
-    ended_at: p.ended_at,
-  }));
+  // R4/R5: the timeline view (per-visit segments, blueprint order — the
+  // server derives both). The initial selection comes from the ?phase= deep
+  // link (validated; unknown names fall back to auto-select — never crash)
+  // and auto-selects the in_progress phase otherwise.
+  const timeline = await getTimeline(runId);
+  const selection = resolveInitialSelection(timeline, context.url.searchParams.get("phase"));
+
+  // R5: server-render the INITIAL selection's envelopes/gates (one phase
+  // only); later selections fetch client-side through the envelopes.json /
+  // gates.json proxies.
+  let initialEnvelopes: EnvelopeRow[] = [];
+  let initialGates: GateResultWithOverride[] = [];
+  if (selection !== null) {
+    const [env, gates] = await Promise.all([getPhaseEnvelopes(runId, selection), getPhaseGates(runId, selection)]);
+    initialEnvelopes = env.envelopes;
+    initialGates = gates.gates;
+  }
 
   // §16.9: the pause menu's content comes from the §13 pause viewer; the
   // override select needs the FAILED gate names on the paused phase (fetched
@@ -201,7 +228,10 @@ export async function renderRunDetail(
     <RunDetailPage
       runId={runId}
       detail={detail}
-      livePhases={livePhases}
+      timeline={timeline}
+      initialSelection={selection}
+      initialEnvelopes={initialEnvelopes}
+      initialGates={initialGates}
       events={history.events}
       cursor={history.cursor}
       pause={pause}
