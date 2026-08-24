@@ -5,9 +5,11 @@ import { z } from "zod";
 import type { Envelope, EventType, Gate, GateContext } from "../core/index.ts";
 
 import {
+  countUnoverriddenFailedGates,
   getEnvelope,
   getGateResult,
   getPhaseById,
+  hasGateOverride,
   insertEnvelope,
   insertGateOverride,
   insertGateResult,
@@ -272,10 +274,9 @@ export function overrideGateResult(opts: OverrideGateOptions): GateOverrideResul
   const row = getGateResult(db, gateResultId);
   if (!row) throw new Error(`no gate result ${gateResultId} to override`);
   if (row.pass === 1) throw new Error(`gate "${row.gate}" passed — nothing to override`);
-  const existing = db
-    .query<{ id: string }, [string]>("SELECT id FROM gate_overrides WHERE gate_result_id = ?")
-    .get(gateResultId);
-  if (existing) throw new Error(`gate "${row.gate}" result ${gateResultId} is already overridden`);
+  if (hasGateOverride(db, gateResultId)) {
+    throw new Error(`gate "${row.gate}" result ${gateResultId} is already overridden`);
+  }
 
   const envelope = getEnvelope(db, row.envelope_id);
   if (!envelope) throw new Error(`envelope ${row.envelope_id} for gate result ${gateResultId} not found`);
@@ -315,15 +316,7 @@ export function overrideGateResult(opts: OverrideGateOptions): GateOverrideResul
  * before continuing a previously-rejected envelope as accepted.
  */
 export function isEnvelopeApproved(db: Database, envelopeId: string): boolean {
-  const row = db
-    .query<{ n: number }, [string]>(
-      `SELECT COUNT(*) AS n
-       FROM gate_results gr
-       LEFT JOIN gate_overrides go ON go.gate_result_id = gr.id
-       WHERE gr.envelope_id = ? AND gr.pass = 0 AND go.id IS NULL`,
-    )
-    .get(envelopeId);
-  return (row?.n ?? 0) === 0;
+  return countUnoverriddenFailedGates(db, envelopeId) === 0;
 }
 
 export interface RecordEnvelopeAcceptanceOptions {

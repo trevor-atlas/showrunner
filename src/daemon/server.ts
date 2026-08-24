@@ -11,9 +11,9 @@ import {
   listAgentSessions,
   listEnvelopes,
   listGateResults,
-  listPhases,
+  listPhaseSpend,
   listRuns,
-  sumEstimatedPhaseSpend,
+  phaseStatusCounts,
   sumRunSpend,
 } from "./db.ts";
 import {
@@ -68,8 +68,6 @@ export interface ApiState {
   pool: RunPool;
   startedAt: number;
 }
-
-const MAX_EVENTS_LIMIT = 500;
 
 // The one error class lives in contract.ts (shared with client.ts and
 // the UI); re-exported so daemon/index.ts's public surface keeps working.
@@ -226,16 +224,14 @@ export function apiRunDetail(state: ApiState, runId: string): RunDetail {
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   // spend splits reported vs estimated — the estimated half comes
   // from the spend events' flag, so show can mark it as such
-  const estimatedByPhase = sumEstimatedPhaseSpend(state.db, runId);
-  let estimatedSpend = 0;
-  for (const s of estimatedByPhase.values()) estimatedSpend += s;
+  const phaseSpend = listPhaseSpend(state.db, runId);
   return {
     run,
     spend_usd: sumRunSpend(state.db, runId),
-    estimated_spend_usd: estimatedSpend,
+    estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
     // envelope count (accepted/attempt rows for the run)
     envelope_count: envelopeCount(state.db, runId),
-    phases: listPhases(state.db, runId).map((p) => ({ ...p, estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0 })),
+    phases: phaseSpend,
     sessions: listAgentSessions(state.db, runId),
     event_count: eventCount(state.db, runId),
   };
@@ -244,19 +240,19 @@ export function apiRunDetail(state: ApiState, runId: string): RunDetail {
 // per-phase spend breakdown (+ estimated markers).
 export function apiSpend(state: ApiState, runId: string): SpendBreakdown {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
-  const estimatedByPhase = sumEstimatedPhaseSpend(state.db, runId);
-  let estimatedSpend = 0;
-  for (const s of estimatedByPhase.values()) estimatedSpend += s;
+  const phaseSpend = listPhaseSpend(state.db, runId);
   return {
     run_id: runId,
     spend_usd: sumRunSpend(state.db, runId),
-    estimated_spend_usd: estimatedSpend,
-    phases: listPhases(state.db, runId).map((p) => ({
-      id: p.id,
-      name: p.name,
-      status: p.status,
-      spend_usd: p.spend_usd,
-      estimated_spend_usd: estimatedByPhase.get(p.id) ?? 0,
+    estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
+    // the wire shape is exactly these five keys — the field pick stays here
+    // (listPhaseSpend returns the full row; the contract pins the shape)
+    phases: phaseSpend.map(({ id, name, status, spend_usd, estimated_spend_usd }) => ({
+      id,
+      name,
+      status,
+      spend_usd,
+      estimated_spend_usd,
     })),
   };
 }
@@ -315,7 +311,9 @@ export function apiPhaseGates(state: ApiState, runId: string, phaseName: string)
 export function apiEvents(state: ApiState, runId: string, query: URLSearchParams): EventsPage {
   if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
   const cursor = intParam(query.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
-  const limit = intParam(query.get("limit"), MAX_EVENTS_LIMIT, MAX_EVENTS_LIMIT);
+  // the page default/cap is sweepRunEvents' batch constant (db.ts) — the
+  // events page and the timeline sweep share the 500, one magic number
+  const limit = intParam(query.get("limit"), 500, 500);
   const events = cursorEvents(state.db, runId, cursor, limit);
   const nextCursor = events.length > 0 ? events[events.length - 1]!.id : cursor;
   return { events, next_cursor: nextCursor };
@@ -619,18 +617,4 @@ function lastRunStatusReason(db: Database, runId: string): string | null {
     }
   }
   return null;
-}
-
-function phaseStatusCounts(db: Database, runId: string): Record<string, number> {
-  const rows = db
-    .query<{ status: string; n: number }, [string]>(
-      "SELECT status, COUNT(*) AS n FROM phases WHERE run_id = ? GROUP BY status",
-    )
-    .all(runId);
-  const counts: Record<string, number> = { total: 0 };
-  for (const row of rows) {
-    counts[row.status] = Number(row.n);
-    counts["total"] = (counts["total"] ?? 0) + Number(row.n);
-  }
-  return counts;
 }

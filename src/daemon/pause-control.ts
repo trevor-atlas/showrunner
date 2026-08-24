@@ -4,8 +4,10 @@ import type { Envelope, EventType, RunStatus } from "../core/index.ts";
 import {
   deleteProcess,
   getEnvelope,
+  getPhaseByName,
   getRun,
   insertEvent,
+  listFailedGateResults,
   listProcesses,
   listRunProcesses,
   listRuns,
@@ -348,11 +350,7 @@ export class RunControl {
   }
 
   private resolveGateResultId(info: PauseInfo, gate: string): string {
-    const rows = this.state.db
-      .query<{ id: string; gate: string }, [string]>(
-        "SELECT id, gate FROM gate_results WHERE envelope_id = ? AND pass = 0",
-      )
-      .all(info.envelopeId!);
+    const rows = listFailedGateResults(this.state.db, info.envelopeId!);
     const match = rows.find((r) => r.gate === gate);
     if (!match) {
       throw new Error(
@@ -380,12 +378,7 @@ export class RunControl {
 
 /** phase id lookup for human_action tagging — from the runs phases table. */
 function phaseIdForRun(state: ControlState, phaseName: string): string | null {
-  const row = state.db
-    .query<{ id: string }, [string, string]>(
-      "SELECT id FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
-    )
-    .get(state.runId, phaseName);
-  return row?.id ?? null;
+  return getPhaseByName(state.db, state.runId, phaseName)?.id ?? null;
 }
 
 // ── the registry (single daemon process) ─────────────────────────────────────

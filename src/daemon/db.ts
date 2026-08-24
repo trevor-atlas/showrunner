@@ -178,6 +178,13 @@ export interface PhaseRow {
   ended_at: string | null;
 }
 
+/** A phase row with its estimated (roster-derived) spend attached — the ONE
+ * per-phase spend shape the run detail, the spend breakdown, and the timeline
+ * all read (the spend events' `estimated` flag is the source, per
+ * sumEstimatedPhaseSpend). Rows come back in phases-table order, not the wire
+ * shape — the callers pick the fields they expose. */
+export type PhaseSpendRow = PhaseRow & { estimated_spend_usd: number };
+
 export interface EnvelopeRow {
   id: string;
   run_id: string;
@@ -206,6 +213,13 @@ export interface GateResultRow {
   pass: number;
   violations: string;
   ran_at: string;
+}
+
+/** A FAILED-only gate result (id + gate name) — the override-target set the
+ * pause menu and the budget-exhaustion info both read. */
+export interface FailedGateRow {
+  id: string;
+  gate: string;
 }
 
 /** A gate result with its override marker — the drill-in badge: the
@@ -346,6 +360,30 @@ export function sumEstimatedPhaseSpend(db: Database, runId: string): Map<string,
   return out;
 }
 
+/** The per-phase spend shape for the three surfaces (run detail, spend
+ * breakdown, timeline): the estimated half mapped onto the phases rows.
+ * Returned in phases-table order (listPhases' started_at order) — the
+ * wire shapes stay the callers' business. */
+export function listPhaseSpend(db: Database, runId: string): PhaseSpendRow[] {
+  const estimated = sumEstimatedPhaseSpend(db, runId);
+  return listPhases(db, runId).map((p) => ({ ...p, estimated_spend_usd: estimated.get(p.id) ?? 0 }));
+}
+
+/** Phase counts grouped by status, with the `total` key — the runs-list
+ * contract (apiListRuns pins the shape: { total, <status>: n, ... }). */
+export function phaseStatusCounts(db: Database, runId: string): Record<string, number> {
+  const rows = q<{ status: string; n: number }>(
+    db,
+    "SELECT status, COUNT(*) AS n FROM phases WHERE run_id = ? GROUP BY status",
+  ).all(runId);
+  const counts: Record<string, number> = { total: 0 };
+  for (const row of rows) {
+    counts[row.status] = Number(row.n);
+    counts["total"] = (counts["total"] ?? 0) + Number(row.n);
+  }
+  return counts;
+}
+
 // ── events (the cursor contract) ───────────────────────────────────────
 
 export interface NewEvent {
@@ -396,6 +434,23 @@ function rowToEvent(row: Record<string, unknown>): EventRow {
 
 export function cursorEvents(db: Database, runId: string, afterRowid: number, limit: number): EventRow[] {
   return q<Record<string, unknown>>(db, CURSOR_SQL).all(runId, afterRowid, limit).map(rowToEvent);
+}
+
+/** Sweep the cursor query from the start — a run's full event history in
+ * rowid order, batched `batchSize` at a time (the one indexed read
+ * transport). The timeline fold's event source; the default batch is also
+ * the events-page size constant (apiEvents shares it — the magic number
+ * lives in one place). */
+export function sweepRunEvents(db: Database, runId: string, batchSize = 500): EventRow[] {
+  const all: EventRow[] = [];
+  let after = 0;
+  for (;;) {
+    const page = cursorEvents(db, runId, after, batchSize);
+    all.push(...page);
+    if (page.length < batchSize) break;
+    after = page[page.length - 1]!.id;
+  }
+  return all;
 }
 
 export function eventCount(db: Database, runId: string): number {
@@ -471,6 +526,13 @@ export function listGateResults(db: Database, runId: string, phaseId?: string): 
   return q<GateResultWithOverride>(db, sql).all(...bindings);
 }
 
+/** The FAILED-only gate results of one envelope (id + gate, in gate_results
+ * row order) — the override-target set both the pause menu and the
+ * budget-exhaustion pause info read. One shape serves both callers. */
+export function listFailedGateResults(db: Database, envelopeId: string): FailedGateRow[] {
+  return q<FailedGateRow>(db, "SELECT id, gate FROM gate_results WHERE envelope_id = ? AND pass = 0").all(envelopeId);
+}
+
 // ── gate overrides ────────────────────────────────────────────────────
 
 export function insertGateOverride(db: Database, o: GateOverrideRow): void {
@@ -490,6 +552,25 @@ export function listGateOverrides(db: Database, runId: string): GateOverrideWith
      WHERE go.run_id = ?
      ORDER BY go.created_at`,
   ).all(runId);
+}
+
+/** Is there an override marker on this gate result (the audit marker hanging
+ * off the KEPT original row)? */
+export function hasGateOverride(db: Database, gateResultId: string): boolean {
+  return q<{ id: string }>(db, "SELECT id FROM gate_overrides WHERE gate_result_id = ?").get(gateResultId) != null;
+}
+
+/** Failed gate results of an envelope with NO override marker — the count
+ * `isEnvelopeApproved` keys off (approved = zero un-overridden failures). */
+export function countUnoverriddenFailedGates(db: Database, envelopeId: string): number {
+  const row = q<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n
+     FROM gate_results gr
+     LEFT JOIN gate_overrides go ON go.gate_result_id = gr.id
+     WHERE gr.envelope_id = ? AND gr.pass = 0 AND go.id IS NULL`,
+  ).get(envelopeId);
+  return row?.n ?? 0;
 }
 
 // ── agent sessions ───────────────────────────────────────────────────────────

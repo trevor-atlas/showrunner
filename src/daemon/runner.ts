@@ -38,12 +38,14 @@ import type { Handoff } from "./handoff.ts";
 import {
   deleteProcess,
   getEnvelope,
+  getPhaseByName,
   getRun,
   insertAgentSession,
   insertEvent,
   insertPhase,
   insertProcess,
   insertRun,
+  listFailedGateResults,
   listPhases,
   updateAgentSession,
   updateEnvelope,
@@ -335,7 +337,7 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
   const phaseVisits = new Map<string, number>();
   for (const phase of opts.blueprint.phases) {
     // rows are created by createRunRows; ids are their own — look them up
-    const row = findPhaseRow(db, runId, phase.name);
+    const row = getPhaseByName(db, runId, phase.name);
     phaseIds.set(phase.name, row?.id ?? randomUUID());
     // resume: the interrupted phase's recorded visits ARE the visit to
     // resume (same --session-id); fresh rows have visits=0 → visit 1 as before
@@ -383,14 +385,6 @@ function initState(db: Database, dataDir: string, opts: InitOptions & { runId: s
   };
   registerControl(control);
   return state;
-}
-
-function findPhaseRow(db: Database, runId: string, name: string) {
-  return db
-    .query<{ id: string; visits: number; started_at: string | null }, [string, string]>(
-      "SELECT id, visits, started_at FROM phases WHERE run_id = ? AND name = ? LIMIT 1",
-    )
-    .get(runId, name) ?? null;
 }
 
 /** The snapshot: the rendered configuration, stored for drill-in. */
@@ -703,7 +697,7 @@ async function driveVisit(
   // R1: the row's started_at is the phase's LIFETIME start (set on the FIRST
   // visit, never overwritten) — read it so a NULL one is stamped and a set
   // one survives a revisit
-  const phaseRow = findPhaseRow(db, state.runId, phase.name);
+  const phaseRow = getPhaseByName(db, state.runId, phase.name);
 
   ctxEmit(state, "phase_start", { phase: phase.name, agent: phase.agent.name, visit, budget, cause: opts.cause }, { phase_id: phaseId });
   // R1: every visit re-opens the row — status in_progress,
@@ -1062,10 +1056,7 @@ function budgetPauseInfo(
       } catch {
         // the row parsed at acceptance; a parse failure keeps override off
       }
-      const failed = state.db
-        .query<{ id: string }, [string]>("SELECT id FROM gate_results WHERE envelope_id = ? AND pass = 0")
-        .all(result.lastEnvelopeId)
-        .map((r) => r.id);
+      const failed = listFailedGateResults(state.db, result.lastEnvelopeId).map((r) => r.id);
       if (failed.length > 0) info.gateResultIds = failed;
     }
   }

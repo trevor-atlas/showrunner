@@ -9,15 +9,21 @@ import {
   eventCount,
   getRun,
   insertAgentSession,
+  insertEnvelope,
   insertEvent,
+  insertGateResult,
   insertPhase,
   insertProcess,
   insertRun,
+  listFailedGateResults,
+  listPhaseSpend,
   listRuns,
   listTables,
   openDb,
+  phaseStatusCounts,
   sumEstimatedPhaseSpend,
   sumRunSpend,
+  sweepRunEvents,
 } from "../../src/daemon/index.ts";
 
 const tables = [
@@ -241,6 +247,99 @@ test("runs list aggregates spend and a full row round-trips", () => {
     const run = getRun(db, "r1");
     expect(run?.cwd).toBe("/w");
     expect(run?.ended_at).toBe("t1");
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("phaseStatusCounts groups by status with the total key", () => {
+  const dir = tmpDataDir("phasecounts");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    insertRun(db, { id: "r1", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
+    insertPhase(db, { id: "p1", run_id: "r1", name: "plan", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0, started_at: "t", ended_at: "t" });
+    insertPhase(db, { id: "p2", run_id: "r1", name: "build", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0, started_at: "t", ended_at: "t" });
+    insertPhase(db, { id: "p3", run_id: "r1", name: "review", agent: "a", status: "pending", visits: 0, corrections: 0, budget: 3, spend_usd: 0, started_at: null, ended_at: null });
+
+    expect(phaseStatusCounts(db, "r1")).toEqual({ total: 3, success: 2, pending: 1 });
+    // an unknown run counts zero, with the total key still present
+    expect(phaseStatusCounts(db, "ghost")).toEqual({ total: 0 });
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("sweepRunEvents returns the full history in rowid order, across the 500-row page boundary", () => {
+  const dir = tmpDataDir("sweep");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    insertRun(db, { id: "r1", blueprint: "b", status: "success", cwd: "/", needs_review: 0, started_at: "t", ended_at: "t" });
+    for (let i = 0; i < 505; i++) {
+      insertEvent(db, { run_id: "r1", phase_id: null, agent_session_id: null, type: "run_status", ts: `t${i}`, data: { from: "a", to: "b" } });
+    }
+
+    const all = sweepRunEvents(db, "r1");
+    expect(all).toHaveLength(505); // crossed the default 500 batch twice
+    expect(all[0]!.id).toBe(1);
+    expect(all[504]!.id).toBe(505);
+    // strictly ascending rowids — the cursor contract, end to end
+    for (let i = 1; i < all.length; i++) expect(all[i]!.id).toBeGreaterThan(all[i - 1]!.id);
+    expect(sweepRunEvents(db, "ghost")).toEqual([]);
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("listFailedGateResults returns id + gate for failed-only results, in gate_results row order", () => {
+  const dir = tmpDataDir("failedgates");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    insertRun(db, { id: "r1", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
+    insertPhase(db, { id: "p1", run_id: "r1", name: "build", agent: "a", status: "in_progress", visits: 1, corrections: 0, budget: 3, spend_usd: 0, started_at: "t", ended_at: null });
+    insertEnvelope(db, { id: "e1", run_id: "r1", phase_id: "p1", visit: 1, attempt: 0, json: "{}", source: "s", validated_at: "t", valid: 1, violations: "[]", correction: null });
+    insertGateResult(db, { id: "g-fail-1", envelope_id: "e1", gate: "quality", pass: 0, violations: "[]", ran_at: "t" });
+    insertGateResult(db, { id: "g-pass", envelope_id: "e1", gate: "format", pass: 1, violations: "[]", ran_at: "t" });
+    insertGateResult(db, { id: "g-fail-2", envelope_id: "e1", gate: "coverage", pass: 0, violations: "[]", ran_at: "t" });
+
+    const failed = listFailedGateResults(db, "e1");
+    expect(failed).toEqual([
+      { id: "g-fail-1", gate: "quality" },
+      { id: "g-fail-2", gate: "coverage" },
+    ]);
+    // an envelope with no failed results returns an empty list
+    expect(listFailedGateResults(db, "ghost")).toEqual([]);
+    db.close();
+  } finally {
+    cleanupDir(dir);
+  }
+});
+
+test("listPhaseSpend merges reported spend with the estimated split, in phases-table order", () => {
+  const dir = tmpDataDir("phasespend");
+  try {
+    const db = openDb(join(dir, "showrunner.db"));
+    insertRun(db, { id: "r1", blueprint: "b", status: "success", cwd: "/", needs_review: 0, started_at: "t", ended_at: "t" });
+    insertPhase(db, { id: "p1", run_id: "r1", name: "plan", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.005, started_at: "t1", ended_at: "t" });
+    insertPhase(db, { id: "p2", run_id: "r1", name: "build", agent: "a", status: "success", visits: 1, corrections: 0, budget: 3, spend_usd: 0.0, started_at: "t2", ended_at: "t" });
+    const spend = (phaseId: string, data: Record<string, unknown>) =>
+      insertEvent(db, { run_id: "r1", phase_id: phaseId, agent_session_id: null, type: "spend", ts: "t", data });
+    // estimated → counts toward the estimated split
+    spend("p1", { phase: "plan", tokens_in: 1000, tokens_out: 200, cache_read: 0, cache_write: 0, usd: 0.004, estimated: true });
+    // reported → NOT in the estimated split
+    spend("p1", { phase: "plan", tokens_in: 100, tokens_out: 20, cache_read: 0, cache_write: 0, usd: 0.001, estimated: false });
+
+    const rows = listPhaseSpend(db, "r1");
+    expect(rows).toHaveLength(2);
+    // phases-table order (listPhases' started_at order)
+    expect(rows.map((r) => r.id)).toEqual(["p1", "p2"]);
+    const plan = rows.find((r) => r.id === "p1")!;
+    expect(plan.spend_usd).toBe(0.005); // reported stays on the phase row
+    expect(plan.estimated_spend_usd).toBeCloseTo(0.004); // only the estimated event
+    const build = rows.find((r) => r.id === "p2")!;
+    expect(build.estimated_spend_usd).toBe(0); // no estimated spend → 0
     db.close();
   } finally {
     cleanupDir(dir);

@@ -17,14 +17,9 @@ import {
   type RunStatus,
 } from "../core/index.ts";
 
-import { cursorEvents, listEnvelopes, listPhases, sumEstimatedPhaseSpend } from "./db.ts";
+import { listEnvelopes, listPhases, listPhaseSpend, sweepRunEvents } from "./db.ts";
 import type { PhaseRow, RunRow } from "./db.ts";
 import type { SegmentCause, TimelineSegment, TimelineView } from "./contract.ts";
-
-/** The events cursor's page size when sweeping the run's full history (the
- * one indexed read transport — server.ts's MAX_EVENTS_LIMIT stays with
- * apiEvents). */
-const TIMELINE_EVENTS_PAGE = 500;
 
 /** The event payload slices the fold reads (rows are zod-validated at insert). */
 interface PhaseStartPayload {
@@ -54,7 +49,7 @@ interface CorrectionPayload {
  * spend. The 404 check stays with the caller (apiTimeline).
  */
 export function buildTimelineView(db: Database, dataDir: string, run: RunRow): TimelineView {
-  const events = collectTimelineEvents(db, run.id);
+  const events = sweepRunEvents(db, run.id);
   // R7 (envelope_attempts): the `envelope` EVENT fires only on ACCEPTANCE
   // — a gate-rejected visit emits none, so event-counting would report 0 for
   // a visit that really attempted. The per-attempt record is the `envelopes`
@@ -67,7 +62,9 @@ export function buildTimelineView(db: Database, dataDir: string, run: RunRow): T
     events,
     readBlueprintPhaseNames(dataDir, run.id),
   );
-  const estimatedByPhase = sumEstimatedPhaseSpend(db, run.id);
+  const estimatedByPhase = new Map(
+    listPhaseSpend(db, run.id).map((r) => [r.id, r.estimated_spend_usd]),
+  );
 
   return {
     run_id: run.id,
@@ -90,20 +87,6 @@ export function buildTimelineView(db: Database, dataDir: string, run: RunRow): T
       segments: segmentsByPhase.get(p.id) ?? [],
     })),
   };
-}
-
-/** Sweep the cursor query from the start — the full event history, in
- * rowid order, batched 500 at a time (the one indexed read transport). */
-function collectTimelineEvents(db: Database, runId: string): EventRow[] {
-  const all: EventRow[] = [];
-  let after = 0;
-  for (;;) {
-    const page = cursorEvents(db, runId, after, TIMELINE_EVENTS_PAGE);
-    all.push(...page);
-    if (page.length < TIMELINE_EVENTS_PAGE) break;
-    after = page[page.length - 1]!.id;
-  }
-  return all;
 }
 
 /** Per-(phase_id, visit) attempt counts from the `envelopes` table — one row
