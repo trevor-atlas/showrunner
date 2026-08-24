@@ -36,6 +36,11 @@ export const routes = route({
   // to /runs-list.json (NOT /runs.json — that would match routes.runs.show
   // /runs/:runId with runId="runs.json").
   homeRuns: get("/runs-list.json"),
+  // — the landing stats snapshot proxy (issue #40): the RunStatsRegion
+  // clientEntry refetches this on every global ledger change and re-renders
+  // the KPI cards + charts. PATH PINNED to /stats.json (no collision with
+  // routes.runs.show /runs/:runId or the daemon's /api/* surface).
+  homeStats: get("/stats.json"),
   // — run detail, the events.json cursor proxy, the control
   // verbs (steer/resume/fail/approve), and the phase drill-in group
   runs: {

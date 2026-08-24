@@ -2,7 +2,7 @@ import { createController } from "remix/router";
 
 import { subscribeAll } from "../../../daemon/live.ts";
 import { assetServer } from "../assets.ts";
-import { listRuns } from "../lib/daemon.ts";
+import { getStats, listRuns } from "../lib/daemon.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../lib/live.ts";
 import { routes } from "../routes.ts";
 import { RUN_STATUSES, isRunStatus } from "../ui/public/status-pill.tsx";
@@ -45,12 +45,16 @@ export default createController(routes, {
       // The initial runs are rendered UNFILTERED into the live clientEntry;
       // the entry applies the ?status= filter at render (so SSR for
       // ?status=failed still shows only failed pills) AND keeps the full set
-      // to filter live as the toolbar changes without a round-trip.
-      const { runs } = await listRuns();
+      // to filter live as the toolbar changes without a round-trip. The
+      // landing stats (issue #40) are fetched IN PARALLEL and passed to the
+      // RunStatsRegion clientEntry for SSR — the region is all-time and
+      // filter-independent, so ?status= never narrows it.
+      const [{ runs }, stats] = await Promise.all([listRuns(), getStats()]);
 
       return context.render(
         <RunListPage
           runs={runs}
+          stats={stats}
           filter={filter}
           statuses={["all", ...RUN_STATUSES]}
         />,
@@ -65,6 +69,16 @@ export default createController(routes, {
     async homeRuns() {
       const { runs } = await listRuns();
       return Response.json({ runs });
+    },
+
+    /** homeStats — GET /stats.json: the landing stats snapshot proxy the
+     * RunStatsRegion clientEntry refetches on every global ledger change.
+     * Mirrors homeRuns: getStats() in-process against daemon state, returned
+     * as JSON. The browser never talks to the daemon — it only refetches this
+     * rendered snapshot. */
+    async homeStats() {
+      const stats = await getStats();
+      return Response.json(stats);
     },
   },
 });

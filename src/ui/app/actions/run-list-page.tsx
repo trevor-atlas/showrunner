@@ -1,10 +1,11 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { RunListItem } from "../../../daemon/contract.ts";
+import type { RunListItem, RunStats } from "../../../daemon/contract.ts";
 import { routes } from "../routes.ts";
 import { Document } from "./document.tsx";
 import { RunListLive, type SerializableRunListItem } from "./public/run-list-live.tsx";
+import { RunStatsRegion, type SerializableRunStats } from "./public/run-stats-region.tsx";
 
 /**
  * The run list page. Server-rendered: `runs` come from GET /runs
@@ -20,6 +21,9 @@ import { RunListLive, type SerializableRunListItem } from "./public/run-list-liv
 
 export interface RunListPageProps {
   runs: RunListItem[];
+  /** the all-time landing stats (issue #40) — fed to the RunStatsRegion
+   * clientEntry above the list; filter-independent (?status= never narrows it) */
+  stats: RunStats;
   /** current status filter ("all" or a RunStatus) — the SSR deep link */
   filter: string;
   /** filter options — "all" then every RunStatus */
@@ -28,7 +32,7 @@ export interface RunListPageProps {
 
 export function RunListPage(handle: Handle<RunListPageProps>) {
   return () => {
-    const { runs, filter, statuses } = handle.props;
+    const { runs, stats, filter, statuses } = handle.props;
     const title = `Showrunner · runs`;
 
     return (
@@ -37,6 +41,14 @@ export function RunListPage(handle: Handle<RunListPageProps>) {
           <header mix={headerStyle}>
             <h1 mix={titleStyle}>Showrunner · runs</h1>
           </header>
+
+          <RunStatsRegion
+            // the client-entry boundary: RunStats is plain daemon JSON, so the
+            // SerializableProps widening is structural only (same `as unknown
+            // as` the list region uses)
+            stats={stats as unknown as SerializableRunStats}
+            statsHref={routes.homeStats.href()}
+          />
 
           <RunListLive
             // the client-entry boundary: the daemon wire values are plain JSON,
