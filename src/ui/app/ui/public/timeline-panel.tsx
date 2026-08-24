@@ -6,6 +6,7 @@ import type { TimelinePhase, TimelineSegment, TimelineView } from "../../../../d
 import { routes } from "../../routes.ts";
 import { fmtDuration, fmtMoney, fmtTime } from "./format.ts";
 import { lifetime, outcomeLabel } from "./timeline-model.ts";
+import { parseEnvelope, parseViolations, type ParsedEnvelope } from "./envelope-parse.ts";
 
 /**
  * The R5 detail panel — the selected phase's full record, rendered below the
@@ -315,46 +316,6 @@ function AcceptedSurface(handle: Handle<{ envelope: ParsedEnvelope | null }>) {
       </div>
     );
   };
-}
-
-/** Parse the stored violations JSON column ('[]' when none). */
-export function parseViolations(violations: string): string[] {
-  try {
-    const parsed = JSON.parse(violations) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-interface ParsedEnvelope {
-  summary: string;
-  notes: string;
-  artifacts: string[];
-  blocked: boolean;
-  blockedReason: string;
-}
-
-/** The envelope.json fields the panel shows (null when unparseable). */
-export function parseEnvelope(text: string): ParsedEnvelope | null {
-  try {
-    const v = JSON.parse(text) as unknown;
-    if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
-    const e = v as Record<string, unknown>;
-    return {
-      summary: str(e.summary),
-      notes: str(e.notes_for_next_agent),
-      artifacts: Array.isArray(e.artifacts) ? e.artifacts.filter((a): a is string => typeof a === "string") : [],
-      blocked: e.blocked === true,
-      blockedReason: str(e.blocked_reason),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v : "";
 }
 
 // ── 4. gates ────────────────────────────────────────────────────────────────
