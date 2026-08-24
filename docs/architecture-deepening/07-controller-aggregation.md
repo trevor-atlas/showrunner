@@ -5,7 +5,7 @@
 ## Goal
 
 Move every UI-side derivation (cursor sweeps, spend sums, override targets,
-workspace reads) into the §13 api core so the controllers become one fixed call
+workspace reads) into the api core so the controllers become one fixed call
 per data surface. This restores the ADR-0003 seam: the UI is again a pure
 in-process consumer of the api core.
 

@@ -4,7 +4,7 @@
 
 ## Goal
 
-Make the §13 API's wire shapes a single typed module that `server.ts` (producer),
+Make the API's wire shapes a single typed module that `server.ts` (producer),
 `client.ts`, and the UI all import — the compiler, not `contract.test.ts`,
 enforces conformance. Every `Record<string, unknown>` return and `as unknown as`
 bridge dies.

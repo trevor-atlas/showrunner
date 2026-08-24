@@ -40,12 +40,12 @@ persistence module. Zero raw `db.query` outside db.ts.
    // moved verbatim from server.ts:958 (keeps the `total` key — server.test.ts:186 pins it)
    export function phaseStatusCounts(db: Database, runId: string): Record<string, number>
    // cursor sweep from server.ts:357; stacks on CURSOR_SQL/cursorEvents (:397) so the
-   // §4.3 pinned text (db.test.ts:129, contract.test.ts:212) is untouched
+   //  pinned text (db.test.ts:129, contract.test.ts:212) is untouched
    export function sweepRunEvents(db: Database, runId: string, batchSize = 500): EventRow[]
    // merges runner.ts:1073 + pause-control.ts:352 (id + gate serves both callers)
    export interface FailedGateRow { id: string; gate: string }
    export function listFailedGateResults(db: Database, envelopeId: string): FailedGateRow[]
-   // ONE per-phase spend shape for the three §13 surfaces
+   // ONE per-phase spend shape for the three  surfaces
    export type PhaseSpendRow = PhaseRow & { estimated_spend_usd: number }
    export function listPhaseSpend(db: Database, runId: string): PhaseSpendRow[]
    // body: sumEstimatedPhaseSpend(db, runId) mapped onto listPhases(db, runId)
@@ -86,7 +86,7 @@ persistence module. Zero raw `db.query` outside db.ts.
    2–3 statuses); `sweepRunEvents` returns all 505 rows in rowid order (reuse
    the cursor test's pattern, db.test.ts:127); `listFailedGateResults` returns
    id+gate for failed only (one pass, one fail); `listPhaseSpend` merges
-   reported+estimated (reuse the §11.1 seeds, db.test.ts:186).
+   reported+estimated (reuse the seeds, db.test.ts:186).
 
 **Interface-narrowing result:** db.ts grows by only the interesting queries,
 while six raw-SQL sites and three spend-reshape loops disappear from callers;

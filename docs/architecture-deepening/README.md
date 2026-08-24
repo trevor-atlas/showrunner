@@ -68,7 +68,7 @@ existing test expectation, that ticket is wrong — stop and re-check.
 - CLI never imports `src/daemon/client.ts` internals beyond the client; UI never
   opens SQLite; server never imports the UI.
 - `needs_review` semantics, settle-waiter latch (G1), `agent_end` with
-  `willRetry` is NOT settled (tracer §7.4).
+  `willRetry` is NOT settled (tracer ).
 - R7 timeline invariants: per-visit segments, cause provenance, attempt counts
   folded from the `envelopes` table, open-segment outcomes.
 - `bun run gen:fixtures` output must stay byte-identical (harness-home).

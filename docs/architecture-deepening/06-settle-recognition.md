@@ -85,7 +85,7 @@ test-pinned; payload folding stays put.
 
 - **New `test/daemon/raw-lines.test.ts`**: settle positives (`{"type":
   "agent_settled"}` and the real shape `{"type":"agent_settled","sessionId":
-  "x","messageCount":4}`); §7.4 negatives (`agent_end` with/without `willRetry`
+  "x","messageCount":4}`);  negatives (`agent_end` with/without `willRetry`
   — never settle); junk (`"not json"`, `42`, `null`, `[]`, `""` → unknown,
   false); every vocabulary type → its kind (minimal payloads, incl. delta-only
   `tool_execution_update`/`message_update`); a machinery type (`auto_retry`) →
@@ -114,7 +114,7 @@ bun test test/
   updates classify correctly; handler zod leniency is untouched
   (`RawToolExecutionUpdate` still requires `partialResult` — same skip as
   today).
-- **§7.4 willRetry**: do not "improve" — `agent_end` never counts as done; pin
+- ** willRetry**: do not "improve" — `agent_end` never counts as done; pin
   with tests.
 - **G1 regression**: driver latch logic untouched; only recognition swapped. The
   ack→register window tests are the net.
