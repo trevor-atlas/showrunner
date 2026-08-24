@@ -1,21 +1,23 @@
-import { dirname } from "node:path";
-
 import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import { readBlueprintSnapshot } from "../../../lib/blueprint-snapshot.ts";
 import {
   controlOverrideGate,
   controlRestartFresh,
   getPhaseEnvelopes,
   getPhaseGates,
-  getPhaseOutputs,
   getRaw,
   getRunDetail,
-  getSpend,
   isApiError,
 } from "../../../lib/daemon.ts";
+import {
+  gatherPhaseInputs,
+  gatherPhaseOutputs,
+  gatherPhaseSnapshot,
+  gatherPhaseSpend,
+  isFirstBlueprintPhase,
+} from "../../../lib/phase-data.ts";
 import { routes } from "../../../routes.ts";
 import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
 import { renderRunDetail } from "../controller.tsx";
@@ -64,20 +66,18 @@ export default createController(routes.runs.phases, {
         );
       }
 
-      // everything after the 404 checks is independent — fetch in parallel
-      const [envelopes, gates, spend, raw, outputs, snapshot] = await Promise.all([
+      // everything after the 404 checks is independent — fetch in parallel.
+      // Every card surface now comes from the shared lib/phase-data.ts gather
+      // module (behavior-preserving: the same api-core spend + fs reads), so
+      // this render and ticket 11's renderRunDetail derive them one way.
+      const [envelopes, gates, spend, raw] = await Promise.all([
         getPhaseEnvelopes(runId, phaseName),
         getPhaseGates(runId, phaseName),
-        getSpend(runId),
+        gatherPhaseSpend(runId, phase.id),
         getRaw(runId, { lines: RAW_TAIL_LINES }),
-        getPhaseOutputs(runId, phaseName),
-        readBlueprintSnapshot(runId),
       ]);
-
-      const snapshotPhase = snapshot.doc?.phases.find((p) => p.name === phaseName) ?? null;
-      const snapshotModuleDir = snapshot.doc?.module !== null && snapshot.doc?.module !== undefined && snapshot.doc?.module !== "" ? dirname(snapshot.doc.module) : null;
-
-      const spendPhase = spend.phases.find((p) => p.id === phase.id);
+      const snapshot = gatherPhaseSnapshot(runId, phaseName, detail.run.cwd, detail.phases[0]?.name);
+      const outputs = gatherPhaseOutputs(runId, phaseName);
 
       return context.render(
         <DrillInPage
@@ -89,21 +89,12 @@ export default createController(routes.runs.phases, {
             cwd: detail.run.cwd,
           }}
           phase={phase}
-          snapshotPhase={snapshotPhase}
-          snapshotModuleDir={snapshotModuleDir}
+          snapshotPhase={snapshot.phase}
+          snapshotModuleDir={snapshot.moduleDir}
           envelopes={envelopes.envelopes}
-          outputs={{ files: outputs.files, findingsMd: outputs.findings_md }}
+          outputs={outputs}
           gates={gates.gates}
-          spend={{
-            // token totals come straight off the spend endpoint — SQL SUM
-            // is exact, so there is no sweep cap and no truncated flag
-            tokensIn: spendPhase?.tokens_in ?? 0,
-            tokensOut: spendPhase?.tokens_out ?? 0,
-            cacheRead: spendPhase?.cache_read ?? 0,
-            cacheWrite: spendPhase?.cache_write ?? 0,
-            spendUsd: spendPhase?.spend_usd ?? 0,
-            estimatedUsd: spendPhase?.estimated_spend_usd ?? 0,
-          }}
+          spend={spend}
           raw={raw}
         />,
       );
@@ -145,6 +136,50 @@ export default createController(routes.runs.phases, {
       }
     },
 
+    /**
+     * The snapshot.json proxy (#35) — the CONFIG card's data: the phase's
+     * blueprint-snapshot config with its context entries pre-resolved to
+     * {raw, kind, entry} (the card never touches disk). Ghost run/phase → 404
+     * JSON; a real run with no snapshot file → 200 with phase: null.
+     */
+    async snapshot(context) {
+      const runId = context.params.runId;
+      const phaseName = context.params.phase;
+      const found = await resolvePhase(runId, phaseName);
+      if (found === null) return notFoundJson(runId, phaseName);
+      return Response.json(
+        gatherPhaseSnapshot(runId, phaseName, found.detail.run.cwd, found.detail.phases[0]?.name),
+      );
+    },
+
+    /** The inputs.json proxy (#35) — the materialized predecessor handoff. */
+    async inputs(context) {
+      const runId = context.params.runId;
+      const phaseName = context.params.phase;
+      const found = await resolvePhase(runId, phaseName);
+      if (found === null) return notFoundJson(runId, phaseName);
+      const isFirst = isFirstBlueprintPhase(runId, phaseName, found.detail.phases[0]?.name);
+      return Response.json(gatherPhaseInputs(runId, phaseName, isFirst));
+    },
+
+    /** The outputs.json proxy (#35) — the phase's outputs/ dir + FINDINGS.md. */
+    async outputs(context) {
+      const runId = context.params.runId;
+      const phaseName = context.params.phase;
+      const found = await resolvePhase(runId, phaseName);
+      if (found === null) return notFoundJson(runId, phaseName);
+      return Response.json(gatherPhaseOutputs(runId, phaseName));
+    },
+
+    /** The spend.json proxy (#35) — per-phase tokens/USD off the exact SQL SUM. */
+    async spend(context) {
+      const runId = context.params.runId;
+      const phaseName = context.params.phase;
+      const found = await resolvePhase(runId, phaseName);
+      if (found === null) return notFoundJson(runId, phaseName);
+      return Response.json(await gatherPhaseSpend(runId, found.phase.id));
+    },
+
     /** override — POST .../phases/:phase/override → the daemon verb. */
     async override(context) {
       const runId = context.params.runId;
@@ -184,6 +219,32 @@ export default createController(routes.runs.phases, {
 
 /** The raw tail size for the OUTPUT card (the endpoint caps at 5000). */
 const RAW_TAIL_LINES = 100;
+
+/**
+ * Resolve a run + phase for the data proxies: the run detail (for the 404
+ * gate, the run's cwd, the phase id, and blueprint phase order). Returns null
+ * when the run or the phase does not exist — the proxy then answers 404 JSON.
+ */
+async function resolvePhase(
+  runId: string,
+  phaseName: string,
+): Promise<{ detail: Awaited<ReturnType<typeof getRunDetail>>; phase: { id: string } } | null> {
+  let detail;
+  try {
+    detail = await getRunDetail(runId);
+  } catch (err) {
+    if (isApi404(err)) return null;
+    throw err;
+  }
+  const phase = detail.phases.find((p) => p.name === phaseName);
+  if (phase === undefined) return null;
+  return { detail, phase };
+}
+
+/** The shared 404 JSON body for the data proxies (ghost run or phase). */
+function notFoundJson(runId: string, phase: string): Response {
+  return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
+}
 
 /** A ApiError 404 (run/phase missing) — the drill-in's "missing" case. */
 function isApi404(err: unknown): boolean {

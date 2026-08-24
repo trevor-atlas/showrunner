@@ -1,10 +1,8 @@
-import { dirname, isAbsolute, join } from "node:path";
-import { existsSync, statSync } from "node:fs";
-
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
 import type { SnapshotPhase } from "../../lib/blueprint-snapshot.ts";
+import { describeContextEntries } from "../../lib/phase-data.ts";
 import { Card, mono, Pre } from "./card.tsx";
 
 /**
@@ -58,55 +56,6 @@ export function ConfigCard(handle: Handle<ConfigCardProps>) {
       </Card>
     );
   };
-}
-
-export type ContextEntryKind = "inlined-file" | "literal";
-
-export interface ContextEntry {
-  /** the raw snapshot entry text */
-  raw: string;
-  kind: ContextEntryKind;
-  /** rendered text: "README.md (inlined)" for files, quoted literals otherwise */
-  entry: string;
-}
-
-/**
- * Resolve each context entry the way the daemon did at run time
- * (handoff.ts resolveContextFile: cwd first, then the blueprint module dir):
- * an entry that resolves to an existing file is marked "(inlined)"; anything
- * else was passed through as a literal. Best-effort — files may have changed
- * since the snapshot, so this is the current-resolution view.
- */
-export function describeContextEntries(
-  entries: readonly string[],
-  cwd: string,
-  moduleDir: string | null,
-): ContextEntry[] {
-  return entries.map((raw) => {
-    const file = resolveContextFile(cwd, moduleDir, raw);
-    if (file !== null) {
-      return { raw, kind: "inlined-file", entry: `${raw} (inlined)` };
-    }
-    return { raw, kind: "literal", entry: `"${raw}"` };
-  });
-}
-
-function resolveContextFile(cwd: string, moduleDir: string | null, entry: string): string | null {
-  const candidates: string[] = [];
-  if (isAbsolute(entry)) {
-    candidates.push(entry);
-  } else {
-    candidates.push(join(cwd, entry));
-    if (moduleDir !== null) candidates.push(join(moduleDir, entry));
-  }
-  for (const candidate of candidates) {
-    try {
-      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
-    } catch {
-      // keep walking
-    }
-  }
-  return null;
 }
 
 const rowStyle = css({

@@ -54,6 +54,12 @@ export const routes = route({
       // mirroring the events.json cursor proxy pattern
       envelopes: get("/runs/:runId/phases/:phase/envelopes.json"),
       gates: get("/runs/:runId/phases/:phase/gates.json"),
+      // the phase-card data proxies (issue #35) — the browser fetches each
+      // card's data through these remix routes, never the daemon/fs directly
+      snapshot: get("/runs/:runId/phases/:phase/snapshot.json"),
+      inputs: get("/runs/:runId/phases/:phase/inputs.json"),
+      outputs: get("/runs/:runId/phases/:phase/outputs.json"),
+      spend: get("/runs/:runId/phases/:phase/spend.json"),
       override: post("/runs/:runId/phases/:phase/override"),
       restart: post("/runs/:runId/phases/:phase/restart-fresh"),
     },
