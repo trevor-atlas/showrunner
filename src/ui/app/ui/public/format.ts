@@ -36,3 +36,14 @@ export function fmtTime(iso: string): string {
   const ss = String(d.getSeconds()).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
 }
+
+/** Token counts with thousands separators: "12,480". Public copy of the
+ * server-side `app/ui/format.ts` helper for the browser card graph. */
+export function fmtTokens(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** Started-at timestamp as local clock time, "14:02:11" — functionally
+ * identical to `fmtTime`, aliased so the ported drill-in cards keep their
+ * `fmtStartedAt` call sites while importing from the public copy. */
+export const fmtStartedAt = fmtTime;
