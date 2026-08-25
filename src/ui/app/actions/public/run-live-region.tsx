@@ -414,6 +414,35 @@ export const RunLiveRegion = clientEntry(
       const model = computeTimelineLayout(liveTimeline, now);
       const data = selection !== null ? phaseData.get(selection) : undefined;
 
+      // the live feed + raw transcript ride in the panel's LEFT column (under
+      // ENVELOPE) so the running log sits beside the accepted-envelope
+      // narrative; the interactive state (autoScroll, hover, the scroll node)
+      // still lives here in setup scope and is threaded through the callbacks.
+      const feedSlot = (
+        <>
+          <EventFeed
+            events={events}
+            autoScroll={autoScroll}
+            onToggleAutoScroll={() => {
+              autoScroll = !autoScroll;
+              handle.update();
+            }}
+            onHoverChange={(paused) => {
+              hoverPaused = paused;
+            }}
+            feedRef={(node) => {
+              feedNode = node;
+              if (node !== null && autoScroll && !hoverPaused) {
+                node.scrollTop = node.scrollHeight;
+              }
+            }}
+          />
+          {/* #41: the run-scoped RAW TRANSCRIPT — collapsed, SSR-seeded, and
+          refetched on every SSE change wake-up (below the feed) */}
+          <RawTranscript raw={raw} />
+        </>
+      );
+
       return (
         <div mix={regionStyle}>
           <Timeline model={model} runId={runId} selected={selection} onSelect={select} />
@@ -435,27 +464,8 @@ export const RunLiveRegion = clientEntry(
             outputsError={data?.outputsError ?? false}
             spendError={data?.spendError ?? false}
             pauseReason={pauseReason}
+            feedSlot={feedSlot}
           />
-          <EventFeed
-            events={events}
-            autoScroll={autoScroll}
-            onToggleAutoScroll={() => {
-              autoScroll = !autoScroll;
-              handle.update();
-            }}
-            onHoverChange={(paused) => {
-              hoverPaused = paused;
-            }}
-            feedRef={(node) => {
-              feedNode = node;
-              if (node !== null && autoScroll && !hoverPaused) {
-                node.scrollTop = node.scrollHeight;
-              }
-            }}
-          />
-          {/* #41: the run-scoped RAW TRANSCRIPT — collapsed, SSR-seeded, and
-          refetched on every SSE change wake-up (below the feed) */}
-          <RawTranscript raw={raw} />
         </div>
       );
     };

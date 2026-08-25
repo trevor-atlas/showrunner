@@ -21,7 +21,7 @@ export function GatesCard(handle: Handle<GatesCardProps>) {
   return () => {
     const { gates } = handle.props;
     return (
-      <Card title="GATES" summary={gates.length === 0 ? "no gate results" : `${gates.length} gate run(s)`}>
+      <Card title="GATES" summary={gates.length === 0 ? "no gate results" : `${gates.length} gate run(s)`} defaultOpen={gates.length > 0}>
         {gates.length === 0 ? (
           <p data-gates-empty mix={emptyStyle}>no gate results recorded for this phase</p>
         ) : (

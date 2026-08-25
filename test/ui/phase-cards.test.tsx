@@ -140,9 +140,10 @@ describe("AgentCard", () => {
     expect(context[0]?.getAttribute("data-context-kind")).toBe("inlined-file");
     expect(context[0]?.textContent).toBe("README.md (inlined)");
     // prompt is collapsed by default, but its text is still in the markup
-    const details = r.$("details") as HTMLDetailsElement;
+    // (the inner collapsible, not the section shell which is also a <details>)
+    const details = r.$("details:not([data-component='card'])") as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    expect(r.$("summary")?.textContent).toBe("prompt");
+    expect(details.querySelector("summary")?.textContent).toBe("prompt");
     expect(r.$("pre")?.textContent).toBe("build the thing");
   });
 
@@ -162,9 +163,9 @@ describe("PhaseConfigCard", () => {
     expect(r.$("[data-config-approval]")?.textContent).toBe("not required");
     expect(r.$("[data-config-onfail]")?.textContent).toBe("review");
     expect(r.$("[data-config-gates]")?.textContent).toBe("lint, tests");
-    const details = r.$("details") as HTMLDetailsElement;
+    const details = r.$("details:not([data-component='card'])") as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    expect(r.$("summary")?.textContent).toBe("envelope contract");
+    expect(details.querySelector("summary")?.textContent).toBe("envelope contract");
     expect(r.$("pre")?.textContent).toContain("summary: string");
   });
 
@@ -191,8 +192,9 @@ describe("InputsCard", () => {
     expect(files.length).toBe(2);
     expect(r.$$("[data-input-rel]")[0]?.textContent).toBe("a.txt");
     expect(r.$("[data-input-truncated]")).not.toBeNull();
-    // each file's contents live inside a collapsed <details>
-    const details = r.$$("details") as unknown as HTMLDetailsElement[];
+    // each file's contents live inside a collapsed <details> (the inner
+    // collapsibles, not the section shell which is also a <details>)
+    const details = r.$$("details:not([data-component='card'])") as unknown as HTMLDetailsElement[];
     expect(details[0]?.open).toBe(false);
     expect(r.container.textContent).toContain("hello");
   });
@@ -220,14 +222,15 @@ describe("OutputsCard", () => {
     const missing = r.$("[data-artifact='ghost.md']");
     expect(present?.getAttribute("data-artifact-present")).toBe("1");
     expect(missing?.getAttribute("data-artifact-present")).toBe("0");
-    const details = r.$("details") as HTMLDetailsElement;
+    const details = r.$("details:not([data-component='card'])") as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    expect(r.$("summary")?.textContent).toBe("FINDINGS.md");
+    expect(details.querySelector("summary")?.textContent).toBe("FINDINGS.md");
   });
 
   it("omits the FINDINGS.md region when none was written", () => {
     const r = mount(<OutputsCard files={[]} findingsMd={null} envelopes={[]} />);
-    expect(r.$("details")).toBeNull();
+    // no inner collapsible (the section shell is a <details>, so scope past it)
+    expect(r.$("details:not([data-component='card'])")).toBeNull();
     expect(r.$("[data-outputs-empty]")).not.toBeNull();
   });
 });
@@ -244,9 +247,9 @@ describe("EnvelopeCard", () => {
     // the accepted surface never renders artifact rows (OUTPUTS owns those);
     // "artifacts" only appears inside the collapsed raw JSON, not the surface
     expect(r.$("[data-envelope-surface]")?.textContent).not.toContain("artifacts");
-    const details = r.$("details") as HTMLDetailsElement;
+    const details = r.$("details:not([data-component='card'])") as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    expect(r.$("summary")?.textContent).toBe("view JSON");
+    expect(details.querySelector("summary")?.textContent).toBe("view JSON");
   });
 
   it("renders the empty state with no attempts", () => {
@@ -327,9 +330,11 @@ describe("SpendCard", () => {
 describe("SessionsCard", () => {
   it("is collapsed by default and renders the pid column per visit", () => {
     const r = mount(<SessionsCard sessions={[session(), session({ id: "s2", visit: 2, pid: 5151, pi_session_id: "pi-def" })]} />);
+    // SESSIONS is now a flat collapsible section (the shared card shell)
     const details = r.$("details") as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    expect(r.$("summary")?.textContent).toBe("SESSIONS (2)");
+    expect(r.$("h2")?.textContent).toBe("SESSIONS");
+    expect(details.textContent).toContain("2 sessions");
     const rows = r.$$("[data-session-row]");
     expect(rows.length).toBe(2);
     // sorted by visit; the pid column the panel lacks is present

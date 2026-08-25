@@ -1,9 +1,10 @@
 /**
- * Horizontal bar chart (issue #36) — a thin SVG over bars-model.ts. The model
- * normalizes each value to a [0,1] fraction against a shared max; the component
- * just draws a track rect and a fill rect (width = fraction × trackWidth) per
- * row and a `<text>` label. No chart library. SSR-safe (static SVG), tokens
- * only.
+ * Horizontal bar chart (issue #36) — a thin HTML/CSS view over bars-model.ts.
+ * The model normalizes each value to a [0,1] fraction against a shared max; the
+ * component draws one row per item as a label + a track with a fill whose width
+ * is `fraction × 100%`. Rendered in plain HTML (not a stretched SVG) so labels
+ * keep their real font size and bars never distort at any card width. No chart
+ * library. SSR-safe (static element tree), tokens only.
  */
 import { css, type Handle } from "remix/ui";
 
@@ -13,86 +14,80 @@ export interface BarsProps {
   items: readonly BarInput[];
   /** hold several charts to one scale by pinning the max */
   max?: number;
-  /** per-row height in user units */
+  /** per-row height, in user units (kept for API compatibility; the CSS row
+   * sizes itself to its content today) */
   rowHeight?: number;
-  /** left gutter reserved for labels, in user units */
+  /** the label column width — a legacy 0–100 user-unit value from the SVG era,
+   * mapped to a rem gutter (`labelWidth / 4`rem) so long labels get room */
   labelWidth?: number;
   ariaLabel?: string;
 }
 
-const VIEW_WIDTH = 100;
-
 export function Bars(handle: Handle<BarsProps>) {
   return () => {
-    const { items, max, rowHeight = 22, labelWidth = 34, ariaLabel } = handle.props;
+    const { items, max, labelWidth = 34, ariaLabel } = handle.props;
     const model = computeBars(items, max !== undefined ? { max } : {});
-    const barGap = 6;
-    const barH = rowHeight - barGap;
-    const trackWidth = VIEW_WIDTH - labelWidth;
-    const height = Math.max(rowHeight, model.bars.length * rowHeight);
+    const labelCol = `${(labelWidth / 4).toFixed(2)}rem`;
+
     return (
-      <svg
-        data-component="bars"
-        viewBox={`0 0 ${VIEW_WIDTH} ${height}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={ariaLabel}
-        mix={svgStyle}
-      >
-        {model.bars.map((bar, i) => {
-          const y = i * rowHeight;
-          return (
-            <g key={bar.label} data-bar data-fraction={bar.fraction}>
-              <text
-                x={0}
-                y={y + rowHeight / 2}
-                dominantBaseline="middle"
-                mix={labelTextStyle}
-              >
-                {bar.label}
-              </text>
-              <rect
-                data-bar-track
-                x={labelWidth}
-                y={y + (rowHeight - barH) / 2}
-                width={trackWidth}
-                height={barH}
-                rx={2}
-                mix={trackStyle}
-              />
-              <rect
+      <div data-component="bars" role="img" aria-label={ariaLabel} mix={wrapStyle}>
+        {model.bars.map((bar) => (
+          <div
+            key={bar.label}
+            data-bar
+            data-fraction={bar.fraction}
+            mix={rowStyle}
+            style={{ gridTemplateColumns: `${labelCol} 1fr` }}
+          >
+            <span data-bar-label mix={labelStyle} title={bar.label}>
+              {bar.label}
+            </span>
+            <span data-bar-track mix={trackStyle}>
+              <span
                 data-bar-fill
-                x={labelWidth}
-                y={y + (rowHeight - barH) / 2}
-                width={trackWidth * bar.fraction}
-                height={barH}
-                rx={2}
                 mix={fillStyle}
+                style={{ width: `${(bar.fraction * 100).toFixed(2)}%` }}
               />
-            </g>
-          );
-        })}
-      </svg>
+            </span>
+          </div>
+        ))}
+      </div>
     );
   };
 }
 
-const svgStyle = css({
-  display: "block",
+const wrapStyle = css({
+  display: "grid",
+  gap: "0.4rem",
   width: "100%",
-  height: "auto",
 });
 
-const labelTextStyle = css({
-  fill: "var(--muted-foreground)",
-  fontSize: "9px",
-  fontFamily: "var(--font-sans)",
+const rowStyle = css({
+  display: "grid",
+  alignItems: "center",
+  gap: "0.6rem",
+});
+
+const labelStyle = css({
+  fontSize: "var(--font-size-sm)",
+  color: "var(--muted-foreground)",
+  fontFamily: "var(--font-mono)",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
 });
 
 const trackStyle = css({
-  fill: "var(--muted)",
+  display: "block",
+  height: "0.85rem",
+  borderRadius: "4px",
+  background: "var(--muted)",
+  overflow: "hidden",
 });
 
 const fillStyle = css({
-  fill: "var(--chart-1)",
+  display: "block",
+  height: "100%",
+  borderRadius: "4px",
+  background: "var(--chart-1)",
 });

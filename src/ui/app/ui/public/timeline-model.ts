@@ -24,7 +24,7 @@ import { fmtDuration, fmtTime } from "./format.ts";
 
 /** The fixed pixel height of one phase row (the chart + the arrow overlay
  * share this so the SVG y-coordinates line up with the rows). */
-export const ROW_H = 36;
+export const ROW_H = 68;
 
 /** How many ticks the x-axis aims for — the interval picker adapts to the
  * run duration so short runs get seconds ticks and long runs get hours. */
@@ -247,7 +247,7 @@ export function timelineTicks(runStartMs: number, runEndMs: number): TimelineTic
   const push = (ms: number): void => {
     const frac = clamp01((ms - runStartMs) / span);
     if (!ticks.some((t) => t.ms === ms)) {
-      ticks.push({ frac, ms, label: fmtTime(new Date(ms).toISOString()) });
+      ticks.push({ frac, ms, label: fmtOffset(ms - runStartMs) });
     }
   };
   push(runStartMs); // the left edge
@@ -256,6 +256,19 @@ export function timelineTicks(runStartMs: number, runEndMs: number): TimelineTic
   }
   push(runEndMs); // the right edge
   return ticks;
+}
+
+/** The axis label for an epoch ms: its offset from the run start, rendered
+ * relative ("0s", "30s", "2m", "1h 5m") — the timeline reads as elapsed time
+ * from the run's beginning rather than absolute clock times. */
+export function fmtOffset(offsetMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(offsetMs / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 /** Pick the coarsest interval that yields ≤ MAX_TICKS interior ticks. */

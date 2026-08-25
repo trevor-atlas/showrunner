@@ -3,7 +3,7 @@ import type { Handle } from "remix/ui";
 
 import type { AgentSessionRow } from "../../../../daemon/db.ts";
 import { fmtStartedAt } from "./format.ts";
-import { mono } from "./phase-card-shell.tsx";
+import { Card, mono } from "./phase-card-shell.tsx";
 
 /**
  * SESSIONS card (issue #37) — the phase's agent sessions, collapsed by default
@@ -23,48 +23,32 @@ export function SessionsCard(handle: Handle<SessionsCardProps>) {
       a.visit !== b.visit ? a.visit - b.visit : a.started_at < b.started_at ? -1 : 1,
     );
     return (
-      <details data-panel-sessions mix={detailsStyle}>
-        <summary mix={summaryStyle}>SESSIONS ({sessions.length})</summary>
-        {sessions.length === 0 ? (
-          <p data-sessions-empty mix={emptyStyle}>no agent sessions recorded for this phase</p>
-        ) : (
-          <ul mix={sessionListStyle}>
-            {sessions.map((s) => (
-              <li key={s.id} data-session-row data-session-visit={s.visit} mix={sessionRowStyle}>
-                <span data-session-id mix={mono}>visit {s.visit} · {s.pi_session_id}</span>
-                <span data-session-pid mix={mono}>pid {s.pid}</span>
-                <span data-session-duration mix={mono}>
-                  {fmtStartedAt(s.started_at)} → {s.ended_at !== null ? fmtStartedAt(s.ended_at) : "now"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </details>
+      <Card title="SESSIONS" summary={`${sessions.length} session${sessions.length === 1 ? "" : "s"}`}>
+        <div data-panel-sessions>
+          {sessions.length === 0 ? (
+            <p data-sessions-empty mix={emptyStyle}>no agent sessions recorded for this phase</p>
+          ) : (
+            <ul mix={sessionListStyle}>
+              {sessions.map((s) => (
+                <li key={s.id} data-session-row data-session-visit={s.visit} mix={sessionRowStyle}>
+                  <span data-session-id mix={mono}>visit {s.visit} · {s.pi_session_id}</span>
+                  <span data-session-pid mix={mono}>pid {s.pid}</span>
+                  <span data-session-duration mix={mono}>
+                    {fmtStartedAt(s.started_at)} → {s.ended_at !== null ? fmtStartedAt(s.ended_at) : "now"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
     );
   };
 }
 
-const detailsStyle = css({
-  padding: "0.6rem 0.75rem",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  background: "var(--card)",
-  fontSize: "var(--font-size-md)",
-});
-
-const summaryStyle = css({
-  cursor: "pointer",
-  color: "var(--muted-foreground)",
-  fontSize: "var(--font-size-xs)",
-  fontWeight: 800,
-  letterSpacing: "0.09em",
-  userSelect: "none",
-});
-
 const sessionListStyle = css({
   listStyle: "none",
-  margin: "0.4rem 0 0",
+  margin: 0,
   padding: 0,
   display: "grid",
   gap: "0.3rem",

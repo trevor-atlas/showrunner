@@ -1,6 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle, RemixNode } from "remix/ui";
 
+
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
 import type { TimelinePhase, TimelineView } from "../../../../daemon/contract.ts";
 import type {
@@ -73,6 +74,10 @@ export interface TimelinePanelProps {
    * surfaced in the phase header; live transitions ride the run_status →
    * paused event (run-live-region captures it), SSR rides getPause */
   pauseReason: string | null;
+  /** the live feed + raw transcript, owned by the region (interactive state
+   * lives there) — the panel places it in the left column under ENVELOPE so
+   * the running log sits beside the accepted-envelope narrative */
+  feedSlot?: RemixNode;
 }
 
 export function TimelinePanel(handle: Handle<TimelinePanelProps>) {
@@ -92,9 +97,10 @@ export function TimelinePanel(handle: Handle<TimelinePanelProps>) {
           </p>
         ) : null}
         {phase === null ? (
-          <p data-panel-empty mix={emptyStyle}>
-            select a phase to see its record
-          </p>
+          <>
+            <p data-panel-empty mix={emptyStyle}>select a phase to see its record</p>
+            {props.feedSlot ?? null}
+          </>
         ) : (
           <>
             <PhaseHeader phase={phase} />
@@ -190,45 +196,54 @@ function PhaseCards(handle: Handle<{ phase: TimelinePhase; props: TimelinePanelP
     const phaseSessions = sessions.filter((s) => s.phase_id === phase.phase_id);
 
     return (
-      <div data-testid="phase-cards" mix={gridStyle}>
-        <CardSlot name="agent" loading={snapshot === null} error={snapshotError} kind="agent">
-          {snapshot !== null ? <AgentCard phase={snapshot.phase} context={snapshot.context} /> : null}
-        </CardSlot>
-        <CardSlot name="phase-config" loading={snapshot === null} error={snapshotError} kind="phase config">
-          {snapshot !== null ? <PhaseConfigCard phase={snapshot.phase} /> : null}
-        </CardSlot>
-        <CardSlot name="inputs" loading={inputs === null} error={inputsError} kind="inputs">
-          {inputs !== null ? <InputsCard files={inputs.files} isFirst={inputs.isFirst} /> : null}
-        </CardSlot>
-        <CardSlot name="outputs" loading={outputs === null} error={outputsError} kind="outputs">
-          {outputs !== null ? (
-            <OutputsCard files={outputs.files} findingsMd={outputs.findingsMd} envelopes={envelopes ?? []} />
-          ) : null}
-        </CardSlot>
-        <CardSlot name="envelope" loading={envelopes === null} error={envelopesError} kind="envelope">
-          {envelopes !== null ? <EnvelopeCard envelopes={envelopes} /> : null}
-        </CardSlot>
-        <CardSlot name="gates" loading={gates === null} error={gatesError} kind="gates">
-          {gates !== null ? <GatesCard gates={gates} /> : null}
-        </CardSlot>
-        <CardSlot name="spend" loading={spend === null} error={spendError} kind="spend">
-          {spend !== null ? (
-            <SpendCard
-              tokensIn={spend.tokensIn}
-              tokensOut={spend.tokensOut}
-              cacheRead={spend.cacheRead}
-              cacheWrite={spend.cacheWrite}
-              spendUsd={spend.spendUsd}
-              estimatedUsd={spend.estimatedUsd}
-            />
-          ) : null}
-        </CardSlot>
-        <CardSlot name="sessions" loading={false} error={false} kind="sessions">
-          <SessionsCard sessions={phaseSessions} />
-        </CardSlot>
-        <CardSlot name="visit-history" loading={false} error={false} kind="visit history">
-          <VisitHistoryCard phase={phase} />
-        </CardSlot>
+      <div data-testid="phase-cards" mix={columnsStyle}>
+        {/* left column: the content-heavy ENVELOPE narrative + the live feed
+        (its own column so their height never leaves a void beside the short
+        sections on the right) */}
+        <div mix={colStyle}>
+          <CardSlot name="envelope" loading={envelopes === null} error={envelopesError} kind="envelope">
+            {envelopes !== null ? <EnvelopeCard envelopes={envelopes} /> : null}
+          </CardSlot>
+          {props.feedSlot ?? null}
+        </div>
+        {/* right column: the compact policy / io / accounting sections */}
+        <div mix={colStyle}>
+          <CardSlot name="outputs" loading={outputs === null} error={outputsError} kind="outputs">
+            {outputs !== null ? (
+              <OutputsCard files={outputs.files} findingsMd={outputs.findingsMd} envelopes={envelopes ?? []} />
+            ) : null}
+          </CardSlot>
+          <CardSlot name="gates" loading={gates === null} error={gatesError} kind="gates">
+            {gates !== null ? <GatesCard gates={gates} /> : null}
+          </CardSlot>
+          <CardSlot name="agent" loading={snapshot === null} error={snapshotError} kind="agent">
+            {snapshot !== null ? <AgentCard phase={snapshot.phase} context={snapshot.context} /> : null}
+          </CardSlot>
+          <CardSlot name="phase-config" loading={snapshot === null} error={snapshotError} kind="phase config">
+            {snapshot !== null ? <PhaseConfigCard phase={snapshot.phase} /> : null}
+          </CardSlot>
+          <CardSlot name="inputs" loading={inputs === null} error={inputsError} kind="inputs">
+            {inputs !== null ? <InputsCard files={inputs.files} isFirst={inputs.isFirst} /> : null}
+          </CardSlot>
+          <CardSlot name="spend" loading={spend === null} error={spendError} kind="spend">
+            {spend !== null ? (
+              <SpendCard
+                tokensIn={spend.tokensIn}
+                tokensOut={spend.tokensOut}
+                cacheRead={spend.cacheRead}
+                cacheWrite={spend.cacheWrite}
+                spendUsd={spend.spendUsd}
+                estimatedUsd={spend.estimatedUsd}
+              />
+            ) : null}
+          </CardSlot>
+          <CardSlot name="sessions" loading={false} error={false} kind="sessions">
+            <SessionsCard sessions={phaseSessions} />
+          </CardSlot>
+          <CardSlot name="visit-history" loading={false} error={false} kind="visit history">
+            <VisitHistoryCard phase={phase} />
+          </CardSlot>
+        </div>
       </div>
     );
   };
@@ -279,12 +294,14 @@ const pausedBannerStyle = css({
 
 const emptyStyle = css({
   margin: 0,
+  padding: "0.65rem 0.5rem",
   color: "var(--muted-foreground)",
   fontSize: "var(--font-size-sm)",
 });
 
 const errorStyle = css({
   margin: 0,
+  padding: "0.65rem 0.5rem",
   color: "var(--status-failed)",
   fontSize: "var(--font-size-sm)",
   fontWeight: 600,
@@ -349,11 +366,27 @@ const chipDotStyle = css({
 
 const chipDim = css({ color: "var(--status-queued)", background: "var(--status-queued-soft)" });
 
-const gridStyle = css({
+/** Two columns of flat collapsible sections: the content-heavy ENVELOPE
+ * narrative on the left, the compact policy / io / accounting sections stacked
+ * on the right. Because sections are flat `<details>` (uniform collapsed
+ * heading rows, no per-card borders), the two columns read cleanly regardless
+ * of which sections are expanded. Collapses to one column below ~72rem. */
+const columnsStyle = css({
   display: "grid",
-  gap: "0.75rem",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "0 2rem",
+  alignItems: "start",
+  "@media (max-width: 72rem)": {
+    gridTemplateColumns: "1fr",
+  },
+});
+
+/** One column: sections stack, each carrying its own bottom-border divider. */
+const colStyle = css({
+  display: "flex",
+  flexDirection: "column",
 });
 
 const slotStyle = css({
-  display: "grid",
+  display: "block",
 });

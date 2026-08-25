@@ -2,6 +2,47 @@ import { css, on, type Handle } from "remix/ui";
 
 import { ROW_H, outcomeLabel, type RevisitArrow, type SegmentBox, type TimelineLayout, type TimelineRow } from "./timeline-model.ts";
 
+/** Outcome → the status glyph shown in the bubble's header (mirrors the
+ * status-pill vocabulary: ✓ success, ✗ failed, ▶ in progress, ⚠ interrupted,
+ * – skipped). */
+const OUTCOME_GLYPH: Record<string, string> = {
+  in_progress: "▶",
+  success: "✓",
+  failed: "✗",
+  interrupted: "⚠",
+  skipped: "–",
+};
+
+/** A compact, human duration for the bubble header: "0.4s", "12s", "2m 31s",
+ * "1h 5m" — matches the redesign's "3m 10s" reading rather than mm:ss. */
+function fmtDurationCompact(ms: number): string {
+  if (ms < 1000) return `${(ms / 1000).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}s`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) return seconds === 0 ? `${totalMinutes}m` : `${totalMinutes}m ${seconds}s`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
+/** Per-row identity accent: the redesign colors each phase's label by its role
+ * (planner violet, builder teal, reviewer red, …) independent of outcome. We
+ * cycle the theme's accent tokens deterministically by blueprint order so the
+ * coloring is stable across renders. */
+const ROW_ACCENTS = [
+  "var(--accent-violet)",
+  "var(--accent-teal)",
+  "var(--status-failed)",
+  "var(--accent-sky)",
+  "var(--status-interrupted)",
+];
+
+function rowAccent(index: number): string {
+  return ROW_ACCENTS[index % ROW_ACCENTS.length]!;
+}
+
 /**
  * The run-timeline chart (spec R4) — one row per phase in blueprint order,
  * the X axis spanning the run's started_at → ended_at (or now for a live
@@ -92,18 +133,19 @@ export function Timeline(handle: Handle<TimelineProps>) {
         space: the label column is fixed width, the tracks column scales */}
         <div mix={bodyStyle}>
           <div mix={labelColumnStyle}>
-            {model.rows.map((row) => (
-              <RowLabel key={row.phase.name} row={row} selected={selected === row.phase.name} onSelect={selectPhase} />
+            {model.rows.map((row, index) => (
+              <RowLabel key={row.phase.name} row={row} accent={rowAccent(index)} selected={selected === row.phase.name} onSelect={selectPhase} />
             ))}
           </div>
           <div mix={tracksColumnStyle} data-timeline-tracks>
-            {model.rows.map((row) => (
+            {model.rows.map((row, index) => (
               <div key={row.phase.name} data-phase-row data-phase={row.phase.name} data-phase-status={row.phase.status} mix={rowTrackStyle}>
                 {row.boxes.map((box) => (
                   <Bubble
                     key={`${row.phase.name}-v${box.segment.visit}`}
                     row={row}
                     box={box}
+                    accent={rowAccent(index)}
                     selected={selected === row.phase.name}
                     // R6: only the ACTIVE bubble (the phase's current
                     // in_progress segment) stripes when the run is paused
@@ -126,9 +168,9 @@ export function Timeline(handle: Handle<TimelineProps>) {
 
 /** The row's label cell: phase name (click-to-select) + agent, muted when the
  * phase has no segments, with the pending / "skipped" tag per R4. */
-function RowLabel(handle: Handle<{ row: TimelineRow; selected: boolean; onSelect: (name: string) => void }>) {
+function RowLabel(handle: Handle<{ row: TimelineRow; accent: string; selected: boolean; onSelect: (name: string) => void }>) {
   return () => {
-    const { row, selected, onSelect } = handle.props;
+    const { row, accent, selected, onSelect } = handle.props;
     const { phase } = row;
     const noSegments = row.boxes.length === 0;
     return (
@@ -141,12 +183,14 @@ function RowLabel(handle: Handle<{ row: TimelineRow; selected: boolean; onSelect
           noSegments ? labelCellMutedStyle : null,
           on("click", () => onSelect(phase.name)),
         ]}
+        style={{ borderLeftColor: accent }}
       >
         <button
           type="button"
           data-phase-label
           data-select-phase={phase.name}
           mix={[phaseNameButtonStyle, selected ? phaseNameSelectedStyle : null, on("click", () => onSelect(phase.name))]}
+          style={{ color: noSegments ? undefined : accent }}
         >
           {phase.name}
         </button>
@@ -161,10 +205,11 @@ function RowLabel(handle: Handle<{ row: TimelineRow; selected: boolean; onSelect
 }
 
 /** One visit bubble: positioned on its phase's row at the segment's interval. */
-function Bubble(handle: Handle<{ row: TimelineRow; box: SegmentBox; selected: boolean; paused: boolean; onSelect: (name: string) => void }>) {
+function Bubble(handle: Handle<{ row: TimelineRow; box: SegmentBox; accent: string; selected: boolean; paused: boolean; onSelect: (name: string) => void }>) {
   return () => {
     const { row, box, selected, paused, onSelect } = handle.props;
     const { segment } = box;
+    const glyph = OUTCOME_GLYPH[segment.outcome] ?? "●";
     return (
       <div
         data-segment
@@ -195,15 +240,23 @@ function Bubble(handle: Handle<{ row: TimelineRow; box: SegmentBox; selected: bo
         change the bubble's outcome color logic, so it is a layered gradient
         span (pointer-events none) rather than a background replacement */}
         {paused ? <span data-paused-stripe mix={pausedStripeStyle} aria-hidden="true" /> : null}
-        {segment.corrections > 0 ? (
-          <span
-            data-corr-badge
-            mix={corrBadgeStyle}
-            title={segment.corrections === 1 ? "1 correction issued in this visit." : `${segment.corrections} corrections issued in this visit.`}
-          >
-            ↻{segment.corrections}
-          </span>
-        ) : null}
+        <span data-bubble-head mix={bubbleHeadStyle}>
+          <span data-bubble-glyph mix={bubbleGlyphStyle} aria-hidden="true">{glyph}</span>
+          <span data-bubble-name mix={bubbleNameStyle}>{row.phase.name}</span>
+          {segment.corrections > 0 ? (
+            <span
+              data-corr-badge
+              mix={corrBadgeStyle}
+              title={segment.corrections === 1 ? "1 correction issued in this visit." : `${segment.corrections} corrections issued in this visit.`}
+            >
+              ↻{segment.corrections}
+            </span>
+          ) : null}
+          <span data-bubble-dur mix={bubbleDurStyle}>{fmtDurationCompact(box.durationMs)}</span>
+        </span>
+        <span data-bubble-sub mix={bubbleSubStyle}>
+          {box.visitLabel} · {outcomeLabel(segment.outcome)}
+        </span>
       </div>
     );
   };
@@ -265,34 +318,36 @@ function rowY(rowIndex: number): number {
  * muted grey (R4 bubble anatomy). */
 const BUBBLE_COLORS: Record<string, ReturnType<typeof css>> = {
   in_progress: css({
-    background: "var(--status-running)",
-    borderColor: "var(--status-running-strong)",
+    background: "var(--status-running-soft)",
+    borderColor: "var(--status-running)",
+    color: "var(--status-running)",
   }),
   success: css({
-    background: "var(--status-success)",
-    borderColor: "var(--status-success-strong)",
+    background: "var(--status-success-soft)",
+    borderColor: "var(--status-success)",
+    color: "var(--status-success)",
   }),
   failed: css({
-    background: "var(--status-failed)",
-    borderColor: "var(--status-failed-strong)",
+    background: "var(--status-failed-soft)",
+    borderColor: "var(--status-failed)",
+    color: "var(--status-failed)",
   }),
   interrupted: css({
-    background: "var(--status-interrupted)",
-    borderColor: "var(--status-paused)",
+    background: "var(--status-interrupted-soft)",
+    borderColor: "var(--status-interrupted)",
+    color: "var(--status-interrupted)",
   }),
   skipped: css({
-    background: "var(--status-queued)",
+    background: "var(--status-queued-soft)",
     borderColor: "var(--status-muted)",
+    color: "var(--status-queued)",
   }),
 };
 
 const chartStyle = css({
   display: "grid",
   gap: "0.15rem",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  padding: "0.6rem 0.75rem 0.75rem",
-  background: "var(--card)",
+  padding: "0.25rem 0 0.5rem",
   userSelect: "none",
 });
 
@@ -348,7 +403,10 @@ const labelCellStyle = css({
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
+  gap: "2px",
   paddingRight: "0.5rem",
+  paddingLeft: "0.6rem",
+  borderLeft: "3px solid transparent",
   minWidth: 0,
 });
 
@@ -370,8 +428,8 @@ const phaseNameButtonStyle = css({
   margin: 0,
   cursor: "pointer",
   color: "var(--foreground)",
-  fontWeight: 600,
-  fontSize: "var(--font-size-md)",
+  fontWeight: 700,
+  fontSize: "var(--font-size-body)",
   lineHeight: 1.2,
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -429,14 +487,21 @@ const pendingTagStyle = css({
 
 const bubbleStyle = css({
   position: "absolute",
-  top: "10px",
-  height: "16px",
-  borderRadius: "999px",
-  minWidth: "4px", // R4: zero-length / very short visits stay visible
+  top: "8px",
+  bottom: "8px",
+  minWidth: "52px", // the card needs room for the header glyph + duration
+  borderRadius: "10px",
   border: "1px solid",
+  padding: "6px 9px",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  gap: "3px",
   cursor: "pointer",
+  boxSizing: "border-box",
   "&:hover": {
-    boxShadow: "0 0 0 2px var(--shadow-hover)",
+    filter: "brightness(1.15)",
+    boxShadow: "0 2px 8px var(--shadow-hover)",
   },
   "&:focus-visible": {
     outline: "2px solid var(--foreground)",
@@ -448,18 +513,57 @@ const selectedBubbleStyle = css({
   boxShadow: "0 0 0 2px var(--foreground)",
 });
 
+const bubbleHeadStyle = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "6px",
+  minWidth: 0,
+});
+
+const bubbleGlyphStyle = css({
+  flexShrink: 0,
+  fontWeight: 700,
+  fontSize: "var(--font-size-sm)",
+  lineHeight: 1,
+});
+
+const bubbleNameStyle = css({
+  flex: 1,
+  minWidth: 0,
+  fontWeight: 700,
+  fontSize: "var(--font-size-md)",
+  color: "var(--foreground)",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+});
+
+const bubbleDurStyle = css({
+  flexShrink: 0,
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
+  whiteSpace: "nowrap",
+});
+
+const bubbleSubStyle = css({
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+});
+
 const corrBadgeStyle = css({
-  position: "absolute",
-  right: "-0.35rem",
-  top: "-0.6rem",
+  flexShrink: 0,
   fontSize: "var(--font-size-xs)",
   fontWeight: 700,
   color: "var(--status-interrupted)",
-  background: "var(--amber-surface)",
+  background: "var(--amber-soft-strong)",
   border: "1px solid var(--amber-border-soft)",
   borderRadius: "999px",
-  padding: "0 4px",
-  lineHeight: "14px",
+  padding: "0 5px",
+  lineHeight: "15px",
   whiteSpace: "nowrap",
   pointerEvents: "none",
 });

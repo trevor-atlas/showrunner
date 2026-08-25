@@ -260,9 +260,9 @@ export function NotFoundPage(handle: Handle<{ runId: string }>) {
 }
 
 const pageStyle = css({
-  maxWidth: "60rem",
+  maxWidth: "120rem",
   margin: "0 auto",
-  padding: "2rem 1.5rem",
+  padding: "2rem 2rem",
   display: "grid",
   gap: "1.25rem",
 });

@@ -56,7 +56,7 @@ export function EnvelopeCard(handle: Handle<EnvelopeCardProps>) {
       : "no accepted envelope";
 
     return (
-      <Card title="ENVELOPE" summary={summary}>
+      <Card title="ENVELOPE" summary={summary} defaultOpen={envelopes.length > 0}>
         {envelopes.length === 0 ? (
           <p data-envelope-empty mix={emptyStyle}>no envelope attempts recorded for this phase</p>
         ) : (

@@ -40,7 +40,7 @@ export function OutputsCard(handle: Handle<OutputsCardProps>) {
     const { files, findingsMd, envelopes } = handle.props;
     const artifacts = acceptedArtifacts(envelopes);
     return (
-      <Card title="OUTPUTS" summary={files.length === 0 ? "no output files" : `${files.length} file${files.length === 1 ? "" : "s"}`}>
+      <Card title="OUTPUTS" summary={files.length === 0 ? "no output files" : `${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen={files.length > 0 || artifacts.length > 0}>
         <div mix={rowStyle}>
           <span mix={labelStyle}>files</span>
           {files.length === 0 ? (

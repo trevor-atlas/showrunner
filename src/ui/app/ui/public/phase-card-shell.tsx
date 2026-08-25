@@ -16,35 +16,61 @@ export interface CardProps {
   title: string;
   /** one-line summary after the title, e.g. "agent: builder · model: …" */
   summary?: string;
+  /** open on first paint — high-signal sections (ENVELOPE/OUTPUTS/GATES) pass
+   * true; everything else stays collapsed to a uniform heading row */
+  defaultOpen?: boolean;
   children?: RemixNode;
 }
 
+/**
+ * A phase section, rendered as a flat collapsible `<details>` (issue: design
+ * pass) rather than a bordered card. Collapsed, every section is a uniform
+ * heading row (caret + uppercase title + inline summary), so a phase's detail
+ * reads as a clean list instead of a ragged wall of unevenly-tall cards. Native
+ * `<details>` toggling means no hydration is needed (SSR-safe). `defaultOpen`
+ * maps to the `open` attribute so the initial state SSR-renders correctly.
+ */
 export function Card(handle: Handle<CardProps>) {
   return () => (
-    <section mix={cardStyle}>
-      <header mix={cardHeaderStyle}>
+    <details data-component="card" mix={sectionStyle} open={handle.props.defaultOpen === true ? true : undefined}>
+      <summary mix={cardHeaderStyle}>
+        <span data-caret aria-hidden mix={caretStyle}>
+          ▸
+        </span>
         <h2 mix={cardTitleStyle}>{handle.props.title}</h2>
         {handle.props.summary ? <span mix={cardSummaryStyle}>{handle.props.summary}</span> : null}
-      </header>
+      </summary>
       <div mix={cardBodyStyle}>{handle.props.children}</div>
-    </section>
+    </details>
   );
 }
 
-const cardStyle = css({
-  display: "grid",
-  gap: "0.6rem",
-  padding: "0.9rem 1.1rem 1.1rem",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  background: "var(--card)",
+const sectionStyle = css({
+  borderBottom: "1px solid var(--border)",
+  "&[open] [data-caret]": { transform: "rotate(90deg)" },
 });
 
 const cardHeaderStyle = css({
   display: "flex",
   alignItems: "baseline",
-  gap: "0.75rem",
+  gap: "0.6rem",
   flexWrap: "wrap",
+  cursor: "pointer",
+  userSelect: "none",
+  padding: "0.65rem 0.25rem",
+  listStyle: "none",
+  "&::-webkit-details-marker": { display: "none" },
+  "&:hover": { background: "var(--muted)" },
+  "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "-2px" },
+});
+
+const caretStyle = css({
+  display: "inline-block",
+  flex: "0 0 auto",
+  alignSelf: "center",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--muted-foreground)",
+  transition: "transform 120ms ease",
 });
 
 const cardTitleStyle = css({
@@ -65,6 +91,7 @@ const cardBodyStyle = css({
   display: "grid",
   gap: "0.5rem",
   fontSize: "var(--font-size-md)",
+  padding: "0.2rem 0.5rem 0.9rem 1.35rem",
 });
 
 /** The mono face used across card data rows. */
