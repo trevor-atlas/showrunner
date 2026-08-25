@@ -11,6 +11,7 @@ import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
 import { syncTemplates } from "../daemon/templates.ts";
 import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
 import { daemonBaseUrl, ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
+import { buildDevSpawn } from "./dev.ts";
 import { formatEvent } from "./render.ts";
 import { watchRun } from "./watch.ts";
 
@@ -18,6 +19,7 @@ import { watchRun } from "./watch.ts";
  * showrunner — the CLI (submit, list, watch, detail).
  *
  *   showrunner daemon                  run the daemon in the foreground
+ *   showrunner dev                     run the UI dev loop (HMR proxy chain, NODE_ENV=development)
  *   showrunner run <fixture>           submit a scripted fixture run (T01a observation path)
  *   showrunner run <blueprint.ts>      submit a blueprint run (T01b loop; FakePi sessions)
  *   showrunner runs                    list runs with status + phase counts
@@ -76,6 +78,7 @@ function usage(): void {
       "",
       "usage:",
       "  showrunner daemon                        run the daemon in the foreground",
+      "  showrunner dev [--port N]                run the UI dev loop (HMR proxy chain, NODE_ENV=development)",
       "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
       "  showrunner run <blueprint.ts> [--delay] [--cwd DIR] [--prompt \"<goal>\"] submit a blueprint run (driven by FakePi sessions; --prompt becomes the run's first instruction)",
       "  showrunner runs                          list runs with status + phase counts",
@@ -247,6 +250,20 @@ async function cmdWatch(flags: Flags): Promise<number> {
     onEvent: (e) => console.log(formatEvent(e)),
   });
   return 0;
+}
+
+/**
+ * `showrunner dev` — launch the remix HMR proxy chain (src/ui/hmr.ts) with
+ * NODE_ENV=development as a child process, forwarding --data-dir/--port and
+ * relaying SIGINT/SIGTERM so the child shuts the dev loop down cleanly. Returns
+ * the child's exit code.
+ */
+async function cmdDev(flags: Flags): Promise<number> {
+  const { cmd, env } = buildDevSpawn(flags, process.env);
+  const child = Bun.spawn(cmd, { env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+  process.on("SIGINT", () => void child.kill("SIGINT"));
+  process.on("SIGTERM", () => void child.kill("SIGTERM"));
+  return await child.exited;
 }
 
 async function cmdDaemon(flags: Flags): Promise<number> {
@@ -581,6 +598,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdWatch(flags);
     case "daemon":
       return cmdDaemon(flags);
+    case "dev":
+      return cmdDev(flags);
     case "stop":
       return cmdStop(flags);
     case "steer":
