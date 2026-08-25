@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { createRequestListener } from "remix/node-fetch-server";
 
-import { setEventInsertHook } from "./db.ts";
+import { setEventInsertHook } from "../server/repository/db.ts";
 import { emitRunChange } from "./live.ts";
-import { handleApiRequest, type ApiState } from "./server.ts";
+import { handleApiRequest, type ApiState } from "../server/services/api.ts";
 import { setWebState } from "./web-state.ts";
 
 /**

@@ -1,7 +1,7 @@
 import { clientEntry, css, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
-import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../../daemon/db.ts";
-import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView } from "../../../daemon/contract.ts";
+import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
+import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView } from "../../contract.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,

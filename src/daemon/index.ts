@@ -45,7 +45,7 @@ export {
   updateEnvelope,
   updatePhase,
   updateRun,
-} from "./db.ts";
+} from "../server/repository/db.ts";
 export type {
   AgentSessionRow,
   EnvelopeRow,
@@ -60,7 +60,7 @@ export type {
   ProcessRow,
   RunRow,
   RunWithSpend,
-} from "./db.ts";
+} from "../server/repository/db.ts";
 
 // Tracer
 export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "../server/engine/tracer.ts";
@@ -71,7 +71,7 @@ export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, 
 export type { Roster, RosterEntry } from "../server/engine/roster.ts";
 
 // Raw records
-export { RawOutputFile, tailRawFile } from "./rawfile.ts";
+export { RawOutputFile, tailRawFile } from "../server/repository/rawfile.ts";
 
 // context & handoff filesystem protocol (T05)
 export {
@@ -86,8 +86,8 @@ export {
   sessionDirNameForCwd,
   slugFor,
   writeAgentMap,
-} from "./workspace/index.ts";
-export type { AgentMapEntry, Handoff } from "./workspace/index.ts";
+} from "../server/repository/workspace/index.ts";
+export type { AgentMapEntry, Handoff } from "../server/repository/workspace/index.ts";
 
 // Line framing
 export { LineSplitter } from "../server/engine/linesplit.ts";
@@ -230,12 +230,12 @@ export {
   apiSteerRun,
   apiSubmitRun,
   handleApiRequest,
-} from "./server.ts";
-export type { ApiState } from "./server.ts";
+} from "../server/services/api.ts";
+export type { ApiState } from "../server/services/api.ts";
 
 // The one shared wire contract — the shapes server.ts (producer),
 // client.ts (consumer), and the UI all import from the same module.
-export { ApiError } from "./contract.ts";
+export { ApiError } from "../server/contract.ts";
 export type {
   ControlResult,
   DaemonStatus,
@@ -259,7 +259,7 @@ export type {
   TimelinePhase,
   TimelineSegment,
   TimelineView,
-} from "./contract.ts";
+} from "../server/contract.ts";
 
 // The typed client (ships for the CLI and the UI; http-only — the daemon
 // serves the API under /api/* on one TCP listener). The shapes it moves

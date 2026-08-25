@@ -1,6 +1,6 @@
 import { clientEntry, css, on, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
-import type { RunListItem } from "../../../daemon/contract.ts";
+import type { RunListItem } from "../../contract.ts";
 import { routes } from "../../routes.ts";
 import { IconButton } from "../../ui/public/components/icon-button.tsx";
 import { EmptyState } from "../../ui/public/empty-state.tsx";

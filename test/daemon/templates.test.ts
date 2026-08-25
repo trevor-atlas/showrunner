@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import { materializeTemplates, syncTemplates } from "../../src/daemon/templates.ts";
+import { materializeTemplates, syncTemplates } from "../../src/server/services/templates.ts";
 
 /**
  * SAFETY: every test writes ONLY into a fresh mkdtemp dir. The starter-kit

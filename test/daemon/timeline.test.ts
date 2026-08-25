@@ -19,13 +19,13 @@ import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
 import type { EventType } from "../../src/core/index.ts";
-import { cursorEvents, getRun, insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
-import type { PhaseRow, RunRow } from "../../src/daemon/db.ts";
+import { cursorEvents, getRun, insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
+import type { PhaseRow, RunRow } from "../../src/server/repository/db.ts";
 import { RunPool } from "../../src/server/engine/pool.ts";
-import { ApiError, apiTimeline, handleApiRequest } from "../../src/daemon/server.ts";
-import type { ApiState } from "../../src/daemon/server.ts";
-import type { TimelineView } from "../../src/daemon/contract.ts";
-import { countEnvelopeAttempts, foldPhaseSegments } from "../../src/daemon/timeline.ts";
+import { ApiError, apiTimeline, handleApiRequest } from "../../src/server/services/api.ts";
+import type { ApiState } from "../../src/server/services/api.ts";
+import type { TimelineView } from "../../src/server/contract.ts";
+import { countEnvelopeAttempts, foldPhaseSegments } from "../../src/server/services/timeline.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 

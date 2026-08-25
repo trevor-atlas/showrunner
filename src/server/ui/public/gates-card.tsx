@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { GateResultWithOverride } from "../../../daemon/db.ts";
+import type { GateResultWithOverride } from "../../repository/db.ts";
 import { fmtStartedAt } from "./format.ts";
 import { parseViolations } from "./envelope-parse.ts";
 import { Badge, badGlyph, Card, mono, okGlyph } from "./phase-card-shell.tsx";

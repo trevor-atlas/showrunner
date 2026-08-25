@@ -8,7 +8,7 @@
  */
 import { css, type Handle } from "remix/ui";
 
-import type { RunStats } from "../../../daemon/contract.ts";
+import type { RunStats } from "../../contract.ts";
 import { Bars } from "./components/charts/bars.tsx";
 import { blueprintBarInputs } from "./stats-model.ts";
 

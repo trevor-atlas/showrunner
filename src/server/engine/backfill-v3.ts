@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 
 import { runDirFor } from "../../core/index.ts";
-import { insertPhaseVisit } from "../../daemon/db.ts";
+import { insertPhaseVisit } from "../repository/db.ts";
 
 /**
  * backfillV3 — best-effort synthesis of v3 data for old v2-shaped DBs.

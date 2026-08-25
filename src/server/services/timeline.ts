@@ -15,11 +15,11 @@ import {
   type PhaseStartCause,
   type PhaseStatus,
   type RunStatus,
-} from "../core/index.ts";
+} from "../../core/index.ts";
 
-import { listEnvelopes, listPhases, listPhaseSpend, sweepRunEvents } from "./db.ts";
-import type { PhaseRow, RunRow } from "./db.ts";
-import type { TimelineSegment, TimelineView } from "./contract.ts";
+import { listEnvelopes, listPhases, listPhaseSpend, sweepRunEvents } from "../repository/db.ts";
+import type { PhaseRow, RunRow } from "../repository/db.ts";
+import type { TimelineSegment, TimelineView } from "../contract.ts";
 
 /** The event payload slices the fold reads (rows are zod-validated at insert). */
 interface PhaseStartPayload {

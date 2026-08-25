@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { EnvelopeRow } from "../../src/daemon/db.ts";
+import type { EnvelopeRow } from "../../src/server/repository/db.ts";
 import { acceptedEnvelope, attemptLabel, attemptState } from "../../src/server/ui/public/envelope-card.tsx";
 import { acceptedArtifacts, artifactPresent } from "../../src/server/ui/public/outputs-card.tsx";
 import { contextKindLabel } from "../../src/server/ui/public/agent-card.tsx";

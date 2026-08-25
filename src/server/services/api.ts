@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
+import { isFixtureName } from "../engine/pi/harness/fixtures.ts";
 
 import {
   cursorEvents,
@@ -10,7 +10,7 @@ import {
   listGateNamesByIds,
   listGateResults,
   listRuns,
-} from "./db.ts";
+} from "../repository/db.ts";
 import {
   ApiError,
   type ControlResult,
@@ -26,27 +26,27 @@ import {
   type RunStats,
   type SpendBreakdown,
   type TimelineView,
-} from "./contract.ts";
-import { submitFixture } from "../server/engine/driver.ts";
-import type { SubmitOptions, SubmittedRun } from "../server/engine/driver.ts";
-import { readOutputsDir } from "./workspace/index.ts";
+} from "../contract.ts";
+import { submitFixture } from "../engine/driver.ts";
+import type { SubmitOptions, SubmittedRun } from "../engine/driver.ts";
+import { readOutputsDir } from "../repository/workspace/index.ts";
 import {
   effectiveMenu,
   getControl,
   getControlByLiveSession,
   statelessFailRun,
-} from "../server/engine/pause-control.ts";
-import type { PauseInfo, RunControl } from "../server/engine/pause-control.ts";
-import type { RunPool } from "../server/engine/pool.ts";
-import { tailRawFile } from "./rawfile.ts";
-import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "../server/engine/runner.ts";
+} from "../engine/pause-control.ts";
+import type { PauseInfo, RunControl } from "../engine/pause-control.ts";
+import type { RunPool } from "../engine/pool.ts";
+import { tailRawFile } from "../repository/rawfile.ts";
+import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "../engine/runner.ts";
+import { buildRunList } from "./run-list.ts";
+import { buildRunStats } from "./run-stats.ts";
 import {
   buildRunDetail,
-  buildRunList,
-  buildRunStats,
   buildSpendBreakdown,
   buildTimeline,
-} from "../view-models/index.ts";
+} from "./run-detail.ts";
 
 /**
  * The daemon's local HTTP API — the slice the CLI needs: health,
@@ -279,7 +279,7 @@ export function apiTimeline(state: ApiState, runId: string): TimelineView {
 
 /** Resolve a run's phase by name; 404 when the run or the phase does not
  * exist — the phase-scoped read endpoints rely on these semantics. */
-function requirePhaseOrThrow(state: ApiState, runId: string, phaseName: string): import("./db.ts").PhaseRow {
+function requirePhaseOrThrow(state: ApiState, runId: string, phaseName: string): import("../repository/db.ts").PhaseRow {
   if (!getRun(state.db, runId)) {
     throw new ApiError(404, `run ${runId} not found`);
   }

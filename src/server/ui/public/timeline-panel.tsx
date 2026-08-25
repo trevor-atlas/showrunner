@@ -2,8 +2,8 @@ import { css } from "remix/ui";
 import type { Handle, RemixNode } from "remix/ui";
 
 
-import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../../daemon/db.ts";
-import type { TimelinePhase, TimelineView } from "../../../daemon/contract.ts";
+import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
+import type { TimelinePhase, TimelineView } from "../../contract.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,

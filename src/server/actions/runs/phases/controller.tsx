@@ -5,7 +5,7 @@ import { parseSafe } from "remix/data-schema";
 import { controlOverrideGate, controlRestartFresh, isApiError } from "../../../lib/daemon.ts";
 import { resolveDataDir } from "../../../../core/index.ts";
 import { requireWebState } from "../../../../daemon/web-state.ts";
-import { buildPhaseRecordModel, type PhaseRecordModel } from "../../../../view-models/index.ts";
+import { buildPhaseRecordModel, type PhaseRecordModel } from "../../../services/phase-record.ts";
 import { routes } from "../../../routes.ts";
 import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
 import { renderRunDetail } from "../controller.tsx";

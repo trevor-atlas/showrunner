@@ -8,7 +8,7 @@ import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 import { runDirFor } from "../../src/core/index.ts";
 
-import { CURSOR_SQL } from "../../src/daemon/db.ts";
+import { CURSOR_SQL } from "../../src/server/repository/db.ts";
 import {
   DaemonClient,
   insertPhase,
@@ -31,9 +31,9 @@ import type {
   SpendBreakdown,
   SubmitRunResult,
   TimelineView,
-} from "../../src/daemon/contract.ts";
+} from "../../src/server/contract.ts";
 import { ApiError as ClientApiError } from "../../src/daemon/client.ts";
-import { ApiError as ServerApiError, apiTimeline } from "../../src/daemon/server.ts";
+import { ApiError as ServerApiError, apiTimeline } from "../../src/server/services/api.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**

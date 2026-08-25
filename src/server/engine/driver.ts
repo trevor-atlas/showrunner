@@ -23,10 +23,10 @@ import {
   updateAgentSession,
   updatePhase,
   updateRun,
-} from "../../daemon/db.ts";
+} from "../repository/db.ts";
 import { LineSplitter } from "./linesplit.ts";
 import { EventSink } from "./queue.ts";
-import { RawOutputFile } from "../../daemon/rawfile.ts";
+import { RawOutputFile } from "../repository/rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 

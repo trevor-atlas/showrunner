@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { TimelinePhase, TimelineSegment } from "../../../daemon/contract.ts";
+import type { TimelinePhase, TimelineSegment } from "../../contract.ts";
 import { fmtDuration, fmtStartedAt } from "./format.ts";
 import { outcomeLabel, segmentDurationMs } from "./timeline-model.ts";
 import { Card } from "./phase-card-shell.tsx";

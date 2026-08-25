@@ -13,7 +13,7 @@
  */
 import { css, type Handle } from "remix/ui";
 
-import type { RunStats } from "../../../daemon/contract.ts";
+import type { RunStats } from "../../contract.ts";
 import { Kpi } from "./components/kpi.tsx";
 import { fmtMoney } from "./format.ts";
 import { activeCount, fmtAvgDuration, fmtSuccessRate, statusBuckets } from "./stats-model.ts";

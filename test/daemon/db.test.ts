@@ -32,8 +32,8 @@ import {
   insertPhaseVisit,
   listPhaseVisits,
   updatePhaseVisit,
-} from "../../src/daemon/db.ts";
-import type { PhaseVisitRow } from "../../src/daemon/db.ts";
+} from "../../src/server/repository/db.ts";
+import type { PhaseVisitRow } from "../../src/server/repository/db.ts";
 
 const tables = [
   "runs",

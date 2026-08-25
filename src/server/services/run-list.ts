@@ -19,9 +19,9 @@
  */
 import type { Database } from "bun:sqlite";
 
-import { listRuns, phaseStatusCounts, runPhaseExtents } from "../daemon/db.ts";
-import type { RunListItem } from "../daemon/contract.ts";
-import type { RunPool } from "../server/engine/pool.ts";
+import { listRuns, phaseStatusCounts, runPhaseExtents } from "../repository/db.ts";
+import type { RunListItem } from "../contract.ts";
+import type { RunPool } from "../engine/pool.ts";
 
 export function buildRunList(db: Database, pool: RunPool): { runs: RunListItem[] } {
   // Reuse the runPhaseExtents rollup (the stats endpoint's duration source):

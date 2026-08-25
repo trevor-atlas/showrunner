@@ -13,7 +13,7 @@
  */
 import { css, type Handle } from "remix/ui";
 
-import type { RunStats } from "../../../daemon/contract.ts";
+import type { RunStats } from "../../contract.ts";
 import { Donut } from "./components/charts/donut.tsx";
 import { statusSegments, type StatusBucket } from "./stats-model.ts";
 

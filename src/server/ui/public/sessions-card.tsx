@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { AgentSessionRow } from "../../../daemon/db.ts";
+import type { AgentSessionRow } from "../../repository/db.ts";
 import { fmtStartedAt } from "./format.ts";
 import { Card, mono } from "./phase-card-shell.tsx";
 

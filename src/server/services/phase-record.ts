@@ -21,7 +21,7 @@
 import type { Database } from "bun:sqlite";
 import { dirname } from "node:path";
 
-import { runDirFor } from "../core/index.ts";
+import { runDirFor } from "../../core/index.ts";
 import {
   getPhaseByName,
   getRun,
@@ -31,21 +31,21 @@ import {
   listPhaseVisits,
   listPhases,
   sumSpendTokenTotals,
-} from "../daemon/db.ts";
-import type { PhaseVisitRow } from "../daemon/db.ts";
-import type { PhaseEnvelopes, PhaseGates } from "../daemon/contract.ts";
-import { readHandoffInputs, readOutputsDir } from "../daemon/workspace/index.ts";
-import { readBlueprintSnapshot } from "../server/lib/blueprint-snapshot.ts";
+} from "../repository/db.ts";
+import type { PhaseVisitRow } from "../repository/db.ts";
+import type { PhaseEnvelopes, PhaseGates } from "../contract.ts";
+import { readHandoffInputs, readOutputsDir } from "../repository/workspace/index.ts";
+import { readBlueprintSnapshot } from "../lib/blueprint-snapshot.ts";
 import {
   INPUT_CONTENTS_CAP,
   describeContextEntries,
-} from "../server/lib/phase-data.ts";
+} from "../lib/phase-data.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,
   PhaseSnapshotData,
   PhaseSpendData,
-} from "../server/lib/phase-data.ts";
+} from "../lib/phase-data.ts";
 
 /**
  * The assembled phase record — one section per phase proxy, each carrying the

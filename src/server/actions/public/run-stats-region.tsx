@@ -1,6 +1,6 @@
 import { clientEntry, css, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
-import type { RunStats } from "../../../daemon/contract.ts";
+import type { RunStats } from "../../contract.ts";
 import { routes } from "../../routes.ts";
 import { BlueprintBars } from "../../ui/public/blueprint-bars.tsx";
 import { Card } from "../../ui/public/components/card.tsx";

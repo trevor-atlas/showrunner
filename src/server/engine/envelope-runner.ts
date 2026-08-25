@@ -14,9 +14,9 @@ import {
   insertGateOverride,
   insertGateResult,
   updateEnvelope,
-} from "../../daemon/db.ts";
-import type { EnvelopeRow } from "../../daemon/db.ts";
-import { inputsDirFor, outputsDirFor } from "../../daemon/workspace/index.ts";
+} from "../repository/db.ts";
+import type { EnvelopeRow } from "../repository/db.ts";
+import { inputsDirFor, outputsDirFor } from "../repository/workspace/index.ts";
 import type { EventIds } from "./queue.ts";
 
 /**

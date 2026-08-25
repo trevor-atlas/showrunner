@@ -3,11 +3,11 @@ import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { resolveDataDir, dbPathFor } from "../core/index.ts";
 
-import { openDb } from "./db.ts";
+import { openDb } from "../server/repository/db.ts";
 import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "../server/engine/pause-control.ts";
 import { backfillMissedEvents } from "../server/engine/backfill.ts";
 import { RunPool } from "../server/engine/pool.ts";
-import { materializeTemplates } from "./templates.ts";
+import { materializeTemplates } from "../server/services/templates.ts";
 import { createWebServer, getRouter } from "./web.ts";
 
 /**

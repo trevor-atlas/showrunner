@@ -12,8 +12,8 @@ import {
   listRunProcesses,
   listRuns,
   updateRun,
-} from "../../daemon/db.ts";
-import type { RunRow } from "../../daemon/db.ts";
+} from "../repository/db.ts";
+import type { RunRow } from "../repository/db.ts";
 import {
   isEnvelopeApproved,
   overrideGateResult,

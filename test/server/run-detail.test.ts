@@ -37,7 +37,7 @@ import {
   insertPhase,
   insertRun,
   openDb,
-} from "../../src/daemon/db.ts";
+} from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 

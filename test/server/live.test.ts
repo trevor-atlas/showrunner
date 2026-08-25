@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
 import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
-import { insertRun, openDb } from "../../src/daemon/db.ts";
+import { insertRun, openDb } from "../../src/server/repository/db.ts";
 import {
   CHANGE_FRAME,
   HEARTBEAT_FRAME,

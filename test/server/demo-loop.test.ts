@@ -35,7 +35,7 @@ import { dbPathFor, type EventType } from "../../src/core/index.ts";
 import type { TimelineView } from "../../src/daemon/client.ts";
 import { DaemonClient } from "../../src/daemon/client.ts";
 import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
-import { getRun, insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
+import { getRun, insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import {
   getControl,
   loadBlueprintModule,

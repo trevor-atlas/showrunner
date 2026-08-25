@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { RunListItem } from "../../src/daemon/contract.ts";
+import type { RunListItem } from "../../src/server/contract.ts";
 import { distinctBlueprints, durationMs, visibleRows } from "../../src/server/ui/public/list-model.ts";
 
 const NOW = new Date("2026-02-01T12:00:00.000Z").getTime();

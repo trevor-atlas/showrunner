@@ -2,10 +2,10 @@ import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import type { EnvelopeRow, GateResultWithOverride } from "../../../daemon/db.ts";
+import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
 import { resolveDataDir } from "../../../core/index.ts";
 import { requireWebState } from "../../../daemon/web-state.ts";
-import { buildPhaseRecordModel } from "../../../view-models/index.ts";
+import { buildPhaseRecordModel } from "../../services/phase-record.ts";
 
 import {
   MAX_EVENTS_LIMIT,

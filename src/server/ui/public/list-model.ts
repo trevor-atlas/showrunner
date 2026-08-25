@@ -6,7 +6,7 @@
  * a type-only daemon import (the same widening the clientEntry uses).
  */
 
-import type { RunListItem } from "../../../daemon/contract.ts";
+import type { RunListItem } from "../../contract.ts";
 import { isRunStatus, runStatus } from "./status-pill.tsx";
 
 /** The sortable columns. `run` = run id, `started` = started_at (default). */

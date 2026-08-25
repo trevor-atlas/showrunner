@@ -1,8 +1,8 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { EnvelopeRow, GateResultWithOverride } from "../../../daemon/db.ts";
-import type { PauseView, RawTail, RunDetail, TimelineView } from "../../../daemon/contract.ts";
+import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
+import type { PauseView, RawTail, RunDetail, TimelineView } from "../../contract.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,

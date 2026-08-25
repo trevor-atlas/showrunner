@@ -14,10 +14,10 @@ import { expect, test } from "bun:test";
 
 import { cleanupDir, tmpDataDir } from "../daemon/helpers.ts";
 import { dbPathFor } from "../../src/core/index.ts";
-import { insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
+import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import type { Database } from "bun:sqlite";
 import { RunPool } from "../../src/server/engine/pool.ts";
-import { buildRunStats } from "../../src/view-models/index.ts";
+import { buildRunStats } from "../../src/server/services/run-stats.ts";
 
 function seedRun(
   db: Database,

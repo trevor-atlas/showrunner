@@ -3,9 +3,9 @@ import type { SQLQueryBindings } from "bun:sqlite";
 import {
   parseEventData,
   serializeEventData,
-} from "../core/index.ts";
-import type { EventRow, EventType } from "../core/index.ts";
-import { backfillV3 } from "../server/engine/backfill-v3.ts";
+} from "../../core/index.ts";
+import type { EventRow, EventType } from "../../core/index.ts";
+import { backfillV3 } from "../engine/backfill-v3.ts";
 
 /**
  * The SQLite layer. One single-writer connection owned by the daemon;

@@ -22,7 +22,7 @@
  *    dropped.
  */
 
-import type { RunStats } from "../../../daemon/contract.ts";
+import type { RunStats } from "../../contract.ts";
 import { computeDonut } from "./components/charts/donut-model.ts";
 import type { BarInput } from "./components/charts/bars-model.ts";
 import { fmtDuration } from "./format.ts";

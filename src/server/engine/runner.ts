@@ -32,8 +32,8 @@ import {
   resolveContext,
   slugFor,
   writeAgentMap,
-} from "../../daemon/workspace/index.ts";
-import type { Handoff } from "../../daemon/workspace/index.ts";
+} from "../repository/workspace/index.ts";
+import type { Handoff } from "../repository/workspace/index.ts";
 
 import {
   deleteProcess,
@@ -53,14 +53,14 @@ import {
   updatePhase,
   updatePhaseVisit,
   updateRun,
-} from "../../daemon/db.ts";
+} from "../repository/db.ts";
 import { registerControl, unregisterControl, resumeInterruptedRun, RunControl } from "./pause-control.ts";
 import type { ControlAction, PauseInfo } from "./pause-control.ts";
 import { MAX_CAPTURED_STDERR, sessionIdFor } from "./driver.ts";
 import { gateName, runEnvelopeStage } from "./envelope-runner.ts";
 import { EventSink } from "./queue.ts";
 import type { EventIds } from "./queue.ts";
-import { RawOutputFile } from "../../daemon/rawfile.ts";
+import { RawOutputFile } from "../repository/rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import type { Roster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";

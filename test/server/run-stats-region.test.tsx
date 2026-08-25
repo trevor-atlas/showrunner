@@ -20,7 +20,7 @@ afterAll(teardownDom);
 
 import { render, type RenderResult } from "remix/ui/test";
 
-import type { RunStats } from "../../src/daemon/contract.ts";
+import type { RunStats } from "../../src/server/contract.ts";
 import { routes } from "../../src/server/routes.ts";
 import { RunStatsRegion, type SerializableRunStats } from "../../src/server/actions/public/run-stats-region.tsx";
 

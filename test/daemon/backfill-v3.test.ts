@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import { getEnvelope, getPhaseById, listPhaseVisits, migrate, openDb } from "../../src/daemon/db.ts";
+import { getEnvelope, getPhaseById, listPhaseVisits, migrate, openDb } from "../../src/server/repository/db.ts";
 import { backfillV3 } from "../../src/server/engine/backfill-v3.ts";
 
 /**

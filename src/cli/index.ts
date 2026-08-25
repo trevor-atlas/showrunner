@@ -8,7 +8,7 @@ import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";
 // the typed client is the single HTTP surface — base URL from the
 // configured port (SHOWRUNNER_PORT, default 44100)
 import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
-import { syncTemplates } from "../daemon/templates.ts";
+import { syncTemplates } from "../server/services/templates.ts";
 import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
 import { daemonBaseUrl, ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
 import { buildDevSpawn } from "./dev.ts";

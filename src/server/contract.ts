@@ -14,7 +14,7 @@ import type {
   GateResultWithOverride,
   PhaseRow,
   RunRow,
-} from "./db.ts";
+} from "./repository/db.ts";
 import type { EventRow, PhaseStartCause, PhaseStatus, RunStatus } from "../core/index.ts";
 
 /**

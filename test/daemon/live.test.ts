@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { insertEvent, insertRun, openDb, setEventInsertHook } from "../../src/daemon/db.ts";
+import { insertEvent, insertRun, openDb, setEventInsertHook } from "../../src/server/repository/db.ts";
 import { emitRunChange, subscribeAll, subscribeRun } from "../../src/daemon/live.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 

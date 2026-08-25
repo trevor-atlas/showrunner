@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { RunStats } from "../../src/daemon/contract.ts";
+import type { RunStats } from "../../src/server/contract.ts";
 import {
   activeCount,
   blueprintBarInputs,

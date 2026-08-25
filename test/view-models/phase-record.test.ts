@@ -28,12 +28,12 @@ import {
   insertPhaseVisit,
   insertRun,
   openDb,
-} from "../../src/daemon/db.ts";
+} from "../../src/server/repository/db.ts";
 import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/daemon/index.ts";
-import type { ApiState } from "../../src/daemon/server.ts";
-import { inputsDirFor, outputsDirFor } from "../../src/daemon/workspace/index.ts";
+import type { ApiState } from "../../src/server/services/api.ts";
+import { inputsDirFor, outputsDirFor } from "../../src/server/repository/workspace/index.ts";
 import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";
-import { buildPhaseRecordModel } from "../../src/view-models/index.ts";
+import { buildPhaseRecordModel } from "../../src/server/services/phase-record.ts";
 
 const RUN = "47474747-0000-4000-8000-000000000001"; // plan (first) → build
 const GHOST = "99999999-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

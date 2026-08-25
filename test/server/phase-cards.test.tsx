@@ -14,8 +14,8 @@ afterAll(teardownDom);
 
 import { render, type RenderResult } from "remix/ui/test";
 
-import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../src/daemon/db.ts";
-import type { TimelinePhase } from "../../src/daemon/contract.ts";
+import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../src/server/repository/db.ts";
+import type { TimelinePhase } from "../../src/server/contract.ts";
 import type { SnapshotPhase } from "../../src/server/lib/blueprint-snapshot.ts";
 import type { ContextEntry } from "../../src/server/lib/phase-data.ts";
 

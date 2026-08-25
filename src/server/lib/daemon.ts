@@ -32,8 +32,8 @@ import {
   apiStats,
   apiSteerRun,
   apiTimeline,
-} from "../../daemon/server.ts";
-import { ApiError } from "../../daemon/contract.ts";
+} from "../services/api.ts";
+import { ApiError } from "../contract.ts";
 import { requireWebState } from "../../daemon/web-state.ts";
 import type {
   ControlResult,
@@ -48,7 +48,7 @@ import type {
   RunStats,
   SpendBreakdown,
   TimelineView,
-} from "../../daemon/contract.ts";
+} from "../contract.ts";
 
 /** The events-page size and the sweep batch — the one exported constant the
  * UI's events proxy imports (no re-declared 500 in the controller). */

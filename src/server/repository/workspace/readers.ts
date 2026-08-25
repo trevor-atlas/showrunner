@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import type { Envelope } from "../../core/index.ts";
+import type { Envelope } from "../../../core/index.ts";
 
 /**
  * The context & handoff filesystem protocol (T05) — everything the harness

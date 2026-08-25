@@ -37,7 +37,7 @@ import {
   updateRun,
 } from "../../src/daemon/index.ts";
 import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
-import { listPhaseVisits } from "../../src/daemon/db.ts";
+import { listPhaseVisits } from "../../src/server/repository/db.ts";
 
 /**
  * The run loop (T01b) — driven against scripted FakePi sessions

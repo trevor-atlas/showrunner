@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { RawTail } from "../../../daemon/contract.ts";
+import type { RawTail } from "../../contract.ts";
 import { Pre } from "./phase-card-shell.tsx";
 
 /**

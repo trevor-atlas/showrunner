@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import type { TimelinePhase, TimelineView } from "../../src/daemon/contract.ts";
+import type { TimelinePhase, TimelineView } from "../../src/server/contract.ts";
 import {
   autoSelectPhase,
   computeTimelineLayout,

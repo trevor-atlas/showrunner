@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
  * Resolved relative to THIS module (not process.cwd()) so it works no matter
  * where the daemon is launched from.
  */
-const STARTER_KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "starter-kit");
+const STARTER_KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "starter-kit");
 
 /**
  * Copy src/starter-kit/** into <dataDir>/templates/, copy-if-absent: a file is

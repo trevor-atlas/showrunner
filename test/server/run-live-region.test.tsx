@@ -28,7 +28,7 @@ afterAll(teardownDom);
 
 import { render, type RenderResult } from "remix/ui/test";
 
-import type { RawTail, TimelineView } from "../../src/daemon/contract.ts";
+import type { RawTail, TimelineView } from "../../src/server/contract.ts";
 import type { FeedEvent } from "../../src/server/ui/public/event-feed.tsx";
 import { routes } from "../../src/server/routes.ts";
 import {

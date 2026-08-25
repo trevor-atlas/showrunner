@@ -1,7 +1,7 @@
 import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
-import type { RunListItem, RunStats } from "../../daemon/contract.ts";
+import type { RunListItem, RunStats } from "../contract.ts";
 import { routes } from "../routes.ts";
 import { Document } from "./document.tsx";
 import { RunListLive, type SerializableRunListItem } from "./public/run-list-live.tsx";

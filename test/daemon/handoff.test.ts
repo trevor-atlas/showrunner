@@ -41,7 +41,7 @@ import {
   readOutputsDir as workspaceReadOutputsDir,
   recordAcceptedEnvelope as workspaceRecordAcceptedEnvelope,
   writeAgentMap as workspaceWriteAgentMap,
-} from "../../src/daemon/workspace/index.ts";
+} from "../../src/server/repository/workspace/index.ts";
 
 /**
  * The context & handoff filesystem protocol (T05) — proven end to end on

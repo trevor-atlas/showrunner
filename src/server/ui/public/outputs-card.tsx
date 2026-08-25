@@ -1,7 +1,7 @@
 import { css } from "remix/ui";
 import type { Handle } from "remix/ui";
 
-import type { EnvelopeRow } from "../../../daemon/db.ts";
+import type { EnvelopeRow } from "../../repository/db.ts";
 import { acceptedEnvelope } from "./envelope-card.tsx";
 import { parseEnvelope } from "./envelope-parse.ts";
 import { Card, mono, Pre } from "./phase-card-shell.tsx";

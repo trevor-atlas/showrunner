@@ -24,7 +24,7 @@ afterAll(teardownDom);
 
 import { render, type RenderResult } from "remix/ui/test";
 
-import type { RunListItem } from "../../src/daemon/contract.ts";
+import type { RunListItem } from "../../src/server/contract.ts";
 import { routes } from "../../src/server/routes.ts";
 import { RunListLive, type SerializableRunListItem } from "../../src/server/actions/public/run-list-live.tsx";
 

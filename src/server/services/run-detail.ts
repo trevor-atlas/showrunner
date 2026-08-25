@@ -16,7 +16,7 @@
  */
 import type { Database } from "bun:sqlite";
 
-import type { EventRow } from "../core/index.ts";
+import type { EventRow } from "../../core/index.ts";
 import {
   cursorEvents,
   envelopeCount,
@@ -25,10 +25,10 @@ import {
   listPhaseSpend,
   sumRunSpend,
   sumSpendTokenTotals,
-} from "../daemon/db.ts";
-import type { RunRow } from "../daemon/db.ts";
-import type { RunDetail, SpendBreakdown, TimelineView } from "../daemon/contract.ts";
-import { buildTimelineView } from "../daemon/timeline.ts";
+} from "../repository/db.ts";
+import type { RunRow } from "../repository/db.ts";
+import type { RunDetail, SpendBreakdown, TimelineView } from "../contract.ts";
+import { buildTimelineView } from "./timeline.ts";
 
 /** Per-page sweep batch — mirrors server.ts's exported MAX_EVENTS_LIMIT and
  * db.ts's sweepRunEvents default (both 500). View-models cannot import from
