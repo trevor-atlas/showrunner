@@ -35,17 +35,17 @@ import {
 import type { PhaseVisitRow } from "../daemon/db.ts";
 import type { PhaseEnvelopes, PhaseGates } from "../daemon/contract.ts";
 import { readHandoffInputs, readOutputsDir } from "../daemon/workspace/index.ts";
-import { readBlueprintSnapshot } from "../ui/app/lib/blueprint-snapshot.ts";
+import { readBlueprintSnapshot } from "../server/lib/blueprint-snapshot.ts";
 import {
   INPUT_CONTENTS_CAP,
   describeContextEntries,
-} from "../ui/app/lib/phase-data.ts";
+} from "../server/lib/phase-data.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,
   PhaseSnapshotData,
   PhaseSpendData,
-} from "../ui/app/lib/phase-data.ts";
+} from "../server/lib/phase-data.ts";
 
 /**
  * The assembled phase record — one section per phase proxy, each carrying the

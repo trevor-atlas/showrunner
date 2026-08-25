@@ -12,7 +12,7 @@
  * first-load speedup is the boot-time warm inside the daemon process
  * (src/daemon/daemon.ts).
  */
-import { entryHref, entryPreloads } from "../src/ui/app/assets.ts";
+import { entryHref, entryPreloads } from "../src/server/assets.ts";
 
 try {
   const [href, preloads] = await Promise.all([entryHref(), entryPreloads()]);

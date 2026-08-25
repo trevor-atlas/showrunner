@@ -112,7 +112,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
       void (async () => {
         try {
           await getRouter();
-          const { warmEntryAssets } = await import("../ui/app/actions/document.tsx");
+          const { warmEntryAssets } = await import("../server/actions/document.tsx");
           await warmEntryAssets();
         } catch (err) {
           console.error(

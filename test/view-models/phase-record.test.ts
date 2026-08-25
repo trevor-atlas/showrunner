@@ -32,7 +32,7 @@ import {
 import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/daemon/index.ts";
 import type { ApiState } from "../../src/daemon/server.ts";
 import { inputsDirFor, outputsDirFor } from "../../src/daemon/workspace/index.ts";
-import { snapshotPathFor } from "../../src/ui/app/lib/blueprint-snapshot.ts";
+import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";
 import { buildPhaseRecordModel } from "../../src/view-models/index.ts";
 
 const RUN = "47474747-0000-4000-8000-000000000001"; // plan (first) → build

@@ -12,7 +12,7 @@ test("buildDevSpawn runs the hmr.ts chain with NODE_ENV=development", () => {
   const { cmd, env } = buildDevSpawn({ dataDir: undefined, rest: {} }, {});
   expect(env.NODE_ENV).toBe("development");
   expect(cmd[0]).toBe("bun");
-  expect(cmd[1]).toEndWith("src/ui/hmr.ts");
+  expect(cmd[1]).toEndWith("src/server/hmr.ts");
 });
 
 test("buildDevSpawn threads --data-dir through as SHOWRUNNER_DATA_DIR", () => {

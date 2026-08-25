@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 /**
  * `showrunner dev` — run the UI dev loop (the remix HMR proxy chain in
- * src/ui/hmr.ts) with NODE_ENV=development, so contributors get hot reload
+ * src/server/hmr.ts) with NODE_ENV=development, so contributors get hot reload
  * from the CLI instead of hunting through package.json scripts.
  */
 
@@ -17,7 +17,7 @@ export interface DevSpawn {
 }
 
 // Resolved relative to this module so it works regardless of cwd.
-const HMR_ENTRY = fileURLToPath(new URL("../ui/hmr.ts", import.meta.url));
+const HMR_ENTRY = fileURLToPath(new URL("../server/hmr.ts", import.meta.url));
 
 /**
  * Pure spawn-config builder (the test seam): computes the exact argv + env for

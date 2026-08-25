@@ -406,7 +406,7 @@ test("pause viewer: override_targets = [\"neverGreen\"] on a budget pause (gate 
 
     // the budget-exhaustion blueprint's gate always fails → the correction
     // budget (1) exhausts and the run pauses with the override menu
-    const controls = join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "fixtures", "controls", "controls-blueprint.ts");
+    const controls = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures", "controls", "controls-blueprint.ts");
     const paused = await api(baseUrl, "POST", "/api/runs", { blueprint: controls, cwd: runCwd, delayMs: 0 });
     expect(paused.status).toBe(201);
     const pausedId = (paused.json as { run_id: string }).run_id;
@@ -433,7 +433,7 @@ test("pause viewer: override_targets absent on an approval pause (the menu offer
     daemon = await startDaemon({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
-    const approval = join(dirname(fileURLToPath(import.meta.url)), "..", "ui", "fixtures", "approval-blueprint.ts");
+    const approval = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures", "approval-blueprint.ts");
     const appr = await api(baseUrl, "POST", "/api/runs", { blueprint: approval, cwd: runCwd, delayMs: 0 });
     expect(appr.status).toBe(201);
     const apprId = (appr.json as { run_id: string }).run_id;

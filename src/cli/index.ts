@@ -253,7 +253,7 @@ async function cmdWatch(flags: Flags): Promise<number> {
 }
 
 /**
- * `showrunner dev` — launch the remix HMR proxy chain (src/ui/hmr.ts) with
+ * `showrunner dev` — launch the remix HMR proxy chain (src/server/hmr.ts) with
  * NODE_ENV=development as a child process, forwarding --data-dir/--port and
  * relaying SIGINT/SIGTERM so the child shuts the dev loop down cleanly. Returns
  * the child's exit code.
@@ -272,7 +272,7 @@ async function cmdDaemon(flags: Flags): Promise<number> {
     const handle = await startDaemon({ dataDir });
     installSignalHandlers(handle);
     console.log(`showrunner daemon listening on ${handle.baseUrl} (pid ${process.pid})`);
-    console.log("Editing src/ui? run `showrunner dev` for hot reload.");
+    console.log("Editing src/server? run `showrunner dev` for hot reload.");
     // keep the process alive; SIGINT/SIGTERM handled inside the daemon module
     await new Promise<never>(() => {});
   } catch (err) {

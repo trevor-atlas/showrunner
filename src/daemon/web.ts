@@ -28,7 +28,7 @@ export function isApiPath(url: string | null | undefined): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
-type RouterModule = typeof import("../ui/app/router.ts");
+type RouterModule = typeof import("../server/router.ts");
 
 let routerPromise: Promise<RouterModule> | null = null;
 
@@ -38,7 +38,7 @@ let routerPromise: Promise<RouterModule> | null = null;
  * it at boot in production. */
 export function getRouter(): Promise<RouterModule> {
   if (routerPromise === null) {
-    routerPromise = import("../ui/app/router.ts").catch((err) => {
+    routerPromise = import("../server/router.ts").catch((err) => {
       routerPromise = null; // allow a retry on the next request
       throw err;
     });
