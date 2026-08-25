@@ -16,7 +16,7 @@ import {
   updateEnvelope,
 } from "./db.ts";
 import type { EnvelopeRow } from "./db.ts";
-import { inputsDirFor, outputsDirFor } from "./handoff.ts";
+import { inputsDirFor, outputsDirFor } from "./workspace/index.ts";
 import type { EventIds } from "./queue.ts";
 
 /**
@@ -69,6 +69,10 @@ export interface EnvelopeStageOptions {
   phaseName: string;
   agentSessionId: string | null;
   visit: number;
+  /** the phase_visits row this visit's attempts belong to (v3, #45); optional
+   * so direct callers outside a live visit keep compiling, mirroring
+   * EnvelopeRow.visit_id */
+  visitId?: string;
   /** corrections already issued in this visit (0 = first attempt) */
   attempt: number;
   /** the run's cwd (the project the agent works on) — what gates call the workspace */
@@ -171,6 +175,7 @@ function recordAttemptRow(
     valid: envelope === null ? 0 : 1,
     violations: "[]",
     correction: null, // filled by the loop when a correction actually follows
+    visit_id: opts.visitId ?? null,
   });
   return id;
 }

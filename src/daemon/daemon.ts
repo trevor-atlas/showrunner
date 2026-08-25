@@ -8,6 +8,7 @@ import { openDb } from "./db.ts";
 import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "./pause-control.ts";
 import { backfillMissedEvents } from "./backfill.ts";
 import { RunPool } from "./pool.ts";
+import { materializeTemplates } from "./templates.ts";
 import { createWebServer, getRouter } from "./web.ts";
 
 /**
@@ -49,6 +50,9 @@ function resolvePort(opts: { port?: number }): number {
 export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; port?: number } = {}): Promise<DaemonHandle> {
   const dataDir = opts.dataDir ?? resolveDataDir();
   mkdirSync(dataDir, { recursive: true });
+  // Materialize the starter kit into <dataDir>/templates/ (copy-if-absent):
+  // seeds missing files on first boot, never clobbers a user's own edits.
+  materializeTemplates(dataDir);
 
   // pidfile guard: never unlink a live daemon's socket
   const pidFile = join(dataDir, "daemon.pid");

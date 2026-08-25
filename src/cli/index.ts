@@ -8,6 +8,7 @@ import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";
 // the typed client is the single HTTP surface — base URL from the
 // pidfile port (SHOWRUNNER_PORT override for dev)
 import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
+import { syncTemplates } from "../daemon/templates.ts";
 import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
 import { daemonBaseUrl, ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
 import { formatEvent } from "./render.ts";
@@ -88,6 +89,7 @@ function usage(): void {
       "  showrunner restart-fresh <run_id> [phase] restart the paused phase with a new session",
       "  showrunner override <run_id> --gate <g> --reason <r>  override a failed gate on the pause",
       "  showrunner status                      daemon status: pool utilization + run status counts",
+      "  showrunner templates sync [--yes]        pull starter-kit updates into the data dir (drift reported; --yes overwrites)",
       "  showrunner stop                          stop the daemon",
       "",
       "flags: --data-dir <dir>   data directory (default ~/.showrunner, env SHOWRUNNER_DATA_DIR)",
@@ -259,6 +261,36 @@ async function cmdDaemon(flags: Flags): Promise<number> {
     console.error(`showrunner daemon: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
+  return 0;
+}
+
+/**
+ * `showrunner templates sync` — pull starter-kit updates into <dataDir>/templates/
+ * WITHOUT starting the daemon. Missing files are added automatically; drift is
+ * reported and NOT overwritten unless `--yes`/`--force` is passed (the confirm
+ * seam). The safe default is report-only.
+ */
+async function cmdTemplates(flags: Flags): Promise<number> {
+  const sub = flags.positionals[0];
+  if (sub !== "sync") {
+    console.error("usage: showrunner templates sync [--yes]");
+    return 2;
+  }
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  const confirmAll = "yes" in flags.rest || "force" in flags.rest;
+  const result = await syncTemplates(dataDir, { confirm: confirmAll ? () => true : undefined });
+
+  for (const rel of result.added) console.log(`added: ${rel}`);
+  if (result.drifted.length > 0) {
+    console.log(`drift (${result.drifted.length} file(s) differ from the starter kit):`);
+    for (const rel of result.drifted) {
+      const tag = result.overwritten.includes(rel) ? "overwritten" : "kept (use --yes to overwrite)";
+      console.log(`  ${rel} — ${tag}`);
+    }
+  }
+  console.log(
+    `templates sync: ${result.added.length} added, ${result.drifted.length} drifted, ${result.overwritten.length} overwritten`,
+  );
   return 0;
 }
 
@@ -561,6 +593,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdResume(flags);
     case "status":
       return cmdStatus(flags);
+    case "templates":
+      return cmdTemplates(flags);
     case "fail":
       return cmdFail(flags);
     case "restart-fresh":

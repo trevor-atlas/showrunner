@@ -33,6 +33,15 @@ import {
 } from "../../src/daemon/index.ts";
 import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
 import handoffFixture from "./fixtures/handoff/handoff-blueprint.ts";
+// #50: handoff.ts is now a re-export shim over src/daemon/workspace/. Import the
+// reader/writer surface straight from the workspace module to prove the new
+// seam exists for callers repointed in #51.
+import {
+  materializeHandoff as workspaceMaterializeHandoff,
+  readOutputsDir as workspaceReadOutputsDir,
+  recordAcceptedEnvelope as workspaceRecordAcceptedEnvelope,
+  writeAgentMap as workspaceWriteAgentMap,
+} from "../../src/daemon/workspace/index.ts";
 
 /**
  * The context & handoff filesystem protocol (T05) — proven end to end on
@@ -100,6 +109,15 @@ function closeEnv(env: { dir: string; db: { close(): void }; cwd: string; runDir
   rmSync(env.runDir, { recursive: true, force: true });
   cleanupDir(env.dir);
 }
+
+// ── #50: the workspace module exposes the reader + writer surface ────────────
+
+test("src/daemon/workspace exports readers and writers for new callers", () => {
+  expect(typeof workspaceReadOutputsDir).toBe("function"); // reader side
+  expect(typeof workspaceMaterializeHandoff).toBe("function"); // writer side
+  expect(typeof workspaceRecordAcceptedEnvelope).toBe("function"); // writer side
+  expect(typeof workspaceWriteAgentMap).toBe("function"); // writer side
+});
 
 // ── the round trip: envelope + artifacts materialize into the next phase ─────
 

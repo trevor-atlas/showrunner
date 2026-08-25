@@ -2,21 +2,10 @@ import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import {
-  controlOverrideGate,
-  controlRestartFresh,
-  getPhaseEnvelopes,
-  getPhaseGates,
-  getRunDetail,
-  isApiError,
-} from "../../../lib/daemon.ts";
-import {
-  gatherPhaseInputs,
-  gatherPhaseOutputs,
-  gatherPhaseSnapshot,
-  gatherPhaseSpend,
-  isFirstBlueprintPhase,
-} from "../../../lib/phase-data.ts";
+import { controlOverrideGate, controlRestartFresh, isApiError } from "../../../lib/daemon.ts";
+import { resolveDataDir } from "../../../../../core/index.ts";
+import { requireWebState } from "../../../../../daemon/web-state.ts";
+import { buildPhaseRecordModel, type PhaseRecordModel } from "../../../../../view-models/index.ts";
 import { routes } from "../../../routes.ts";
 import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
 import { renderRunDetail } from "../controller.tsx";
@@ -53,32 +42,16 @@ export default createController(routes.runs.phases, {
      * server-rendered by renderRunDetail instead.
      */
     async envelopes(context) {
-      const runId = context.params.runId;
-      const phase = context.params.phase;
-      try {
-        const envelopes = await getPhaseEnvelopes(runId, phase);
-        return Response.json(envelopes);
-      } catch (err) {
-        if (isApi404(err)) {
-          return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
-        }
-        throw err;
-      }
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.envelopes);
     },
 
     /** The gates.json proxy (R5) — mirror of `envelopes`, for gate results. */
     async gates(context) {
-      const runId = context.params.runId;
-      const phase = context.params.phase;
-      try {
-        const gates = await getPhaseGates(runId, phase);
-        return Response.json(gates);
-      } catch (err) {
-        if (isApi404(err)) {
-          return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
-        }
-        throw err;
-      }
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.gates);
     },
 
     /**
@@ -88,41 +61,30 @@ export default createController(routes.runs.phases, {
      * JSON; a real run with no snapshot file → 200 with phase: null.
      */
     async snapshot(context) {
-      const runId = context.params.runId;
-      const phaseName = context.params.phase;
-      const found = await resolvePhase(runId, phaseName);
-      if (found === null) return notFoundJson(runId, phaseName);
-      return Response.json(
-        gatherPhaseSnapshot(runId, phaseName, found.detail.run.cwd, found.detail.phases[0]?.name),
-      );
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.snapshot);
     },
 
     /** The inputs.json proxy (#35) — the materialized predecessor handoff. */
     async inputs(context) {
-      const runId = context.params.runId;
-      const phaseName = context.params.phase;
-      const found = await resolvePhase(runId, phaseName);
-      if (found === null) return notFoundJson(runId, phaseName);
-      const isFirst = isFirstBlueprintPhase(runId, phaseName, found.detail.phases[0]?.name);
-      return Response.json(gatherPhaseInputs(runId, phaseName, isFirst));
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.inputs);
     },
 
     /** The outputs.json proxy (#35) — the phase's outputs/ dir + FINDINGS.md. */
     async outputs(context) {
-      const runId = context.params.runId;
-      const phaseName = context.params.phase;
-      const found = await resolvePhase(runId, phaseName);
-      if (found === null) return notFoundJson(runId, phaseName);
-      return Response.json(gatherPhaseOutputs(runId, phaseName));
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.outputs);
     },
 
     /** The spend.json proxy (#35) — per-phase tokens/USD off the exact SQL SUM. */
     async spend(context) {
-      const runId = context.params.runId;
-      const phaseName = context.params.phase;
-      const found = await resolvePhase(runId, phaseName);
-      if (found === null) return notFoundJson(runId, phaseName);
-      return Response.json(await gatherPhaseSpend(runId, found.phase.id));
+      const record = loadPhaseRecord(context.params.runId, context.params.phase);
+      if (record === null) return notFoundJson(context.params.runId, context.params.phase);
+      return Response.json(record.spend);
     },
 
     /** override — POST .../phases/:phase/override → the daemon verb. */
@@ -163,37 +125,19 @@ export default createController(routes.runs.phases, {
 });
 
 /**
- * Resolve a run + phase for the data proxies: the run detail (for the 404
- * gate, the run's cwd, the phase id, and blueprint phase order). Returns null
- * when the run or the phase does not exist — the proxy then answers 404 JSON.
+ * The single phase read behind every data proxy (#48): assemble the phase
+ * record once through the view-model, then each proxy slices the section it
+ * serves. `null` (ghost run or ghost phase) maps to the proxies' 404 JSON.
+ *
+ * `dataDir` is `resolveDataDir()` — the same process-global the model's
+ * snapshot reader (readBlueprintSnapshot) uses internally, so inputs/outputs
+ * and the snapshot are scoped to ONE data dir, never spliced across two.
  */
-async function resolvePhase(
-  runId: string,
-  phaseName: string,
-): Promise<{ detail: Awaited<ReturnType<typeof getRunDetail>>; phase: { id: string } } | null> {
-  let detail;
-  try {
-    detail = await getRunDetail(runId);
-  } catch (err) {
-    if (isApi404(err)) return null;
-    throw err;
-  }
-  const phase = detail.phases.find((p) => p.name === phaseName);
-  if (phase === undefined) return null;
-  return { detail, phase };
+function loadPhaseRecord(runId: string, phaseName: string): PhaseRecordModel | null {
+  return buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, phaseName);
 }
 
 /** The shared 404 JSON body for the data proxies (ghost run or phase). */
 function notFoundJson(runId: string, phase: string): Response {
   return Response.json({ error: `run ${runId} phase ${phase} not found` }, { status: 404 });
-}
-
-/** A ApiError 404 (run/phase missing) — the drill-in's "missing" case. */
-function isApi404(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { name?: string }).name === "ApiError" &&
-    (err as { status?: number }).status === 404
-  );
 }

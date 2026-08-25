@@ -5,6 +5,7 @@ import {
   serializeEventData,
 } from "../core/index.ts";
 import type { EventRow, EventType } from "../core/index.ts";
+import { backfillV3 } from "./backfill-v3.ts";
 
 /**
  * The SQLite layer. One single-writer connection owned by the daemon;
@@ -13,7 +14,7 @@ import type { EventRow, EventType } from "../core/index.ts";
  * schemas before insert - zod is the single source of truth.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * v1 — the seven tables, plus the cursor index. `events.id` is
@@ -26,6 +27,10 @@ export const SCHEMA_VERSION = 2;
  * and gate overrides are audited in their own table — the original
  * gate_results row is KEPT (the audit trail is the point); this table is the
  * "who + why + when" marker hanging off it.
+ *
+ * v3 — additive only: phase declaration metadata is stored as queryable columns,
+ * each phase visit gets its own row, and envelopes can link to that visit row
+ * while keeping their existing visit number for compatibility.
  */
 const MIGRATIONS: string[] = [
   `
@@ -118,6 +123,27 @@ CREATE TABLE gate_overrides (
   created_at     TEXT NOT NULL
 );
 `,
+  `
+CREATE TABLE phase_visits (
+  id               TEXT PRIMARY KEY,
+  phase_id         TEXT NOT NULL REFERENCES phases(id),
+  visit_number     INTEGER NOT NULL,
+  cause            TEXT,
+  status           TEXT NOT NULL,
+  started_at       TEXT,
+  ended_at         TEXT,
+  agent_session_id TEXT REFERENCES agent_sessions(id)
+);
+
+ALTER TABLE phases ADD COLUMN ordinal INTEGER;
+ALTER TABLE phases ADD COLUMN agent_model TEXT;
+ALTER TABLE phases ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE phases ADD COLUMN on_fail_to TEXT;
+ALTER TABLE phases ADD COLUMN gate_names TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE phases ADD COLUMN context_entries TEXT NOT NULL DEFAULT '[]';
+
+ALTER TABLE envelopes ADD COLUMN visit_id TEXT REFERENCES phase_visits(id);
+`,
 ];
 
 /** Open (creating if needed) and migrate the DB, with the pragmas. */
@@ -127,6 +153,7 @@ export function openDb(dbPath: string): Database {
   db.exec("PRAGMA synchronous = NORMAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   migrate(db);
+  backfillV3(db); // best-effort v3 synthesis, AFTER migrate commits (never inside the DDL txn)
   return db;
 }
 
@@ -176,6 +203,34 @@ export interface PhaseRow {
   spend_usd: number;
   started_at: string | null;
   ended_at: string | null;
+  // v3 declaration metadata (optional so existing insertPhase call sites keep
+  // compiling; omitted fields fall back to the schema defaults on insert).
+  /** blueprint order of this phase, or null when unranked */
+  ordinal?: number | null;
+  /** the model the phase's agent runs on, or null when unset */
+  agent_model?: string | null;
+  /** 1 = the phase's accepted envelope needs manual approval; defaults to 0 */
+  require_approval?: number;
+  /** the phase name to jump to on failure, or null when none */
+  on_fail_to?: string | null;
+  /** the declared gate names, JSON array of strings ('[]' when none) */
+  gate_names?: string;
+  /** the declared context entries, JSON array of strings ('[]' when none) */
+  context_entries?: string;
+}
+
+/** One phase visit (T?? v3): each attempt at a phase gets its own row, keyed
+ * by (phase_id, visit_number). `cause` is why the visit started (null for the
+ * first visit), `agent_session_id` links the pi session that ran it. */
+export interface PhaseVisitRow {
+  id: string;
+  phase_id: string;
+  visit_number: number;
+  cause: string | null;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  agent_session_id: string | null;
 }
 
 /** A phase row with its estimated (roster-derived) spend attached — the ONE
@@ -204,6 +259,9 @@ export interface EnvelopeRow {
   /** the correction message issued AFTER this attempt; null when none followed
    * (accepted, blocked, or the run stopped) */
   correction: string | null;
+  /** v3: the phase_visits row this attempt belongs to, or null when unlinked
+   * (optional so existing insertEnvelope call sites keep compiling) */
+  visit_id?: string | null;
 }
 
 export interface GateResultRow {
@@ -334,8 +392,16 @@ export function runPhaseExtents(db: Database): RunPhaseExtent[] {
 export function insertPhase(db: Database, p: PhaseRow): void {
   q(
     db,
-    "INSERT INTO phases (id, run_id, name, agent, status, visits, corrections, budget, spend_usd, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(p.id, p.run_id, p.name, p.agent, p.status, p.visits, p.corrections, p.budget, p.spend_usd, p.started_at, p.ended_at);
+    "INSERT INTO phases (id, run_id, name, agent, status, visits, corrections, budget, spend_usd, started_at, ended_at, ordinal, agent_model, require_approval, on_fail_to, gate_names, context_entries) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    p.id, p.run_id, p.name, p.agent, p.status, p.visits, p.corrections, p.budget, p.spend_usd, p.started_at, p.ended_at,
+    p.ordinal ?? null,
+    p.agent_model ?? null,
+    p.require_approval ?? 0,
+    p.on_fail_to ?? null,
+    p.gate_names ?? "[]",
+    p.context_entries ?? "[]",
+  );
 }
 
 export function updatePhase(db: Database, id: string, patch: Partial<PhaseRow>): void {
@@ -351,6 +417,27 @@ export function listPhases(db: Database, runId: string): PhaseRow[] {
 
 export function getPhaseById(db: Database, id: string): PhaseRow | null {
   return q<PhaseRow>(db, "SELECT * FROM phases WHERE id = ?").get(id) ?? null;
+}
+
+// ── phase visits (v3) ──────────────────────────────────────────────────────
+
+export function insertPhaseVisit(db: Database, v: PhaseVisitRow): void {
+  q(
+    db,
+    "INSERT INTO phase_visits (id, phase_id, visit_number, cause, status, started_at, ended_at, agent_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(v.id, v.phase_id, v.visit_number, v.cause, v.status, v.started_at, v.ended_at, v.agent_session_id);
+}
+
+export function updatePhaseVisit(db: Database, id: string, patch: Partial<PhaseVisitRow>): void {
+  const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
+  if (entries.length === 0) return;
+  const sets = entries.map(([k]) => `${k} = ?`).join(", ");
+  q(db, `UPDATE phase_visits SET ${sets} WHERE id = ?`).run(...entries.map(([, v]) => v as SQLQueryBindings), id);
+}
+
+/** Every visit of one phase, in visit_number order (the drill-in's visit list). */
+export function listPhaseVisits(db: Database, phaseId: string): PhaseVisitRow[] {
+  return q<PhaseVisitRow>(db, "SELECT * FROM phase_visits WHERE phase_id = ? ORDER BY visit_number").all(phaseId);
 }
 
 /** A phase of a run, looked up by its blueprint NAME (the phase-scoped
@@ -580,8 +667,8 @@ export function envelopeCount(db: Database, runId: string): number {
 export function insertEnvelope(db: Database, e: EnvelopeRow): void {
   q(
     db,
-    "INSERT INTO envelopes (id, run_id, phase_id, visit, attempt, json, source, validated_at, valid, violations, correction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(e.id, e.run_id, e.phase_id, e.visit, e.attempt, e.json, e.source, e.validated_at, e.valid, e.violations, e.correction);
+    "INSERT INTO envelopes (id, run_id, phase_id, visit, attempt, json, source, validated_at, valid, violations, correction, visit_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(e.id, e.run_id, e.phase_id, e.visit, e.attempt, e.json, e.source, e.validated_at, e.valid, e.violations, e.correction, e.visit_id ?? null);
 }
 
 export function updateEnvelope(db: Database, id: string, patch: Partial<EnvelopeRow>): void {
@@ -754,7 +841,7 @@ export function listRunProcesses(db: Database, runId: string): ProcessRow[] {
   ).all(runId, runId);
 }
 
-/** List the seven user tables (test helper; sqlite_* internals excluded). */
+/** List the user tables (test helper; sqlite_* internals excluded). */
 export function listTables(db: Database): string[] {
   return q<{ name: string }>(
     db,

@@ -14,7 +14,7 @@ import {
   type SortKey,
 } from "../../ui/public/list-model.ts";
 import { StatusPill, runStatus } from "../../ui/public/status-pill.tsx";
-import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./sse.ts";
+import { startLiveSnapshot, type LiveApplyOutcome } from "./live-snapshot.ts";
 
 /**
  * The landing run list, LIVE (issue #39). Server-rendered once from the
@@ -33,10 +33,13 @@ import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./s
  * still narrows the first paint; the full unfiltered runs ride in `runs` so
  * the toolbar can re-filter live without a round-trip.
  *
- * The refetch is wrapped in createCoalescedNotifier (#33/#38 lesson): a
- * wake-up that lands mid-refetch schedules EXACTLY ONE trailing rerun rather
- * than being dropped by the in-flight guard — so the last ledger change is
- * never lost.
+ * The SSE→refetch transport is the shared startLiveSnapshot adapter (#57): the
+ * region hands it the global change-stream href + an `apply` that refetches the
+ * snapshot proxy and swaps the runs array; the adapter owns WHEN (coalescing +
+ * the in-flight guard so a wake-up mid-refetch schedules EXACTLY ONE trailing
+ * rerun — the last ledger change is never lost). This is a single-snapshot
+ * region: `apply` always returns "applied" (a transient failure keeps the last
+ * snapshot; the stream never stops).
  *
  * The browser NEVER talks to the daemon: it only refetches the rendered
  * snapshot proxy (the iron convention).
@@ -74,28 +77,25 @@ export const RunListLive = clientEntry(
     // the run id whose copy button is showing its brief "copied" checkmark
     let copiedId: string | null = null;
     let copyTimer: ReturnType<typeof setTimeout> | null = null;
-    let refetching = false;
-    let subscription: SseSubscription | null = null;
 
-    /** Refetch the /runs-list.json snapshot and re-render. Guarded so a slow
-     * round-trip never stacks (the coalescer schedules the trailing rerun); a
-     * transient failure keeps the last snapshot (the next ledger change
-     * refetches). */
-    const refetch = async (): Promise<void> => {
-      if (refetching) return;
-      refetching = true;
+    /** The adapter's refetch: pull the /runs-list.json snapshot and swap the
+     * runs array. Single-snapshot region — a transient failure (non-ok or a
+     * fetch/parse throw) keeps the last snapshot and returns "applied" so the
+     * stream keeps listening (the next ledger change refetches); there is no
+     * terminal/gone branch for the global list. */
+    const apply = async (): Promise<LiveApplyOutcome> => {
       try {
         const response = await fetch(handle.props.runsHref);
-        if (!response.ok) return;
-        const data = (await response.json()) as { runs: SerializableRunListItem[] };
-        runs = data.runs;
-        await handle.update();
+        if (response.ok) {
+          const data = (await response.json()) as { runs: SerializableRunListItem[] };
+          runs = data.runs;
+          await handle.update();
+        }
       } catch {
         // transient fetch/parse failure — keep the last snapshot; the next
         // ledger wake-up refetches
-      } finally {
-        refetching = false;
       }
+      return "applied";
     };
 
     /** Copy the FULL run id, flash a ~1.5s checkmark; a clipboard failure is a
@@ -153,17 +153,13 @@ export const RunListLive = clientEntry(
       void handle.update();
     };
 
-    // The live subscription is browser-only (setup also runs during SSR); arm
-    // it once and tear it down on abort. Wake-ups drive refetch through the
-    // coalescer so a change landing mid-refetch schedules one trailing rerun.
+    // The live transport is browser-only (setup also runs during SSR); arm the
+    // adapter once and tear it down on abort. The adapter owns the SSE
+    // subscription, the coalescing, and the in-flight guard.
     if (typeof window !== "undefined") {
-      const notify = createCoalescedNotifier(refetch);
-      subscription = subscribeSse(routes.live.href(), { onchange: notify });
+      const live = startLiveSnapshot({ href: routes.live.href(), apply });
       handle.signal.addEventListener("abort", () => {
-        if (subscription !== null) {
-          subscription.unsubscribe();
-          subscription = null;
-        }
+        live.stop();
         if (copyTimer !== null) {
           clearTimeout(copyTimer);
           copyTimer = null;

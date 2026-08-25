@@ -86,8 +86,8 @@ export {
   sessionDirNameForCwd,
   slugFor,
   writeAgentMap,
-} from "./handoff.ts";
-export type { AgentMapEntry, Handoff } from "./handoff.ts";
+} from "./workspace/index.ts";
+export type { AgentMapEntry, Handoff } from "./workspace/index.ts";
 
 // Line framing
 export { LineSplitter } from "./linesplit.ts";

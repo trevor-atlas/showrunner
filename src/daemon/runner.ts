@@ -32,8 +32,8 @@ import {
   resolveContext,
   slugFor,
   writeAgentMap,
-} from "./handoff.ts";
-import type { Handoff } from "./handoff.ts";
+} from "./workspace/index.ts";
+import type { Handoff } from "./workspace/index.ts";
 
 import {
   deleteProcess,
@@ -43,6 +43,7 @@ import {
   insertAgentSession,
   insertEvent,
   insertPhase,
+  insertPhaseVisit,
   insertProcess,
   insertRun,
   listFailedGateResults,
@@ -50,6 +51,7 @@ import {
   updateAgentSession,
   updateEnvelope,
   updatePhase,
+  updatePhaseVisit,
   updateRun,
 } from "./db.ts";
 import { registerControl, unregisterControl, resumeInterruptedRun, RunControl } from "./pause-control.ts";
@@ -306,7 +308,7 @@ function createRunRows(
     ts: nowIso(),
     data: { blueprint: opts.blueprint.name, cwd: opts.cwd },
   });
-  for (const phase of opts.blueprint.phases) {
+  opts.blueprint.phases.forEach((phase, ordinal) => {
     insertPhase(db, {
       id: randomUUID(),
       run_id: runId,
@@ -319,8 +321,14 @@ function createRunRows(
       spend_usd: 0,
       started_at: null,
       ended_at: null,
+      ordinal,
+      agent_model: phase.agent.model,
+      require_approval: phase.require_approval ? 1 : 0,
+      on_fail_to: phase.on_fail?.to ?? null,
+      gate_names: JSON.stringify(phase.gates.map((g, i) => gateName(g, i))),
+      context_entries: JSON.stringify([...phase.agent.context, ...(phase.context ?? [])]),
     });
-  }
+  });
   // the rendered configuration is snapshotted at submit time, so later
   // edits to the blueprint never mutate an in-flight run
   snapshotBlueprint(runDir, opts.blueprint, opts.maxVisits ?? DEFAULT_MAX_VISITS, opts.modulePath ?? null, opts.args);
@@ -412,6 +420,11 @@ export function snapshotBlueprint(
       budget: p.budget ?? DEFAULT_BUDGET,
       require_approval: p.require_approval ?? false,
       on_fail: p.on_fail ?? null,
+      // phase-level additions to the agent's context defaults, recorded as a
+      // first-class key (mirrors BlueprintPhase.context) so the snapshot's
+      // effective context (agent.context ++ context) agrees with the phase
+      // row's context_entries written by createRunRows
+      context: p.context ?? [],
       envelope: renderSchema(p.envelope),
       gates: p.gates.map((g, i) => gateName(g, i)),
     })),
@@ -713,6 +726,28 @@ async function driveVisit(
   });
   state.phaseVisits.set(phase.name, visit);
 
+  // #45: the visit is now a first-class row. It is CREATED here with its
+  // cause + started_at (status in_progress, ended_at NULL), links its pi
+  // session once one spawns, and transitions to a terminal status with
+  // ended_at at the single exit below. The terminal status is derived from
+  // the VisitOutcome kind (one source of truth), so a visit is never left
+  // in_progress with a non-null ended_at.
+  const visitId = randomUUID();
+  insertPhaseVisit(db, {
+    id: visitId,
+    phase_id: phaseId,
+    visit_number: visit,
+    cause: opts.cause === undefined ? null : JSON.stringify(opts.cause),
+    status: "in_progress",
+    started_at: startedAt,
+    ended_at: null,
+    agent_session_id: null,
+  });
+  const finishVisit = (outcome: VisitOutcome): VisitOutcome => {
+    updatePhaseVisit(db, visitId, { status: outcome.kind, ended_at: now() });
+    return outcome;
+  };
+
   // hooks: onPhaseStart, with ctx.shell(). A thrown hook is NOT a run
   // crash — the phase ends failed, the failure is audited as a human_action
   // hook_error event, and the loop parks the run at the hook_failed menu.
@@ -727,7 +762,7 @@ async function driveVisit(
         { action: "hook_error", detail: `phase "${phase.name}" ${reason}` },
         { phase_id: phaseId },
       );
-      return { kind: "hook_failed", reason, corrections: 0 };
+      return finishVisit({ kind: "hook_failed", reason, corrections: 0 });
     }
   }
 
@@ -774,7 +809,9 @@ async function driveVisit(
     const script = state.scripts[phase.name];
     if (!script) {
       // script presence is validated at submit; this guards the direct-API path
-      return { kind: "crash", reason: `no scripted session for phase "${phase.name}"`, corrections: 0 };
+      // (#45: route through finishVisit so the phase_visits row inserted above
+      // reaches a terminal status + ended_at instead of orphaning in_progress)
+      return finishVisit({ kind: "crash", reason: `no scripted session for phase "${phase.name}"`, corrections: 0 });
     }
     // per-visit scripting (R7 fixture seam): byVisit[visit] replaces the
     // default turns for THIS visit — the same ScriptedTurn[] shape, so a
@@ -810,6 +847,8 @@ async function driveVisit(
     started_at: now(),
     ended_at: null,
   });
+  // #45: link the visit to the pi session that runs it
+  updatePhaseVisit(db, visitId, { agent_session_id: agentSessionId });
   insertProcess(db, { id: agentSessionId, pid, kind: "agent", started_at: now() });
   writeAgentMap(state.runDir, phase.name, { pi_session_id: piSessionId, pid, visit, model: phase.agent.model });
   ctxEmit(state, "agent_start", { agent: phase.agent.name, pi_session_id: piSessionId, pid, model: phase.agent.model }, { phase_id: phaseId, agent_session_id: agentSessionId });
@@ -877,6 +916,7 @@ async function driveVisit(
         gates: phase.gates,
         now,
         emit: state.emit,
+        visitId,
       });
       if (stage.kind === "accepted") {
         outcome = { kind: "success", envelope: stage.envelope, raw: stage.raw, corrections };
@@ -927,7 +967,7 @@ async function driveVisit(
   if (driver.stderr.length > 0) {
     writeFileSync(join(state.runDir, "stderr.log"), driver.stderr, { flag: "a" });
   }
-  return outcome;
+  return finishVisit(outcome);
 }
 
 /** phase_end + row finalization; returns a hook error when onPhaseEnd threw. */

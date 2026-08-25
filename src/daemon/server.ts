@@ -1,25 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
-import type { EventRow } from "../core/index.ts";
 import { isFixtureName } from "./pi/harness/fixtures.ts";
 
 import {
   cursorEvents,
-  envelopeCount,
-  eventCount,
   getPhaseByName,
   getRun,
-  listAgentSessions,
   listEnvelopes,
   listGateNamesByIds,
   listGateResults,
-  listPhaseSpend,
   listRuns,
-  phaseStatusCounts,
-  runPhaseExtents,
-  runSpendSplit,
-  sumRunSpend,
-  sumSpendTokenTotals,
 } from "./db.ts";
 import {
   ApiError,
@@ -39,7 +29,7 @@ import {
 } from "./contract.ts";
 import { submitFixture } from "./driver.ts";
 import type { SubmitOptions, SubmittedRun } from "./driver.ts";
-import { readOutputsDir } from "./handoff.ts";
+import { readOutputsDir } from "./workspace/index.ts";
 import {
   effectiveMenu,
   getControl,
@@ -50,7 +40,13 @@ import type { PauseInfo, RunControl } from "./pause-control.ts";
 import type { RunPool } from "./pool.ts";
 import { tailRawFile } from "./rawfile.ts";
 import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "./runner.ts";
-import { buildTimelineView } from "./timeline.ts";
+import {
+  buildRunDetail,
+  buildRunList,
+  buildRunStats,
+  buildSpendBreakdown,
+  buildTimeline,
+} from "../view-models/index.ts";
 
 /**
  * The daemon's local HTTP API — the slice the CLI needs: health,
@@ -147,112 +143,22 @@ export function apiStatus(state: ApiState): DaemonStatus {
 }
 
 /**
- * GET /api/stats — the all-time landing KPI/chart aggregate. Counts,
- * success rate, spend totals, average duration, per-day spend, and blueprint
- * usage are all DERIVED IN JS from two db rollups (no SQL AVG, matching the
- * repo-wide "durations are derived" convention):
- *   - runPhaseExtents: per-run status/blueprint/start + MIN/MAX phase extent
- *   - runSpendSplit: per-run reported-vs-estimated spend, from the spend
- *     EVENTS (phases.spend_usd lags after crash recovery)
- * `queued_count` comes from state.pool.position(r.id) — the SAME in-memory
- * source apiListRuns uses (queued is a pool state, not a DB status).
+ * GET /api/stats — the all-time landing KPI/chart aggregate. A protocol
+ * adapter: it hands the db + pool to the run-stats view-model (the sole owner
+ * of the derivation) and serves the result. See view-models/run-stats.ts.
  */
 export function apiStats(state: ApiState): RunStats {
-  const extents = runPhaseExtents(state.db);
-  const spendByRun = new Map(runSpendSplit(state.db).map((s) => [s.run_id, s]));
-
-  const status_counts: Record<string, number> = {};
-  let successCount = 0;
-  let failedCount = 0;
-  let queued_count = 0;
-  let reported_usd = 0;
-  let estimated_usd = 0;
-  const durations: number[] = [];
-  const dayBuckets = new Map<string, { reported_usd: number; estimated_usd: number }>();
-  const blueprintCounts = new Map<string, number>();
-
-  for (const r of extents) {
-    // status_counts keyed by RAW runs.status; queued is tracked separately
-    status_counts[r.status] = (status_counts[r.status] ?? 0) + 1;
-    if (r.status === "success") successCount += 1;
-    if (r.status === "failed") failedCount += 1;
-    if (state.pool.position(r.id) !== null) queued_count += 1;
-
-    const split = spendByRun.get(r.id);
-    const rep = split?.reported_usd ?? 0;
-    const est = split?.estimated_usd ?? 0;
-    reported_usd += rep;
-    estimated_usd += est;
-
-    // spend_by_day: bucket by the RUN's start date (UTC), not the spend
-    // event ts — the ISO-8601 string is already UTC, so the date is its
-    // first 10 chars
-    const day = r.started_at.slice(0, 10);
-    const bucket = dayBuckets.get(day) ?? { reported_usd: 0, estimated_usd: 0 };
-    bucket.reported_usd += rep;
-    bucket.estimated_usd += est;
-    dayBuckets.set(day, bucket);
-
-    blueprintCounts.set(r.blueprint, (blueprintCounts.get(r.blueprint) ?? 0) + 1);
-
-    // avg duration KPI: TERMINAL runs only, phase-extent with NO `|| now`
-    // (a live run must not pollute the average). A terminal run with no
-    // measurable extent (no phases, or only pending/skipped phases) drops
-    // out — MIN/MAX are null there.
-    if (r.status === "success" || r.status === "failed") {
-      if (r.min_phase_started_at !== null && r.max_phase_ended_at !== null) {
-        durations.push(Date.parse(r.max_phase_ended_at) - Date.parse(r.min_phase_started_at));
-      }
-    }
-  }
-
-  // success_rate: success ÷ (success + failed) only — interrupted is NOT in
-  // the denominator; null when there are zero terminal runs
-  const terminalCount = successCount + failedCount;
-  const success_rate = terminalCount === 0 ? null : successCount / terminalCount;
-  const avg_duration_ms =
-    durations.length === 0 ? null : durations.reduce((a, b) => a + b, 0) / durations.length;
-
-  const spend_by_day = [...dayBuckets.entries()]
-    .map(([day, v]) => ({ day, reported_usd: v.reported_usd, estimated_usd: v.estimated_usd }))
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
-
-  const blueprints = [...blueprintCounts.entries()]
-    .map(([blueprint, runs]) => ({ blueprint, runs }))
-    .sort((a, b) => b.runs - a.runs);
-
-  return {
-    runs_count: extents.length,
-    status_counts,
-    queued_count,
-    success_rate,
-    reported_usd,
-    estimated_usd,
-    avg_duration_ms,
-    spend_by_day,
-    blueprints,
-  };
+  return buildRunStats(state.db, state.pool);
 }
 
+/**
+ * GET /api/runs — the landing-table rows, each with phase counts, phase
+ * extent, and queue position. A protocol adapter: it hands the db + pool to
+ * the run-list view-model (the sole owner of the assembly) and serves the
+ * result. See view-models/run-list.ts.
+ */
 export function apiListRuns(state: ApiState): { runs: RunListItem[] } {
-  // Reuse the runPhaseExtents rollup (the stats endpoint's duration source):
-  // one MIN(started)/MAX(ended) row per run, keyed by id, merged onto each
-  // list item so the run-list duration column derives from the SAME
-  // aggregation instead of a duplicated per-run extent query.
-  const extents = new Map(runPhaseExtents(state.db).map((e) => [e.id, e]));
-  const runs = listRuns(state.db).map((r) => {
-    const extent = extents.get(r.id);
-    return {
-      ...r,
-      phase_counts: phaseStatusCounts(state.db, r.id),
-      // queue position (F2 from the T01b review): 1-based spawn-queue
-      // position for pool-queued runs, null when not queued
-      queue_position: state.pool.position(r.id),
-      min_phase_started_at: extent?.min_phase_started_at ?? null,
-      max_phase_ended_at: extent?.max_phase_ended_at ?? null,
-    };
-  });
-  return { runs };
+  return buildRunList(state.db, state.pool);
 }
 
 export async function apiSubmitRun(state: ApiState, body: Record<string, unknown>): Promise<{
@@ -332,101 +238,31 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
   throw new ApiError(400, "request body must include a fixture name or a blueprint module path");
 }
 
-/** Safety cap on the ?full=1 detail sweep: 20 × 500 = 10k events. */
-const MAX_EVENT_PAGES = 20;
-
-/** Sweep the cursor query from 0 to the tail — a run's full event history
- * in rowid order, MAX_EVENTS_LIMIT per page, capped at `maxPages` pages
- * (default 20 = 10k events — the ?full=1 detail sweep; the timeline's own
- * sweep in db.ts stays uncapped). Reproduces the old UI collectEvents
- * loop exactly: a short page is the tail (cursor = its last rowid, or the
- * requested cursor when empty); a full final page still advances. Returns
- * { events, cursor } — the wire gets events + next_cursor. */
-function sweepEvents(
-  db: Database,
-  runId: string,
-  maxPages = MAX_EVENT_PAGES,
-): { events: EventRow[]; cursor: number } {
-  const events: EventRow[] = [];
-  let cursor = 0;
-  for (let page = 0; page < maxPages; page++) {
-    const res = cursorEvents(db, runId, cursor, MAX_EVENTS_LIMIT);
-    events.push(...res);
-    if (res.length < MAX_EVENTS_LIMIT) {
-      if (res.length > 0) cursor = res[res.length - 1]!.id;
-      break;
-    }
-    cursor = res[res.length - 1]!.id;
-  }
-  return { events, cursor };
-}
-
 export function apiRunDetail(state: ApiState, runId: string, query?: URLSearchParams): RunDetail {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
-  // spend splits reported vs estimated — the estimated half comes
-  // from the spend events' flag, so show can mark it as such
-  const phaseSpend = listPhaseSpend(state.db, runId);
-  const detail: RunDetail = {
-    run,
-    spend_usd: sumRunSpend(state.db, runId),
-    estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
-    // envelope count (accepted/attempt rows for the run)
-    envelope_count: envelopeCount(state.db, runId),
-    phases: phaseSpend,
-    sessions: listAgentSessions(state.db, runId),
-    event_count: eventCount(state.db, runId),
-  };
-  // ?full=1: the initial SSR sweep rides the detail call — the UI reads
-  // detail.events/detail.next_cursor instead of re-implementing the sweep
-  // (the flagless shape is unchanged; CLI callers never pass ?full=1)
-  if (query?.get("full") === "1") {
-    const sweep = sweepEvents(state.db, runId);
-    detail.events = sweep.events;
-    detail.next_cursor = sweep.cursor;
-  }
-  return detail;
+  // ?full=1 (the UI's initial SSR load) rides the event sweep on the detail
+  // call — the flag is a query-param parse; the assembly lives in the model
+  return buildRunDetail(state.db, run, { full: query?.get("full") === "1" });
 }
 
 // per-phase spend breakdown (+ estimated markers + exact token totals).
 export function apiSpend(state: ApiState, runId: string): SpendBreakdown {
-  if (!getRun(state.db, runId)) throw new ApiError(404, `run ${runId} not found`);
-  const phaseSpend = listPhaseSpend(state.db, runId);
-  const tokenTotals = sumSpendTokenTotals(state.db, runId);
-  return {
-    run_id: runId,
-    spend_usd: sumRunSpend(state.db, runId),
-    estimated_spend_usd: phaseSpend.reduce((a, r) => a + r.estimated_spend_usd, 0),
-    // the wire shape is exactly these keys — the field pick stays here
-    // (listPhaseSpend returns the full row; the contract pins the shape).
-    // Token totals come from the SUM map — SQL SUM is exact, so there is
-    // no sweep cap and no truncated flag on the wire
-    phases: phaseSpend.map(({ id, name, status, spend_usd, estimated_spend_usd }) => {
-      const tokens = tokenTotals.get(id);
-      return {
-        id,
-        name,
-        status,
-        spend_usd,
-        estimated_spend_usd,
-        tokens_in: tokens?.tokens_in ?? 0,
-        tokens_out: tokens?.tokens_out ?? 0,
-        cache_read: tokens?.cache_read ?? 0,
-        cache_write: tokens?.cache_write ?? 0,
-      };
-    }),
-  };
+  const run = getRun(state.db, runId);
+  if (!run) throw new ApiError(404, `run ${runId} not found`);
+  return buildSpendBreakdown(state.db, run);
 }
 
 /**
  * GET /runs/:id/timeline (R3) — per-visit segments folded from the run's
  * phase_start/phase_end events, in blueprint order. 404 when the run is
- * missing (apiSpend's semantics). Returns the TimelineView contract.
+ * missing (apiSpend's semantics). Returns the TimelineView contract; the
+ * model's buildTimeline calls buildTimelineView (kept in daemon/timeline.ts).
  */
 export function apiTimeline(state: ApiState, runId: string): TimelineView {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
-  return buildTimelineView(state.db, state.dataDir, run);
+  return buildTimeline(state.db, state.dataDir, run);
 }
 
 /** Resolve a run's phase by name; 404 when the run or the phase does not

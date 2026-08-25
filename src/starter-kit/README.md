@@ -26,13 +26,13 @@ test/                       STARTER tests — replace them with yours
 | --- | --- | --- | --- | --- |
 | `prompt` | `prompt.ts` | planner (edit to pick who) | — | one agent, one prompt; `NAME` picks who |
 | `scout` | `scout.ts` | scout | `envelopeShape` | read-only recon, nothing changes |
-| `plan` | `plan.ts` | planner | `envelopeShape` | the spec before any code |
-| `build` | `build.ts` | builder | `envelopeShape` | the plan already exists |
-| `plan-build` | `plan_build.ts` | planner → builder → ship | `envelopeShape`, `matchesPlan`; ship `require_approval` | small, well-understood work |
+| `plan` | `plan.ts` | planner | — | the spec before any code |
+| `build` | `build.ts` | builder | — | the plan already exists |
+| `plan-build` | `plan_build.ts` | planner → builder → ship | `matchesPlan`; ship `require_approval` | small, well-understood work |
 | `build-test` | `build_test.ts` | builder ⇄ builder | `testsPass`, `lintClean`; bounded fix loop | a suite to satisfy |
-| `build-review` | `build_review.ts` | builder ⇄ reviewer | `envelopeShape`, `reviewApproved`; bounded revise loop | "is this what was asked for" matters more than "does it run" |
-| `plan-build-test` | `plan_build_test.ts` | plan → build → review → ship | `envelopeShape`, `matchesPlan`, `testsPass`, `lintClean`, `reviewApproved`; ship `require_approval` | the standard chain |
-| `document` | `document.ts` | documenter | `envelopeShape`, `filesExist` | write up what just shipped |
+| `build-review` | `build_review.ts` | builder ⇄ reviewer | `reviewApproved`; bounded revise loop | "is this what was asked for" matters more than "does it run" |
+| `plan-build-test` | `plan_build_test.ts` | plan → build → review → ship | `matchesPlan`, `testsPass`, `lintClean`, `reviewApproved`; ship `require_approval` | the standard chain |
+| `document` | `document.ts` | documenter | `filesExist` | write up what just shipped |
 | `everything` | `everything.ts` | plan → build → review → ship | all of the above; plan AND ship `require_approval`; heavier budgets | the work is real and its shape is not obvious |
 
 Skill **names** use hyphens (`plan-build` — the Agent Skills standard allows only

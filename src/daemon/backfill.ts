@@ -4,7 +4,7 @@ import type { Database } from "bun:sqlite";
 import { runDirFor } from "../core/index.ts";
 
 import { insertEvent, listAgentSessions, listPhases, listRuns } from "./db.ts";
-import { readAgentMap, sessionDirNameForCwd } from "./handoff.ts";
+import { readAgentMap, sessionDirNameForCwd } from "./workspace/index.ts";
 import { RawOutputFile } from "./rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
