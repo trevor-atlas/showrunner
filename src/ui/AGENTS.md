@@ -13,9 +13,10 @@ package).
 bun install
 bun run typecheck   # tsc --noEmit
 bun test            # bun test (daemon runs in-process against scratch dirs)
+bun src/cli/index.ts dev   # `showrunner dev` — the first-class UI dev loop (remix HMR, NODE_ENV=development)
 bun server.ts       # full daemon + dashboard in-process, port 44100 (SHOWRUNNER_PORT overrides)
-bun --watch server.ts   # dev reload
-bun hmr             # HMR without restarts (hmr.ts spawns server.ts as its HMR child)
+bun --watch server.ts   # dev reload (restarts on every edit → interrupts in-flight runs)
+bun hmr             # what `showrunner dev` runs: hot-swaps most edits without restart (hmr.ts spawns server.ts as its HMR child)
 ```
 
 Everything runs under bun — `server.ts` imports `startDaemon` from the daemon
