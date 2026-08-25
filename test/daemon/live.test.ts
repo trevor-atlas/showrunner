@@ -1,19 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { insertEvent, insertRun, openDb, setEventInsertHook } from "../../src/server/repository/db.ts";
+import { insertEvent, insertRun, onEventWritten, openDb } from "../../src/server/repository/db.ts";
 import { emitRunChange, subscribeAll, subscribeRun } from "../../src/server/transport/change-bus.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
- * The change bus (src/server/transport/change-bus.ts) + the db.ts insert-hook seam. The bus
- * carries no data — only wake-ups — so the tests assert wake-up counts and
- * fan-out, never payloads. The hook is reset in teardown so no test leaks a
- * live hook into the shared db.test suite.
+ * The change bus (src/server/transport/change-bus.ts) + the db.ts event-written
+ * emitter seam. The bus carries no data — only wake-ups — so the tests assert
+ * wake-up counts and fan-out, never payloads. Each emitter subscription is
+ * unsubscribed in teardown so no test leaks a live subscriber into the shared
+ * db.test suite.
  */
 
+const emitterCleanups: Array<() => void> = [];
 afterEach(() => {
-  setEventInsertHook(null);
+  while (emitterCleanups.length > 0) emitterCleanups.pop()!();
 });
 
 describe("change bus", () => {
@@ -76,14 +78,14 @@ describe("change bus", () => {
   });
 });
 
-describe("db.ts insert-hook seam", () => {
-  test("no hook installed → insertEvent does not signal (default behavior unchanged)", () => {
+describe("db.ts event-written emitter seam", () => {
+  test("no emitRunChange wired → insertEvent does not reach the change bus (default unchanged)", () => {
     const dir = tmpDataDir("live-nohook");
     try {
       const db = openDb(dbPathFor(dir));
       insertRun(db, { id: "r1", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
       let hits = 0;
-      subscribeAll(() => (hits += 1)); // subscriber exists but no hook is wired
+      subscribeAll(() => (hits += 1)); // bus subscriber exists but nothing wires the emitter to it
       const id = insertEvent(db, {
         run_id: "r1",
         phase_id: null,
@@ -93,19 +95,19 @@ describe("db.ts insert-hook seam", () => {
         data: { from: "queued", to: "running" },
       });
       expect(id).toBeGreaterThan(0); // the insert still works
-      expect(hits).toBe(0); // ...but nothing signalled
+      expect(hits).toBe(0); // ...but nothing reached the change bus
     } finally {
       cleanupDir(dir);
     }
   });
 
-  test("hook installed → insertEvent fires it with the row's run_id after the write", () => {
+  test("onEventWritten → insertEvent fires it with the row's run_id after the write", () => {
     const dir = tmpDataDir("live-hook");
     try {
       const db = openDb(dbPathFor(dir));
       insertRun(db, { id: "r2", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
       const seen: string[] = [];
-      setEventInsertHook((runId) => seen.push(runId));
+      emitterCleanups.push(onEventWritten((runId) => seen.push(runId)));
       insertEvent(db, {
         run_id: "r2",
         phase_id: null,
@@ -120,12 +122,12 @@ describe("db.ts insert-hook seam", () => {
     }
   });
 
-  test("emitRunChange wired as the hook reaches a run subscriber end to end", () => {
+  test("emitRunChange wired via onEventWritten reaches a run subscriber end to end", () => {
     const dir = tmpDataDir("live-wired");
     try {
       const db = openDb(dbPathFor(dir));
       insertRun(db, { id: "r3", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
-      setEventInsertHook(emitRunChange);
+      emitterCleanups.push(onEventWritten(emitRunChange));
       let hits = 0;
       subscribeRun("r3", () => (hits += 1));
       insertEvent(db, {

@@ -581,15 +581,21 @@ export interface NewEvent {
   data: unknown;
 }
 
-/** The single, replaceable post-insert hook (default null). web.ts installs
- * the live bus's `emitRunChange` here; with no hook installed `insertEvent`
- * behaves exactly as before (no behavior change). See src/daemon/live.ts for
- * the chokepoint invariant. */
-type EventInsertHook = (runId: string) => void;
-let eventInsertHook: EventInsertHook | null = null;
+/** The repository-owned "an event row was written" emitter. `insertEvent` (the
+ * SINGLE events-write chokepoint) fires every subscriber with the row's run_id
+ * AFTER a successful insert. Transport subscribes the live bus's `emitRunChange`
+ * here at server creation (src/server/transport/http.ts); with no subscriber
+ * `insertEvent` behaves exactly as before. A write path that bypasses
+ * `insertEvent` will SILENTLY NOT signal — keep the chokepoint intact. */
+type EventWrittenListener = (runId: string) => void;
+const eventWrittenListeners = new Set<EventWrittenListener>();
 
-export function setEventInsertHook(fn: EventInsertHook | null): void {
-  eventInsertHook = fn;
+/** Subscribe to event-written signals. Returns an idempotent unsubscribe. */
+export function onEventWritten(cb: EventWrittenListener): () => void {
+  eventWrittenListeners.add(cb);
+  return () => {
+    eventWrittenListeners.delete(cb);
+  };
 }
 
 /**
@@ -603,7 +609,9 @@ export function insertEvent(db: Database, e: NewEvent): number {
     db,
     "INSERT INTO events (run_id, phase_id, agent_session_id, type, ts, data) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(e.run_id, e.phase_id, e.agent_session_id, e.type, e.ts, serializeEventData(validated));
-  if (eventInsertHook !== null) eventInsertHook(e.run_id);
+  // fire the event-written emitter AFTER a successful insert (the snapshot lets
+  // a listener that unsubscribes mid-emit be safe). Zero subscribers → no-op.
+  for (const cb of [...eventWrittenListeners]) cb(e.run_id);
   return Number(res.lastInsertRowid);
 }
 

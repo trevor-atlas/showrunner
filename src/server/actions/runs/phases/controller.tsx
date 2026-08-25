@@ -2,10 +2,8 @@ import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import { controlOverrideGate, controlRestartFresh, isApiError } from "../../../lib/daemon.ts";
-import { resolveDataDir } from "../../../../core/index.ts";
-import { requireWebState } from "../../../transport/state.ts";
-import { buildPhaseRecordModel, type PhaseRecordModel } from "../../../services/phase-record.ts";
+import { controlOverrideGate, controlRestartFresh, getPhaseRecord, isApiError } from "../../../lib/daemon.ts";
+import type { PhaseRecordModel } from "../../../services/phase-record.ts";
 import { routes } from "../../../routes.ts";
 import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
 import { renderRunDetail } from "../controller.tsx";
@@ -134,7 +132,7 @@ export default createController(routes.runs.phases, {
  * and the snapshot are scoped to ONE data dir, never spliced across two.
  */
 function loadPhaseRecord(runId: string, phaseName: string): PhaseRecordModel | null {
-  return buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, phaseName);
+  return getPhaseRecord(runId, phaseName);
 }
 
 /** The shared 404 JSON body for the data proxies (ghost run or phase). */

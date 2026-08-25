@@ -5,8 +5,8 @@
  * the browser; the browser then refetches from its cursor.
  *
  * INVARIANT: `insertEvent` (src/daemon/db.ts) is the SINGLE events-write
- * chokepoint — the only place that writes an events row. web.ts installs
- * `emitRunChange` as db.ts's `setEventInsertHook`, so every write path (the
+ * chokepoint — the only place that writes an events row. transport subscribes
+ * `emitRunChange` to db.ts's `onEventWritten` emitter, so every write path (the
  * run loop, the controls, backfill, the queue's EventSink) signals through
  * here. A future write path that bypasses `insertEvent` will SILENTLY NOT
  * signal — keep the chokepoint intact.

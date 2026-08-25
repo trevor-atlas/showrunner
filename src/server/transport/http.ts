@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { createRequestListener } from "remix/node-fetch-server";
 
-import { setEventInsertHook } from "../repository/db.ts";
+import { onEventWritten } from "../repository/db.ts";
 import { emitRunChange } from "./change-bus.ts";
 import { handleApiRequest, type ApiState } from "../services/api.ts";
 import { setWebState } from "./state.ts";
@@ -50,10 +50,6 @@ export function createWebServer(state: ApiState): Server {
   // register the daemon state for in-process consumers (the UI actions call
   // the api core against it — no socket round trip, Phase 2 / T4)
   setWebState(state);
-  // wire the events-write chokepoint to the live change bus: every insertEvent
-  // now fires a per-run wake-up the SSE proxies push to the browser. With zero
-  // subscribers this is a functional no-op (the existing suite proves it).
-  setEventInsertHook(emitRunChange);
   const listener = createRequestListener(async (request) => {
     if (isApiPath(request.url)) {
       return handleApiRequest(state, request);
@@ -66,5 +62,12 @@ export function createWebServer(state: ApiState): Server {
       return new Response("Internal Server Error", { status: 500 });
     }
   });
-  return createServer(listener);
+  const server = createServer(listener);
+  // wire the repository's events-write chokepoint to the live change bus: every
+  // insertEvent fires a per-run wake-up the SSE proxies push to the browser.
+  // With zero subscribers this is a functional no-op. Disposed when the server
+  // tears down so a torn-down server leaves no live subscriber behind.
+  const unsubscribe = onEventWritten(emitRunChange);
+  server.on("close", unsubscribe);
+  return server;
 }

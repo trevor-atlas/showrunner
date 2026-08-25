@@ -3,9 +3,6 @@ import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
-import { resolveDataDir } from "../../../core/index.ts";
-import { requireWebState } from "../../transport/state.ts";
-import { buildPhaseRecordModel } from "../../services/phase-record.ts";
 
 import {
   MAX_EVENTS_LIMIT,
@@ -15,6 +12,7 @@ import {
   controlSteer,
   getPhaseEnvelopes,
   getPhaseGates,
+  getPhaseRecord,
   getPause,
   getRaw,
   getRunDetail,
@@ -271,7 +269,7 @@ export async function renderRunDetail(
     ]);
     initialEnvelopes = env.envelopes;
     initialGates = gates.gates;
-    const record = buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, selection);
+    const record = getPhaseRecord(runId, selection);
     if (record !== null) {
       initialSnapshot = record.snapshot;
       initialInputs = record.inputs;

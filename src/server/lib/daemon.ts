@@ -34,7 +34,9 @@ import {
   apiTimeline,
 } from "../services/api.ts";
 import { ApiError } from "../contract.ts";
+import { resolveDataDir } from "../../core/index.ts";
 import { requireWebState } from "../transport/state.ts";
+import { buildPhaseRecordModel, type PhaseRecordModel } from "../services/phase-record.ts";
 import type {
   ControlResult,
   EventsPage,
@@ -159,6 +161,14 @@ export async function controlOverrideGate(
 /** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */
 export async function controlRestartFresh(runId: string, phase: string): Promise<ControlResult> {
   return apiRestartFresh(requireWebState(), runId, phase, {});
+}
+
+/** The assembled phase record (snapshot/inputs/outputs/spend + envelopes/gates/
+ * visits) for one phase, or null for a ghost run/phase — in-process against the
+ * daemon's db + data dir. The read of the state holder lives HERE (behind lib/)
+ * so the UI controllers never reach the holder directly (T5). */
+export function getPhaseRecord(runId: string, phase: string): PhaseRecordModel | null {
+  return buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, phase);
 }
 
 /**
