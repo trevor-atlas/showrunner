@@ -4,7 +4,7 @@ import { parseSafe } from "remix/data-schema";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
 import { resolveDataDir } from "../../../core/index.ts";
-import { requireWebState } from "../../../daemon/web-state.ts";
+import { requireWebState } from "../../transport/state.ts";
 import { buildPhaseRecordModel } from "../../services/phase-record.ts";
 
 import {
@@ -28,7 +28,7 @@ import type {
   PhaseSnapshotData,
   PhaseSpendData,
 } from "../../lib/phase-data.ts";
-import { subscribeRun } from "../../../daemon/live.ts";
+import { subscribeRun } from "../../transport/change-bus.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../../lib/live.ts";
 import { routes } from "../../routes.ts";
 import type { ControlError } from "../../ui/pause-menu.tsx";

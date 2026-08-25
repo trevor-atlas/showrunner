@@ -36,10 +36,11 @@ import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../../src/core/index.ts";
 
 import { freePort } from "../helpers.ts";
-import { daemonEntryPath } from "../../../src/daemon/daemon.ts";
-import { DaemonClient } from "../../../src/daemon/client.ts";
-import type { RunDetail } from "../../../src/daemon/client.ts";
-import { backfillMissedEvents, openDb } from "../../../src/daemon/index.ts";
+import { daemonEntryPath } from "../../../src/server/lifecycle.ts";
+import { DaemonClient } from "../../../src/server/transport/client.ts";
+import type { RunDetail } from "../../../src/server/transport/client.ts";
+import { backfillMissedEvents } from "../../../src/server/engine/backfill.ts";
+import { openDb } from "../../../src/server/repository/db.ts";
 
 const SKIP = `skipped: set SHOWRUNNER_SMOKE=1 to run the real-pi smoke (it costs a little real spend)`;
 

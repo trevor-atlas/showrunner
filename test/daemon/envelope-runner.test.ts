@@ -8,19 +8,10 @@ import { EnvelopeBase } from "../../src/core/index.ts";
 import type { Envelope, EventType, Gate } from "../../src/core/index.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  cursorEvents,
-  EventSink,
-  getEnvelope,
-  insertPhase,
-  insertRun,
-  listEnvelopes,
-  listGateResults,
-  openDb,
-  overrideGateResult,
-  runEnvelopeStage,
-} from "../../src/daemon/index.ts";
-import type { EnvelopeStageOptions } from "../../src/daemon/index.ts";
+import { overrideGateResult, runEnvelopeStage } from "../../src/server/engine/envelope-runner.ts";
+import { EventSink } from "../../src/server/engine/queue.ts";
+import { cursorEvents, getEnvelope, insertPhase, insertRun, listEnvelopes, listGateResults, openDb } from "../../src/server/repository/db.ts";
+import { type EnvelopeStageOptions } from "../../src/server/engine/envelope-runner.ts";
 
 /**
  * The envelope/gate seam (T03) exercised directly — the loop-level behavior is

@@ -4,8 +4,8 @@ import { spawn } from "node:child_process";
 // `file:` dep's own `file:` deps, so the cli does not declare the daemon as a
 // package dependency). The daemon stays a separate package with its own
 // dependency on core.
-import { daemonEntryPath } from "../daemon/daemon.ts";
-import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
+import { daemonEntryPath } from "../server/lifecycle.ts";
+import { DaemonClient, isDaemonDown } from "../server/transport/client.ts";
 
 /**
  * Daemon lifecycle for the CLI: if no daemon is listening on HTTP, spawn one

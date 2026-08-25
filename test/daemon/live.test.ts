@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { dbPathFor } from "../../src/core/index.ts";
 import { insertEvent, insertRun, openDb, setEventInsertHook } from "../../src/server/repository/db.ts";
-import { emitRunChange, subscribeAll, subscribeRun } from "../../src/daemon/live.ts";
+import { emitRunChange, subscribeAll, subscribeRun } from "../../src/server/transport/change-bus.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**
- * The change bus (src/daemon/live.ts) + the db.ts insert-hook seam. The bus
+ * The change bus (src/server/transport/change-bus.ts) + the db.ts insert-hook seam. The bus
  * carries no data — only wake-ups — so the tests assert wake-up counts and
  * fan-out, never payloads. The hook is reset in teardown so no test leaks a
  * live hook into the shared db.test suite.

@@ -9,16 +9,12 @@ import type { IncomingMessage } from "node:http";
 import { runDirFor } from "../../src/core/index.ts";
 
 import { CURSOR_SQL } from "../../src/server/repository/db.ts";
-import {
-  DaemonClient,
-  insertPhase,
-  insertRun,
-  loadBlueprintModule,
-  openDb,
-  snapshotBlueprint,
-  startDaemon,
-} from "../../src/daemon/index.ts";
-import type { DaemonHandle, SubmitRunBody } from "../../src/daemon/index.ts";
+import { loadBlueprintModule, snapshotBlueprint } from "../../src/server/engine/runner.ts";
+import { startDaemon } from "../../src/server/lifecycle.ts";
+import { insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
+import { type SubmitRunBody } from "../../src/server/contract.ts";
+import { type DaemonHandle } from "../../src/server/lifecycle.ts";
 import type {
   ControlResult,
   EventsPage,
@@ -32,7 +28,7 @@ import type {
   SubmitRunResult,
   TimelineView,
 } from "../../src/server/contract.ts";
-import { ApiError as ClientApiError } from "../../src/daemon/client.ts";
+import { ApiError as ClientApiError } from "../../src/server/transport/client.ts";
 import { ApiError as ServerApiError, apiTimeline } from "../../src/server/services/api.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 

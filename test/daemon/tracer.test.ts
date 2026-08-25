@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 
-import { DEFAULT_SNIPPET_CAP, Tracer, extractUsage } from "../../src/daemon/index.ts";
-import type { FoldedEvent } from "../../src/daemon/index.ts";
+import { DEFAULT_SNIPPET_CAP, Tracer, extractUsage } from "../../src/server/engine/tracer.ts";
+import { type FoldedEvent } from "../../src/server/engine/tracer.ts";
 import { messageEnd, messageUpdate, toolEnd, toolStart, toolUpdate } from "./helpers.ts";
 
 function runStream(lines: string[], opts: { exitCode?: number; now?: () => number; snippetCap?: number } = {}) {

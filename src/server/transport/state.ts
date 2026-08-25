@@ -1,4 +1,4 @@
-import { ApiError, type ApiState } from "../server/services/api.ts";
+import { ApiError, type ApiState } from "../services/api.ts";
 
 /**
  * The merged web server's in-process state holder (Phase 2 / T4): the daemon

@@ -1,6 +1,6 @@
 import { createController } from "remix/router";
 
-import { subscribeAll } from "../../daemon/live.ts";
+import { subscribeAll } from "../transport/change-bus.ts";
 import { assetServer } from "../assets.ts";
 import { getStats, listRuns } from "../lib/daemon.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../lib/live.ts";

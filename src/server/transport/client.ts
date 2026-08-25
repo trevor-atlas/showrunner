@@ -18,7 +18,7 @@ import type { IncomingMessage } from "node:http";
  */
 
 // The one error class — shared with the server core and the UI.
-import { ApiError } from "../server/contract.ts";
+import { ApiError } from "../contract.ts";
 // The one wire contract — imported locally (the class body uses them)
 // and re-exported so consumers (the CLI, the UI) keep their imports.
 import type {
@@ -44,7 +44,7 @@ import type {
   TimelinePhase,
   TimelineSegment,
   TimelineView,
-} from "../server/contract.ts";
+} from "../contract.ts";
 
 export { ApiError };
 export type {

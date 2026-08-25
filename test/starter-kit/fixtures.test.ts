@@ -2,7 +2,8 @@ process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never 
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { ScriptMap } from "../../src/server/engine/runner.ts";
-import { cursorEvents, listPhases, openDb, resolveScriptedSessions, runBlueprint } from "../../src/daemon/index.ts";
+import { resolveScriptedSessions, runBlueprint } from "../../src/server/engine/runner.ts";
+import { cursorEvents, listPhases, openDb } from "../../src/server/repository/db.ts";
 
 import promptBlueprint from "../../src/starter-kit/blueprints/prompt.ts";
 import scoutBlueprint from "../../src/starter-kit/blueprints/scout.ts";

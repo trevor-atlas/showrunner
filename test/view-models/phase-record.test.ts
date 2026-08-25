@@ -29,7 +29,7 @@ import {
   insertRun,
   openDb,
 } from "../../src/server/repository/db.ts";
-import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/daemon/index.ts";
+import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/server/services/api.ts";
 import type { ApiState } from "../../src/server/services/api.ts";
 import { inputsDirFor, outputsDirFor } from "../../src/server/repository/workspace/index.ts";
 import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";

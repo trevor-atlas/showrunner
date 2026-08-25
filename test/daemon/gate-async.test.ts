@@ -10,7 +10,7 @@ import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import { daemonEntryPath } from "../../src/daemon/index.ts";
+import { daemonEntryPath } from "../../src/server/lifecycle.ts";
 
 /**
  * The capstone FINDING 1 regression seam ("Backpressure" at the HTTP

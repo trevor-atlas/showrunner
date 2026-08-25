@@ -30,9 +30,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import type { TimelineView } from "../../src/daemon/client.ts";
-import { DaemonClient } from "../../src/daemon/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
+import type { TimelineView } from "../../src/server/transport/client.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
 import { getRun, openDb } from "../../src/server/repository/db.ts";
 import { routes } from "../../src/server/routes.ts";
 import { CHANGE_FRAME } from "../../src/server/lib/live.ts";

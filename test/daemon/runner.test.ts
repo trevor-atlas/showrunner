@@ -9,34 +9,13 @@ import { EnvelopeBase, defineAgent, defineBlueprint, runDirFor } from "../../src
 import type { Blueprint, Envelope, Gate } from "../../src/core/index.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  composeContinuePrompt,
-  composePrompt,
-  cursorEvents,
-  driveResumedRun,
-  EventSink,
-  getControl,
-  getRun,
-  isEnvelopeApproved,
-  listAgentSessions,
-  listEnvelopes,
-  listGateOverrides,
-  listGateResults,
-  listPhases,
-  listRuns,
-  openDb,
-  overrideGateResult,
-  prepareBlueprintRun,
-  prepareResume,
-  recordAcceptedEnvelope,
-  recordEnvelopeAcceptance,
-  runBlueprint,
-  snapshotBlueprint,
-  sumRunSpend,
-  updatePhase,
-  updateRun,
-} from "../../src/daemon/index.ts";
-import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
+import { isEnvelopeApproved, overrideGateResult, recordEnvelopeAcceptance } from "../../src/server/engine/envelope-runner.ts";
+import { getControl } from "../../src/server/engine/pause-control.ts";
+import { EventSink } from "../../src/server/engine/queue.ts";
+import { composeContinuePrompt, composePrompt, driveResumedRun, prepareBlueprintRun, prepareResume, runBlueprint, snapshotBlueprint } from "../../src/server/engine/runner.ts";
+import { cursorEvents, getRun, listAgentSessions, listEnvelopes, listGateOverrides, listGateResults, listPhases, listRuns, openDb, sumRunSpend, updatePhase, updateRun } from "../../src/server/repository/db.ts";
+import { recordAcceptedEnvelope } from "../../src/server/repository/workspace/index.ts";
+import { type ScriptMap, type ScriptedTurn } from "../../src/server/engine/runner.ts";
 import { listPhaseVisits } from "../../src/server/repository/db.ts";
 
 /**

@@ -9,21 +9,11 @@ import { EnvelopeBase, defineAgent, defineBlueprint, runDirFor } from "../../src
 import type { Blueprint, Envelope, Gate } from "../../src/core/index.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  cursorEvents,
-  drivePreparedRun,
-  getControl,
-  getRun,
-  isPidAlive,
-  listAgentSessions,
-  listProcesses,
-  openDb,
-  prepareBlueprintRun,
-  pricesPathFor,
-  reconcileInterruptedRuns,
-  runBlueprint,
-} from "../../src/daemon/index.ts";
-import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
+import { getControl, isPidAlive, reconcileInterruptedRuns } from "../../src/server/engine/pause-control.ts";
+import { pricesPathFor } from "../../src/server/engine/roster.ts";
+import { drivePreparedRun, prepareBlueprintRun, runBlueprint } from "../../src/server/engine/runner.ts";
+import { cursorEvents, getRun, listAgentSessions, listProcesses, openDb } from "../../src/server/repository/db.ts";
+import { type ScriptMap, type ScriptedTurn } from "../../src/server/engine/runner.ts";
 
 /**
  * The edge-case fixture suite (T13 capstone) — the implementation-time

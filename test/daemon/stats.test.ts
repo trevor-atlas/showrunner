@@ -12,10 +12,10 @@ import { test, expect } from "bun:test";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import { dbPathFor } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/daemon/client.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
-import { startDaemon } from "../../src/daemon/index.ts";
-import type { DaemonHandle } from "../../src/daemon/index.ts";
+import { startDaemon } from "../../src/server/lifecycle.ts";
+import { type DaemonHandle } from "../../src/server/lifecycle.ts";
 import type { Database } from "bun:sqlite";
 
 const APPROVAL_BLUEPRINT = new URL("./fixtures/approval-blueprint.ts", import.meta.url).pathname;

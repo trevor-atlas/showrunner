@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BlueprintRun, RunResult } from "../../src/server/engine/runner.ts";
-import { getControl } from "../../src/daemon/index.ts";
+import { getControl } from "../../src/server/engine/pause-control.ts";
 
 /**
  * Scratch helpers for the starter-kit tests (fixtures-vs-smokes

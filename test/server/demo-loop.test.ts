@@ -32,17 +32,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { dbPathFor, type EventType } from "../../src/core/index.ts";
-import type { TimelineView } from "../../src/daemon/client.ts";
-import { DaemonClient } from "../../src/daemon/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
+import type { TimelineView } from "../../src/server/transport/client.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
 import { getRun, insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
-import {
-  getControl,
-  loadBlueprintModule,
-  resolveScriptedSessions,
-  runBlueprint,
-} from "../../src/daemon/index.ts";
-import type { ScriptedTurn } from "../../src/daemon/index.ts";
+import { getControl } from "../../src/server/engine/pause-control.ts";
+import { loadBlueprintModule, resolveScriptedSessions, runBlueprint } from "../../src/server/engine/runner.ts";
+import { type ScriptedTurn } from "../../src/server/engine/runner.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 import { computeTimelineLayout } from "../../src/server/ui/public/timeline-model.ts";

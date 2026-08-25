@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 
-import { RunPool } from "../../src/daemon/index.ts";
+import { RunPool } from "../../src/server/engine/pool.ts";
 
 test("the pool runs at most `slots` runs concurrently and queues the rest", async () => {
   const pool = new RunPool(2);

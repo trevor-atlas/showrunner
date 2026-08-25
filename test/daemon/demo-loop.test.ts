@@ -24,23 +24,13 @@ import {
   cleanupDir,
   tmpDataDir,
 } from "./helpers.ts";
-import {
-  RunPool,
-  SCHEMA_VERSION,
-  cursorEvents,
-  getControl,
-  getRun,
-  handleApiRequest,
-  insertEvent,
-  insertRun,
-  listEnvelopes,
-  listPhases,
-  loadBlueprintModule,
-  openDb,
-  resolveScriptedSessions,
-  runBlueprint,
-} from "../../src/daemon/index.ts";
-import type { PhaseRow, ScriptedTurn } from "../../src/daemon/index.ts";
+import { getControl } from "../../src/server/engine/pause-control.ts";
+import { RunPool } from "../../src/server/engine/pool.ts";
+import { loadBlueprintModule, resolveScriptedSessions, runBlueprint } from "../../src/server/engine/runner.ts";
+import { SCHEMA_VERSION, cursorEvents, getRun, insertEvent, insertRun, listEnvelopes, listPhases, openDb } from "../../src/server/repository/db.ts";
+import { handleApiRequest } from "../../src/server/services/api.ts";
+import { type ScriptedTurn } from "../../src/server/engine/runner.ts";
+import { type PhaseRow } from "../../src/server/repository/db.ts";
 
 /**
  * The demo-loop fixture: the blueprint module + its scripted sessions

@@ -6,18 +6,10 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { ToolCallData } from "../../src/core/index.ts";
-import {
-  DEFAULT_RPC_TIMEOUT_MS,
-  FIRST_PROMPT_ACK_TIMEOUT_MS,
-  FakeSessionDriver,
-  PiSession,
-  SESSION_ID_RE,
-  Tracer,
-  findPiBinary,
-  sessionDriverKind,
-  sessionIdFor,
-} from "../../src/daemon/index.ts";
-import type { FoldedEvent } from "../../src/daemon/index.ts";
+import { sessionIdFor } from "../../src/server/engine/driver.ts";
+import { DEFAULT_RPC_TIMEOUT_MS, FIRST_PROMPT_ACK_TIMEOUT_MS, FakeSessionDriver, PiSession, SESSION_ID_RE, findPiBinary, sessionDriverKind } from "../../src/server/engine/pi/index.ts";
+import { Tracer } from "../../src/server/engine/tracer.ts";
+import { type FoldedEvent } from "../../src/server/engine/tracer.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**

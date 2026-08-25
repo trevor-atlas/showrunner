@@ -34,7 +34,7 @@ import {
   apiTimeline,
 } from "../services/api.ts";
 import { ApiError } from "../contract.ts";
-import { requireWebState } from "../../daemon/web-state.ts";
+import { requireWebState } from "../transport/state.ts";
 import type {
   ControlResult,
   EventsPage,

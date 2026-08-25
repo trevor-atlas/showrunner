@@ -27,8 +27,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, type EventType } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/daemon/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
 import {
   insertAgentSession,
   insertEnvelope,

@@ -18,20 +18,11 @@ import { EnvelopeBase, defineAgent, defineBlueprint, runDirFor } from "../../src
 import type { Envelope, Gate } from "../../src/core/index.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  composePrompt,
-  inputsDirFor,
-  materializeHandoff,
-  openDb,
-  outputsDirFor,
-  readAgentMap,
-  resolveContext,
-  runBlueprint,
-  sessionDirNameForCwd,
-  sessionIdFor,
-  submitBlueprintRun,
-} from "../../src/daemon/index.ts";
-import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
+import { sessionIdFor } from "../../src/server/engine/driver.ts";
+import { composePrompt, runBlueprint, submitBlueprintRun } from "../../src/server/engine/runner.ts";
+import { openDb } from "../../src/server/repository/db.ts";
+import { inputsDirFor, materializeHandoff, outputsDirFor, readAgentMap, resolveContext, sessionDirNameForCwd } from "../../src/server/repository/workspace/index.ts";
+import { type ScriptMap, type ScriptedTurn } from "../../src/server/engine/runner.ts";
 import handoffFixture from "./fixtures/handoff/handoff-blueprint.ts";
 // #50: handoff.ts is now a re-export shim over src/daemon/workspace/. Import the
 // reader/writer surface straight from the workspace module to prove the new

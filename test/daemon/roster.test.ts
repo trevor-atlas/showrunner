@@ -3,13 +3,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  PRICES_FILE,
-  estimateUsd,
-  loadRoster,
-  pricesPathFor,
-} from "../../src/daemon/index.ts";
-import type { Roster } from "../../src/daemon/index.ts";
+import { PRICES_FILE, estimateUsd, loadRoster, pricesPathFor } from "../../src/server/engine/roster.ts";
+import { type Roster } from "../../src/server/engine/roster.ts";
 
 /**
  * The price roster — the fallback/estimate path for spend.

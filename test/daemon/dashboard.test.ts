@@ -1,8 +1,8 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 
 import { test, expect, afterAll } from "bun:test";
-import { startDaemon } from "../../src/daemon/daemon.ts";
-import type { DaemonHandle } from "../../src/daemon/daemon.ts";
+import { startDaemon } from "../../src/server/lifecycle.ts";
+import type { DaemonHandle } from "../../src/server/lifecycle.ts";
 import { tmpDataDir, cleanupDir } from "./helpers.ts";
 
 /**

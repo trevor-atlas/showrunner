@@ -20,8 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
-import { insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/index.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { inputsDirFor, outputsDirFor } from "../../src/server/repository/workspace/index.ts";
 import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";
 import type {

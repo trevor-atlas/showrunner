@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
 import { insertRun, openDb } from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";

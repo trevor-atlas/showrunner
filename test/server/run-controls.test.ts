@@ -28,9 +28,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/daemon/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
-import { insertEvent, insertPhase, insertRun, loadBlueprintModule, openDb, snapshotBlueprint } from "../../src/daemon/index.ts";
+import { DaemonClient } from "../../src/server/transport/client.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { loadBlueprintModule, snapshotBlueprint } from "../../src/server/engine/runner.ts";
+import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 

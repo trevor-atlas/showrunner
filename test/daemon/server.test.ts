@@ -8,8 +8,8 @@ import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import { startDaemon } from "../../src/daemon/index.ts";
-import type { DaemonHandle } from "../../src/daemon/index.ts";
+import { startDaemon } from "../../src/server/lifecycle.ts";
+import { type DaemonHandle } from "../../src/server/lifecycle.ts";
 
 // The merged daemon listens on ONE TCP port (no unix socket anymore): the
 // API is served under the same listener as the dashboard. Each test starts

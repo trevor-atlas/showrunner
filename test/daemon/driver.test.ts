@@ -6,16 +6,8 @@ import type { EventRow } from "../../src/core/index.ts";
 import { fixturePath } from "../../src/server/engine/pi/harness/fixtures.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
-import {
-  cursorEvents,
-  eventCount,
-  getRun,
-  listAgentSessions,
-  listPhases,
-  listProcesses,
-  openDb,
-  submitFixture,
-} from "../../src/daemon/index.ts";
+import { submitFixture } from "../../src/server/engine/driver.ts";
+import { cursorEvents, eventCount, getRun, listAgentSessions, listPhases, listProcesses, openDb } from "../../src/server/repository/db.ts";
 import { runDirFor } from "../../src/core/index.ts";
 
 const HAPPY_SPEND = 0.00102 + 0.00189 + 0.00172; // 0.00463, from the fixture's cumulative usage

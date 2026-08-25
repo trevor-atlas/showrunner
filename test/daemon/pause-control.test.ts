@@ -12,26 +12,14 @@ import { EnvelopeBase, defineAgent, defineBlueprint } from "../../src/core/index
 import type { Blueprint, Envelope, Gate } from "../../src/core/index.ts";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import {
-  cursorEvents,
-  daemonEntryPath,
-  FakeSessionDriver,
-  getControl,
-  getRun,
-  insertRun,
-  listAgentSessions,
-  listEnvelopes,
-  listGateResults,
-  listPhases,
-  openDb,
-  reconcileInterruptedRuns,
-  resumeInterruptedRun,
-  RunPool,
-  runBlueprint,
-  startDaemon,
-} from "../../src/daemon/index.ts";
-import type { BlueprintRun, ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
-import type { DaemonHandle } from "../../src/daemon/index.ts";
+import { getControl, reconcileInterruptedRuns, resumeInterruptedRun } from "../../src/server/engine/pause-control.ts";
+import { FakeSessionDriver } from "../../src/server/engine/pi/index.ts";
+import { RunPool } from "../../src/server/engine/pool.ts";
+import { runBlueprint } from "../../src/server/engine/runner.ts";
+import { daemonEntryPath, startDaemon } from "../../src/server/lifecycle.ts";
+import { cursorEvents, getRun, insertRun, listAgentSessions, listEnvelopes, listGateResults, listPhases, openDb } from "../../src/server/repository/db.ts";
+import { type BlueprintRun, type ScriptMap, type ScriptedTurn } from "../../src/server/engine/runner.ts";
+import { type DaemonHandle } from "../../src/server/lifecycle.ts";
 
 /**
  * The pause & control surface (T04) — human-in-the-loop machinery

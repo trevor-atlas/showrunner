@@ -3,12 +3,12 @@ import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { resolveDataDir, dbPathFor } from "../core/index.ts";
 
-import { openDb } from "../server/repository/db.ts";
-import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "../server/engine/pause-control.ts";
-import { backfillMissedEvents } from "../server/engine/backfill.ts";
-import { RunPool } from "../server/engine/pool.ts";
-import { materializeTemplates } from "../server/services/templates.ts";
-import { createWebServer, getRouter } from "./web.ts";
+import { openDb } from "./repository/db.ts";
+import { cleanupProcesses, reconcileInterruptedRuns, stopRecordedChildren } from "./engine/pause-control.ts";
+import { backfillMissedEvents } from "./engine/backfill.ts";
+import { RunPool } from "./engine/pool.ts";
+import { materializeTemplates } from "./services/templates.ts";
+import { createWebServer, getRouter } from "./transport/http.ts";
 
 /**
  * The long-lived daemon: owns SQLite and serves BOTH the JSON
@@ -112,7 +112,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
       void (async () => {
         try {
           await getRouter();
-          const { warmEntryAssets } = await import("../server/actions/document.tsx");
+          const { warmEntryAssets } = await import("./actions/document.tsx");
           await warmEntryAssets();
         } catch (err) {
           console.error(

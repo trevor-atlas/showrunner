@@ -2,10 +2,10 @@ import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { createRequestListener } from "remix/node-fetch-server";
 
-import { setEventInsertHook } from "../server/repository/db.ts";
-import { emitRunChange } from "./live.ts";
-import { handleApiRequest, type ApiState } from "../server/services/api.ts";
-import { setWebState } from "./web-state.ts";
+import { setEventInsertHook } from "../repository/db.ts";
+import { emitRunChange } from "./change-bus.ts";
+import { handleApiRequest, type ApiState } from "../services/api.ts";
+import { setWebState } from "./state.ts";
 
 /**
  * The daemon's merged web server: ONE node:http listener serving BOTH the
@@ -28,7 +28,7 @@ export function isApiPath(url: string | null | undefined): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
-type RouterModule = typeof import("../server/router.ts");
+type RouterModule = typeof import("../router.ts");
 
 let routerPromise: Promise<RouterModule> | null = null;
 
@@ -38,7 +38,7 @@ let routerPromise: Promise<RouterModule> | null = null;
  * it at boot in production. */
 export function getRouter(): Promise<RouterModule> {
   if (routerPromise === null) {
-    routerPromise = import("../server/router.ts").catch((err) => {
+    routerPromise = import("../router.ts").catch((err) => {
       routerPromise = null; // allow a retry on the next request
       throw err;
     });

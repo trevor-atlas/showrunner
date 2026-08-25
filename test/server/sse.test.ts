@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
+import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
 import { insertEvent, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { createCoalescedNotifier } from "../../src/server/actions/public/sse.ts";
 import { routes } from "../../src/server/routes.ts";

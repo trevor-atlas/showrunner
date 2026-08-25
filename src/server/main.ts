@@ -1,4 +1,4 @@
-import { startDaemon, installSignalHandlers } from "../daemon/daemon.ts";
+import { startDaemon, installSignalHandlers } from "./lifecycle.ts";
 
 /**
  * The standalone dev server entry (src/server/main.ts). Runs under bun — `bun main.ts`

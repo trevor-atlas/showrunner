@@ -1,5 +1,5 @@
 import type { EventRow } from "../core/index.ts";
-import type { DaemonClient } from "../daemon/client.ts";
+import type { DaemonClient } from "../server/transport/client.ts";
 
 export interface WatchOptions {
   runId: string;

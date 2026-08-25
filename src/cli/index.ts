@@ -4,12 +4,12 @@ import { resolveDataDir } from "../core/index.ts";
 import { FIXTURE_NAMES, isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
 
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
-import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";
+import { installSignalHandlers, startDaemon } from "../server/lifecycle.ts";
 // the typed client is the single HTTP surface — base URL from the
 // configured port (SHOWRUNNER_PORT, default 44100)
-import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
+import { DaemonClient, isDaemonDown } from "../server/transport/client.ts";
 import { syncTemplates } from "../server/services/templates.ts";
-import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
+import type { RunDetail, SubmitRunBody } from "../server/transport/client.ts";
 import { daemonBaseUrl, ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
 import { buildDevSpawn } from "./dev.ts";
 import { formatEvent } from "./render.ts";

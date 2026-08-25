@@ -10,23 +10,12 @@ import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../src/core/index.ts";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import {
-  backfillMissedEvents,
-  cleanupProcesses,
-  cursorEvents,
-  daemonEntryPath,
-  eventCount,
-  insertAgentSession,
-  insertPhase,
-  insertProcess,
-  insertRun,
-  listProcesses,
-  openDb,
-  sessionDirNameForCwd,
-  startDaemon,
-  writeAgentMap,
-} from "../../src/daemon/index.ts";
-import type { DaemonHandle } from "../../src/daemon/index.ts";
+import { backfillMissedEvents } from "../../src/server/engine/backfill.ts";
+import { cleanupProcesses } from "../../src/server/engine/pause-control.ts";
+import { daemonEntryPath, startDaemon } from "../../src/server/lifecycle.ts";
+import { cursorEvents, eventCount, insertAgentSession, insertPhase, insertProcess, insertRun, listProcesses, openDb } from "../../src/server/repository/db.ts";
+import { sessionDirNameForCwd, writeAgentMap } from "../../src/server/repository/workspace/index.ts";
+import { type DaemonHandle } from "../../src/server/lifecycle.ts";
 
 /**
  * T07 crash recovery & daemon lifecycle (issue #12): kill-9 durability,
