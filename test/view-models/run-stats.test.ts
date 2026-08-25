@@ -16,7 +16,7 @@ import { cleanupDir, tmpDataDir } from "../daemon/helpers.ts";
 import { dbPathFor } from "../../src/core/index.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
 import type { Database } from "bun:sqlite";
-import { RunPool } from "../../src/daemon/pool.ts";
+import { RunPool } from "../../src/server/engine/pool.ts";
 import { buildRunStats } from "../../src/view-models/index.ts";
 
 function seedRun(

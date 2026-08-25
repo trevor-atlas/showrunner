@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { isFixtureName } from "./pi/harness/fixtures.ts";
+import { isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
 
 import {
   cursorEvents,
@@ -27,19 +27,19 @@ import {
   type SpendBreakdown,
   type TimelineView,
 } from "./contract.ts";
-import { submitFixture } from "./driver.ts";
-import type { SubmitOptions, SubmittedRun } from "./driver.ts";
+import { submitFixture } from "../server/engine/driver.ts";
+import type { SubmitOptions, SubmittedRun } from "../server/engine/driver.ts";
 import { readOutputsDir } from "./workspace/index.ts";
 import {
   effectiveMenu,
   getControl,
   getControlByLiveSession,
   statelessFailRun,
-} from "./pause-control.ts";
-import type { PauseInfo, RunControl } from "./pause-control.ts";
-import type { RunPool } from "./pool.ts";
+} from "../server/engine/pause-control.ts";
+import type { PauseInfo, RunControl } from "../server/engine/pause-control.ts";
+import type { RunPool } from "../server/engine/pool.ts";
 import { tailRawFile } from "./rawfile.ts";
-import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "./runner.ts";
+import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume } from "../server/engine/runner.ts";
 import {
   buildRunDetail,
   buildRunList,

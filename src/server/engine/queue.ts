@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
-import type { EventType } from "../core/index.ts";
-import { parseEventData } from "../core/index.ts";
-import { insertEvent } from "./db.ts";
+import type { EventType } from "../../core/index.ts";
+import { parseEventData } from "../../core/index.ts";
+import { insertEvent } from "../../daemon/db.ts";
 
 /** Per-event id overrides: run-level events must carry NULL phase/session ids. */
 export interface EventIds {

@@ -9,7 +9,7 @@ import {
   DEFAULT_BUDGET,
   EnvelopeBase,
   validateBlueprint,
-} from "../core/index.ts";
+} from "../../core/index.ts";
 import type {
   Blueprint,
   BlueprintPhase,
@@ -20,8 +20,8 @@ import type {
   RunStatus,
   ShellResult,
   Spend,
-} from "../core/index.ts";
-import { runDirFor } from "../core/index.ts";
+} from "../../core/index.ts";
+import { runDirFor } from "../../core/index.ts";
 
 import {
   materializeHandoff,
@@ -32,8 +32,8 @@ import {
   resolveContext,
   slugFor,
   writeAgentMap,
-} from "./workspace/index.ts";
-import type { Handoff } from "./workspace/index.ts";
+} from "../../daemon/workspace/index.ts";
+import type { Handoff } from "../../daemon/workspace/index.ts";
 
 import {
   deleteProcess,
@@ -53,14 +53,14 @@ import {
   updatePhase,
   updatePhaseVisit,
   updateRun,
-} from "./db.ts";
+} from "../../daemon/db.ts";
 import { registerControl, unregisterControl, resumeInterruptedRun, RunControl } from "./pause-control.ts";
 import type { ControlAction, PauseInfo } from "./pause-control.ts";
 import { MAX_CAPTURED_STDERR, sessionIdFor } from "./driver.ts";
 import { gateName, runEnvelopeStage } from "./envelope-runner.ts";
 import { EventSink } from "./queue.ts";
 import type { EventIds } from "./queue.ts";
-import { RawOutputFile } from "./rawfile.ts";
+import { RawOutputFile } from "../../daemon/rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import type { Roster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";

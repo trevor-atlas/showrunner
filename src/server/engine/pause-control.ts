@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { Envelope, EventType, RunStatus } from "../core/index.ts";
+import type { Envelope, EventType, RunStatus } from "../../core/index.ts";
 
 import {
   deleteProcess,
@@ -12,8 +12,8 @@ import {
   listRunProcesses,
   listRuns,
   updateRun,
-} from "./db.ts";
-import type { RunRow } from "./db.ts";
+} from "../../daemon/db.ts";
+import type { RunRow } from "../../daemon/db.ts";
 import {
   isEnvelopeApproved,
   overrideGateResult,

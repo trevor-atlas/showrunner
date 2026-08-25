@@ -1,11 +1,11 @@
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
-import { runDirFor } from "../core/index.ts";
+import { runDirFor } from "../../core/index.ts";
 
-import { insertEvent, listAgentSessions, listPhases, listRuns } from "./db.ts";
-import { readAgentMap, sessionDirNameForCwd } from "./workspace/index.ts";
-import { RawOutputFile } from "./rawfile.ts";
+import { insertEvent, listAgentSessions, listPhases, listRuns } from "../../daemon/db.ts";
+import { readAgentMap, sessionDirNameForCwd } from "../../daemon/workspace/index.ts";
+import { RawOutputFile } from "../../daemon/rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 

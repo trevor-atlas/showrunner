@@ -1,4 +1,4 @@
-import { MACHINERY_EVENT_TYPES } from "../../core/index.ts";
+import { MACHINERY_EVENT_TYPES } from "../../../core/index.ts";
 
 /**
  * The raw pi JSONL line classifier — the single place the stream's

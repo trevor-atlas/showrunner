@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Envelope, EventType, Gate, GateContext } from "../core/index.ts";
+import type { Envelope, EventType, Gate, GateContext } from "../../core/index.ts";
 
 import {
   countUnoverriddenFailedGates,
@@ -14,9 +14,9 @@ import {
   insertGateOverride,
   insertGateResult,
   updateEnvelope,
-} from "./db.ts";
-import type { EnvelopeRow } from "./db.ts";
-import { inputsDirFor, outputsDirFor } from "./workspace/index.ts";
+} from "../../daemon/db.ts";
+import type { EnvelopeRow } from "../../daemon/db.ts";
+import { inputsDirFor, outputsDirFor } from "../../daemon/workspace/index.ts";
 import type { EventIds } from "./queue.ts";
 
 /**

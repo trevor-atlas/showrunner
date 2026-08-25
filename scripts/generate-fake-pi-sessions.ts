@@ -23,7 +23,7 @@ import {
   reviewTurn,
   session,
   shipTurn,
-} from "../src/daemon/pi/harness/session-builder.ts";
+} from "../src/server/engine/pi/harness/session-builder.ts";
 
 const OUT = join(import.meta.dir, "..", "src", "starter-kit", "blueprints", "fake-pi");
 

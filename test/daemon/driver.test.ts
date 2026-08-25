@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventRow } from "../../src/core/index.ts";
-import { fixturePath } from "../../src/daemon/pi/harness/fixtures.ts";
+import { fixturePath } from "../../src/server/engine/pi/harness/fixtures.ts";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import {

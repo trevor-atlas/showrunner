@@ -63,12 +63,12 @@ export type {
 } from "./db.ts";
 
 // Tracer
-export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "./tracer.ts";
-export type { FoldedEvent, FoldedEventType, TracerOptions, TracerSink } from "./tracer.ts";
+export { DEFAULT_SNIPPET_CAP, Tracer, extractUsage, joinTextBlocks } from "../server/engine/tracer.ts";
+export type { FoldedEvent, FoldedEventType, TracerOptions, TracerSink } from "../server/engine/tracer.ts";
 
 // Price roster
-export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, pricesPathFor } from "./roster.ts";
-export type { Roster, RosterEntry } from "./roster.ts";
+export { PRICES_FILE, RosterEntrySchema, RosterSchema, estimateUsd, loadRoster, pricesPathFor } from "../server/engine/roster.ts";
+export type { Roster, RosterEntry } from "../server/engine/roster.ts";
 
 // Raw records
 export { RawOutputFile, tailRawFile } from "./rawfile.ts";
@@ -90,14 +90,14 @@ export {
 export type { AgentMapEntry, Handoff } from "./workspace/index.ts";
 
 // Line framing
-export { LineSplitter } from "./linesplit.ts";
+export { LineSplitter } from "../server/engine/linesplit.ts";
 
 // Event queue
-export { EventSink } from "./queue.ts";
-export type { EventIds } from "./queue.ts";
+export { EventSink } from "../server/engine/queue.ts";
+export type { EventIds } from "../server/engine/queue.ts";
 
 // Envelope/gate runner (T03 seam)
-export { gateName, isEnvelopeApproved, overrideGateResult, recordEnvelopeAcceptance, runEnvelopeStage } from "./envelope-runner.ts";
+export { gateName, isEnvelopeApproved, overrideGateResult, recordEnvelopeAcceptance, runEnvelopeStage } from "../server/engine/envelope-runner.ts";
 export type {
   EnvelopeOutcome,
   EnvelopeStageOptions,
@@ -105,7 +105,7 @@ export type {
   GateRun,
   OverrideGateOptions,
   RecordEnvelopeAcceptanceOptions,
-} from "./envelope-runner.ts";
+} from "../server/engine/envelope-runner.ts";
 
 // The run loop
 export {
@@ -124,7 +124,7 @@ export {
   runBlueprint,
   snapshotBlueprint,
   submitBlueprintRun,
-} from "./runner.ts";
+} from "../server/engine/runner.ts";
 export type {
   BlueprintRun,
   PreparedResume,
@@ -135,10 +135,10 @@ export type {
   ScriptMap,
   ScriptedSession,
   ScriptedTurn,
-} from "./runner.ts";
+} from "../server/engine/runner.ts";
 
 // run pool
-export { RunPool } from "./pool.ts";
+export { RunPool } from "../server/engine/pool.ts";
 
 // T04 pause & control surface (pause menu, resume, F1 slot hold)
 export {
@@ -155,7 +155,7 @@ export {
   statelessFailRun,
   stopRecordedChildren,
   unregisterControl,
-} from "./pause-control.ts";
+} from "../server/engine/pause-control.ts";
 export type {
   ControlAction,
   ControlState,
@@ -163,7 +163,7 @@ export type {
   PauseInfo,
   PauseKind,
   RunControlResult,
-} from "./pause-control.ts";
+} from "../server/engine/pause-control.ts";
 
 // Driver (T01a minimal submit)
 export {
@@ -174,8 +174,8 @@ export {
   MAX_CAPTURED_STDERR,
   sessionIdFor,
   submitFixture,
-} from "./driver.ts";
-export type { SubmittedRun, SubmitOptions } from "./driver.ts";
+} from "../server/engine/driver.ts";
+export type { SubmittedRun, SubmitOptions } from "../server/engine/driver.ts";
 
 // pi session drivers (T02: real pi spawn behind the seam)
 export {
@@ -189,7 +189,7 @@ export {
   findPiBinary,
   resolvePiBinary,
   sessionDriverKind,
-} from "./pi/index.ts";
+} from "../server/engine/pi/index.ts";
 export type {
   FakeSessionDriverOptions,
   PiSessionOptions,
@@ -197,11 +197,11 @@ export type {
   RpcResponse,
   SessionDriver,
   SessionDriverKind,
-} from "./pi/index.ts";
+} from "../server/engine/pi/index.ts";
 
 // backfill (T07: session-JSONL re-read, deduped against the run's raw file)
-export { backfillMissedEvents } from "./backfill.ts";
-export type { BackfillSessionReport, BackfillSummary } from "./backfill.ts";
+export { backfillMissedEvents } from "../server/engine/backfill.ts";
+export type { BackfillSessionReport, BackfillSummary } from "../server/engine/backfill.ts";
 
 // HTTP API
 export { createWebServer } from "./web.ts";

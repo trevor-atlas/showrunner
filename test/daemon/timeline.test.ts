@@ -21,7 +21,7 @@ import { dbPathFor, runDirFor } from "../../src/core/index.ts";
 import type { EventType } from "../../src/core/index.ts";
 import { cursorEvents, getRun, insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/db.ts";
 import type { PhaseRow, RunRow } from "../../src/daemon/db.ts";
-import { RunPool } from "../../src/daemon/pool.ts";
+import { RunPool } from "../../src/server/engine/pool.ts";
 import { ApiError, apiTimeline, handleApiRequest } from "../../src/daemon/server.ts";
 import type { ApiState } from "../../src/daemon/server.ts";
 import type { TimelineView } from "../../src/daemon/contract.ts";

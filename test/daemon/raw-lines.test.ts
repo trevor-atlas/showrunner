@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "bun:test";
 
-import { classifyLine, isSettledLine, SETTLED_KIND } from "../../src/daemon/pi/raw-lines.ts";
-import type { RawLineKind } from "../../src/daemon/pi/raw-lines.ts";
+import { classifyLine, isSettledLine, SETTLED_KIND } from "../../src/server/engine/pi/raw-lines.ts";
+import type { RawLineKind } from "../../src/server/engine/pi/raw-lines.ts";
 
 describe("isSettledLine", () => {
   it("recognizes the minimal settle line", () => {

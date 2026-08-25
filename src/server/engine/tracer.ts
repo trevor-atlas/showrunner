@@ -2,7 +2,7 @@ import {
   RawToolExecutionEnd,
   RawToolExecutionStart,
   RawToolExecutionUpdate,
-} from "../core/index.ts";
+} from "../../core/index.ts";
 import { estimateUsd } from "./roster.ts";
 import type { Roster } from "./roster.ts";
 import { classifyLine, SETTLED_KIND } from "./pi/raw-lines.ts";

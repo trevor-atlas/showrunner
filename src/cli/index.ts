@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { resolveDataDir } from "../core/index.ts";
-import { FIXTURE_NAMES, isFixtureName } from "../daemon/pi/harness/fixtures.ts";
+import { FIXTURE_NAMES, isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
 
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";

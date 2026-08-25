@@ -17,8 +17,8 @@ import {
   fakePiEntryPath,
   fixturePath,
   isFixtureName,
-} from "../../../src/daemon/pi/harness/fixtures.ts";
-import type { FixtureName } from "../../../src/daemon/pi/harness/fixtures.ts";
+} from "../../../src/server/engine/pi/harness/fixtures.ts";
+import type { FixtureName } from "../../../src/server/engine/pi/harness/fixtures.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 

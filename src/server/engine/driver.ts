@@ -4,8 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { Database } from "bun:sqlite";
-import type { Spend } from "../core/index.ts";
-import { runDirFor } from "../core/index.ts";
+import type { Spend } from "../../core/index.ts";
+import { runDirFor } from "../../core/index.ts";
 import {
   FIXTURE_SCENARIOS,
   fakePiEntryPath,
@@ -23,10 +23,10 @@ import {
   updateAgentSession,
   updatePhase,
   updateRun,
-} from "./db.ts";
+} from "../../daemon/db.ts";
 import { LineSplitter } from "./linesplit.ts";
 import { EventSink } from "./queue.ts";
-import { RawOutputFile } from "./rawfile.ts";
+import { RawOutputFile } from "../../daemon/rawfile.ts";
 import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 

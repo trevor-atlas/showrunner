@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import { getEnvelope, getPhaseById, listPhaseVisits, migrate, openDb } from "../../src/daemon/db.ts";
-import { backfillV3 } from "../../src/daemon/backfill-v3.ts";
+import { backfillV3 } from "../../src/server/engine/backfill-v3.ts";
 
 /**
  * Build a v2-shaped DB by hand: a v3 schema (openDb migrates it) seeded with

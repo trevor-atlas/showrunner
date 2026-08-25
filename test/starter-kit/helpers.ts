@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BlueprintRun, RunResult } from "../../src/daemon/runner.ts";
+import type { BlueprintRun, RunResult } from "../../src/server/engine/runner.ts";
 import { getControl } from "../../src/daemon/index.ts";
 
 /**
