@@ -3,7 +3,7 @@ import type { DaemonClient } from "../daemon/client.ts";
 
 export interface WatchOptions {
   runId: string;
-  /** the typed client (http; base URL from the pidfile port) */
+  /** the typed client (http; base URL from the configured port) */
   client: DaemonClient;
   intervalMs?: number;
   maxPolls?: number;

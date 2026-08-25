@@ -81,7 +81,7 @@ export function isDaemonDown(err: unknown): boolean {
 // ── the client ───────────────────────────────────────────────────────────────
 
 export interface DaemonClientOptions {
-  /** explicit http base URL (e.g. from the CLI's pidfile port) — defaults to
+  /** explicit http base URL (e.g. the CLI's configured port) — defaults to
    * http://127.0.0.1:${SHOWRUNNER_PORT ?? 44100} */
   baseUrl?: string;
 }
@@ -147,6 +147,12 @@ export class DaemonClient {
   /** GET /api/status — health + pool utilization + run status counts (T07). */
   status(): Promise<DaemonStatus> {
     return this.typed("GET", "/api/status");
+  }
+
+  /** POST /api/shutdown — ask the daemon to stop itself gracefully (the CLI's
+   * `stop` verb). Replaces the old file-based SIGTERM dance. */
+  shutdown(): Promise<{ ok: boolean }> {
+    return this.typed("POST", "/api/shutdown");
   }
 
   /** GET /api/stats — the all-time landing KPI/chart aggregate. */

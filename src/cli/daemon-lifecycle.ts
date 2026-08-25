@@ -1,39 +1,28 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 
 // The cli -> daemon edge is a relative import (bun 1.4 cannot resolve a
 // `file:` dep's own `file:` deps, so the cli does not declare the daemon as a
 // package dependency). The daemon stays a separate package with its own
 // dependency on core.
 import { daemonEntryPath } from "../daemon/daemon.ts";
-import { DaemonClient } from "../daemon/client.ts";
+import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
 
 /**
  * Daemon lifecycle for the CLI: if no daemon is listening on HTTP, spawn one
- * detached and wait for it to come up; `stop` signals it via the pidfile.
- * The daemon is the long-lived owner of execution - every CLI command
- * lands on the same TCP port.
+ * detached and wait for it to come up; `stop` asks it to exit over HTTP. The
+ * daemon is the long-lived owner of execution - every CLI command lands on
+ * the same TCP port.
  *
- * The daemon binds 127.0.0.1:<port> and writes a two-line pidfile
- * (pid, then port) AFTER a successful bind (src/daemon/daemon.ts). The port
- * knob is SHOWRUNNER_PORT (default 44100). The unix socket is gone — the CLI
- * talks HTTP, health-checking via the pidfile port.
+ * The daemon binds 127.0.0.1:<port> on the CONFIGURED port (SHOWRUNNER_PORT,
+ * default 44100). There is no discovery file: the CLI talks HTTP on the known port,
+ * discovers the daemon by health-checking it, and stops it via POST
+ * /api/shutdown. A dead daemon simply fails the health check.
  */
 
-/**
- * The daemon base URL for a data dir: the pidfile's port line (line 2), else
- * the SHOWRUNNER_PORT ?? 44100 fallback (what the spawned daemon resolves when
- * the pidfile isn't written yet — the env is inherited, so they agree).
- */
-export function daemonBaseUrl(dataDir: string): string {
-  const pidFile = join(dataDir, "daemon.pid");
-  if (existsSync(pidFile)) {
-    const port = readFileSync(pidFile, "utf8").split("\n")[1]?.trim();
-    if (port !== undefined && port !== "" && Number.isInteger(Number(port))) {
-      return `http://127.0.0.1:${port}`;
-    }
-  }
+/** The daemon base URL for a data dir: the configured port (SHOWRUNNER_PORT ??
+ * 44100). The spawned daemon resolves the SAME port from the inherited env, so
+ * the CLI and the daemon always agree without any discovery file. */
+export function daemonBaseUrl(_dataDir: string): string {
   return `http://127.0.0.1:${process.env.SHOWRUNNER_PORT ?? 44100}`;
 }
 
@@ -58,8 +47,7 @@ export async function ensureDaemon(dataDir: string): Promise<void> {
 
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    // read the pidfile port as soon as it exists (ephemeral ports), then
-    // health-check until the daemon answers
+    // health-check the known port until the spawned daemon answers
     if (await isDaemonUp(daemonBaseUrl(dataDir))) return;
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -69,37 +57,23 @@ export async function ensureDaemon(dataDir: string): Promise<void> {
 }
 
 export async function stopDaemon(dataDir: string): Promise<void> {
-  const pidFile = join(dataDir, "daemon.pid");
-  if (!existsSync(pidFile)) {
-    throw new Error(`no daemon pidfile at ${pidFile} - is a daemon running?`);
-  }
-  // the pidfile holds two lines: pid, then port
-  const pid = Number(readFileSync(pidFile, "utf8").split("\n")[0]?.trim());
-  if (!Number.isInteger(pid)) {
-    throw new Error(`unreadable daemon pidfile ${pidFile}`);
+  const baseUrl = daemonBaseUrl(dataDir);
+  if (!(await isDaemonUp(baseUrl))) {
+    throw new Error(`no daemon running at ${baseUrl} - is a daemon running?`);
   }
   try {
-    process.kill(pid, "SIGTERM");
+    // POST /api/shutdown: the daemon flushes the response, then SIGTERMs itself
+    // into its graceful signal handler (stops children, closes server + DB).
+    await new DaemonClient({ baseUrl }).shutdown();
   } catch (err) {
-    // a stale pidfile whose pid is already dead (ESRCH — kill(2) found no such
-    // process): there is no daemon to signal and nothing will remove the file,
-    // so surface a friendly message and clean the stale pidfile up. This only
-    // runs on the provably-dead path — the graceful flow below never unlinks
-    // (the daemon removes its own pidfile during shutdown; an eager unlink
-    // would race it).
-    const code = (err as { code?: string })?.code;
-    if (code === "ESRCH") {
-      console.log(`no live daemon (stale pidfile) — removing it`);
-      rmSync(pidFile, { force: true });
-      return;
-    }
-    throw err;
+    // the daemon may drop the connection as it exits before the body is read —
+    // that is a successful shutdown, not a failure
+    if (!isDaemonDown(err)) throw err;
   }
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    // graceful shutdown removes the pidfile (no socket to unlink anymore)
-    if (!existsSync(pidFile)) return;
+    if (!(await isDaemonUp(baseUrl))) return;
     await new Promise((r) => setTimeout(r, 100));
   }
-  // the daemon may have already shut down; nothing more to do
+  // the daemon may still be finishing its close; nothing more to do
 }

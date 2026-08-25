@@ -35,6 +35,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../../src/core/index.ts";
 
+import { freePort } from "../helpers.ts";
 import { daemonEntryPath } from "../../../src/daemon/daemon.ts";
 import { DaemonClient } from "../../../src/daemon/client.ts";
 import type { RunDetail } from "../../../src/daemon/client.ts";
@@ -102,31 +103,22 @@ async function waitFor(fn: () => boolean | Promise<boolean>, timeoutMs: number, 
   }
 }
 
-/** The daemon's base URL for a data dir, read from the pidfile's port line
- * (line 2 — the daemon writes pid, then the BOUND port, after listening).
- * Before the pidfile exists it returns a port that refuses connections, so
- * the health polls below keep retrying until the daemon has bound. */
-function baseUrlFor(dataDir: string): string {
-  try {
-    const port = readFileSync(join(dataDir, "daemon.pid"), "utf8").split("\n")[1]?.trim();
-    if (port !== undefined && port !== "" && Number.isInteger(Number(port))) {
-      return `http://127.0.0.1:${port}`;
-    }
-  } catch {
-    // pidfile not written yet
-  }
-  return "http://127.0.0.1:0";
-}
+/** The daemon binds a FIXED port (SHOWRUNNER_PORT). The smoke has no discovery
+ * file anymore, so it picks one port up front and both the spawned daemon and
+ * the real CLI (runCli) agree on it. Scenarios run sequentially — each boots
+ * and tears down its daemon before the next — so one port for the run is fine. */
+const SMOKE_PORT = await freePort();
+const SMOKE_BASE_URL = `http://127.0.0.1:${SMOKE_PORT}`;
 
-async function waitForHealth(dataDir: string): Promise<void> {
+async function waitForHealth(_dataDir: string): Promise<void> {
   await waitFor(async () => {
     try {
-      await new DaemonClient({ baseUrl: baseUrlFor(dataDir) }).health();
+      await new DaemonClient({ baseUrl: SMOKE_BASE_URL }).health();
       return true;
     } catch {
       return false;
     }
-  }, 20_000, `daemon up at ${dataDir}`);
+  }, 20_000, `daemon up at ${SMOKE_BASE_URL}`);
 }
 
 async function waitForStatus(client: DaemonClient, runId: string, status: string, timeoutMs = 120_000): Promise<void> {
@@ -165,7 +157,7 @@ function runCli(args: string[], dataDir: string): { stdout: string; status: numb
     const stdout = execFileSync(process.execPath, [CLI, ...args], {
       encoding: "utf8",
       timeout: 60_000,
-      env: { ...process.env, SHOWRUNNER_DATA_DIR: dataDir },
+      env: { ...process.env, SHOWRUNNER_DATA_DIR: dataDir, SHOWRUNNER_PORT: String(SMOKE_PORT) },
     });
     return { stdout, status: 0 };
   } catch (err) {
@@ -184,14 +176,14 @@ function bootDaemon(dataDir: string, extra: Record<string, string> = {}): { chil
   // daemon stdout/stderr go to a log file so a mid-smoke crash is diagnosable
   const logPath = join(dataDir, "daemon.log");
   const logFd = openSync(logPath, "a");
-  // SHOWRUNNER_PORT=0: the daemon binds an EPHEMERAL port (parallel-safe) and
-  // writes the real port to the pidfile AFTER bind — baseUrl reads it from there
+  // FIXED port (SHOWRUNNER_PORT=SMOKE_PORT): the daemon has no discovery file,
+  // so the smoke chose the port up front and the CLI reaches it on the same port
   const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dataDir], {
     stdio: ["ignore", logFd, logFd],
     env: {
       ...process.env,
       SHOWRUNNER_SMOKE: "1",
-      SHOWRUNNER_PORT: "0",
+      SHOWRUNNER_PORT: String(SMOKE_PORT),
       SHOWRUNNER_PI_BINARY: piBinary,
       PI_CODING_AGENT_SESSION_DIR: sessionRoot,
       ...extra,
@@ -201,9 +193,7 @@ function bootDaemon(dataDir: string, extra: Record<string, string> = {}): { chil
   closeSync(logFd);
   return {
     child,
-    get baseUrl(): string {
-      return baseUrlFor(dataDir);
-    },
+    baseUrl: SMOKE_BASE_URL,
     logPath,
   };
 }

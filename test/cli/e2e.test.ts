@@ -10,9 +10,9 @@ import { fixturePath } from "../../src/daemon/pi/harness/fixtures.ts";
 
 /**
  * End-to-end: the real CLI against a real (detached) daemon over HTTP (the
- * daemon's merged web server on one TCP port, pidfile-discovered), with a
- * scratch data dir. This is the deliverable's money test: a fake session's
- * life is fully visible as folded, queryable events in the CLI.
+ * daemon's merged web server on one TCP port, the configured SHOWRUNNER_PORT),
+ * with a scratch data dir. This is the deliverable's money test: a fake
+ * session's life is fully visible as folded, queryable events in the CLI.
  */
 
 const CLI = fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url));
@@ -64,31 +64,15 @@ function cli(args: string[], timeoutMs = 30_000): { stdout: string; status: numb
 
 afterAll(() => {
   // Hermetic daemon teardown (T13 #15): the CLI auto-spawned a detached
-  // daemon for this suite's data dir — it must NEVER outlive the suite, even
-  // when a test failed mid-run or the graceful verb misbehaved.
-  // 1. the graceful CLI verb (removes pidfile, stops children)
+  // daemon for this suite's data dir — it must NEVER outlive the suite. The
+  // graceful `stop` verb POSTs /api/shutdown and blocks (spawnSync) until the
+  // daemon's health check fails, so once it returns the daemon is down. A
+  // leaked daemon would only hold this suite's private freePort, never a real
+  // one, so no cross-run collision is possible.
   try {
     spawnSync(process.execPath, [CLI, "stop"], { encoding: "utf8", timeout: 15_000, env });
   } catch {
     // best-effort
-  }
-  // 2. hermetic fallback: SIGTERM the pidfile's pid directly — a detached
-  // daemon is our own child; if the verb above did not take it down, the
-  // pidfile still names it and the signal still stops it
-  try {
-    const pidFile = join(dataDir, "daemon.pid");
-    if (existsSync(pidFile)) {
-      const pid = Number(readFileSync(pidFile, "utf8").split("\n")[0]?.trim());
-      if (Number.isInteger(pid) && pid > 0) process.kill(pid, "SIGTERM");
-    }
-  } catch {
-    // already gone
-  }
-  // 3. wait for the pidfile to disappear (bounded) before deleting the dirs
-  const pidFile = join(dataDir, "daemon.pid");
-  const deadline = Date.now() + 5_000;
-  while (existsSync(pidFile) && Date.now() < deadline) {
-    // busy-wait — afterAll must stay synchronous
   }
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(blueprintCwd, { recursive: true, force: true });
@@ -240,27 +224,22 @@ test("templates sync adds missing template files without starting the daemon", (
     expect(existsSync(readme)).toBe(true);
     expect(out.stdout).toContain("added:");
 
-    // no daemon was spawned for this data dir
-    expect(existsSync(join(syncDataDir, "daemon.pid"))).toBe(false);
+    // no daemon was spawned for this data dir (a booted daemon would create
+    // the SQLite DB)
+    expect(existsSync(join(syncDataDir, "showrunner.db"))).toBe(false);
   } finally {
     rmSync(syncDataDir, { recursive: true, force: true });
   }
 });
 
-test("stop terminates the daemon and removes the pidfile", async () => {
-  const pidFile = join(dataDir, "daemon.pid");
-  expect(existsSync(pidFile)).toBe(true);
+test("stop terminates the daemon over HTTP; a second stop reports no daemon running", async () => {
+  // a daemon is up from the earlier tests (the CLI auto-spawned one). `stop`
+  // POSTs /api/shutdown, the daemon SIGTERMs itself into its graceful close,
+  // and the verb blocks until the health check fails.
   const out = cli(["stop"]);
   expect(out.status).toBe(0);
   expect(out.stdout).toContain("daemon stopped");
-  // give the daemon a moment to reap
-  let gone = false;
-  for (let i = 0; i < 50; i++) {
-    if (!existsSync(pidFile)) {
-      gone = true;
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  expect(gone).toBe(true);
+  // proof it actually went down: a second stop finds nothing to stop
+  const again = cli(["stop"]);
+  expect(again.status).toBe(1);
 });

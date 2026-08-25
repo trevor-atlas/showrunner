@@ -6,7 +6,7 @@ import { FIXTURE_NAMES, isFixtureName } from "../daemon/pi/harness/fixtures.ts";
 // cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
 import { installSignalHandlers, startDaemon } from "../daemon/daemon.ts";
 // the typed client is the single HTTP surface — base URL from the
-// pidfile port (SHOWRUNNER_PORT override for dev)
+// configured port (SHOWRUNNER_PORT, default 44100)
 import { DaemonClient, isDaemonDown } from "../daemon/client.ts";
 import { syncTemplates } from "../daemon/templates.ts";
 import type { RunDetail, SubmitRunBody } from "../daemon/client.ts";
@@ -31,7 +31,7 @@ import { watchRun } from "./watch.ts";
  *   showrunner restart-fresh <run_id> [phase]
  *   showrunner override <run_id> --gate <name> --reason <why> [--phase <name>]
  *   showrunner status                  daemon status: pool utilization + run status counts
- *   showrunner stop                    SIGTERM the daemon (stops children, removes pidfile)
+ *   showrunner stop                    stop the daemon over HTTP (stops children, exits)
  *
  * Global flags: --data-dir <dir> (env SHOWRUNNER_DATA_DIR is honored everywhere).
  * The CLI talks only to the daemon's HTTP API on one TCP listener.

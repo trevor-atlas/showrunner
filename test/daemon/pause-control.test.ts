@@ -11,7 +11,7 @@ import { z } from "zod";
 import { EnvelopeBase, defineAgent, defineBlueprint } from "../../src/core/index.ts";
 import type { Blueprint, Envelope, Gate } from "../../src/core/index.ts";
 
-import { cleanupDir, tmpDataDir } from "./helpers.ts";
+import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
 import {
   cursorEvents,
   daemonEntryPath,
@@ -721,35 +721,19 @@ async function waitForStatus(baseUrl: string, runId: string, status: string, tim
   }
 }
 
-/** The daemon's base URL for a data dir, read from the pidfile's port line
- * (line 2 — the daemon writes pid, then the BOUND port, after listening).
- * Before the pidfile exists it returns a port that refuses connections, so
- * the health polls below keep retrying until the daemon has bound. */
-function baseUrlFor(dir: string): string {
-  try {
-    const port = readFileSync(join(dir, "daemon.pid"), "utf8").split("\n")[1]?.trim();
-    if (port !== undefined && port !== "" && Number.isInteger(Number(port))) {
-      return `http://127.0.0.1:${port}`;
-    }
-  } catch {
-    // pidfile not written yet
-  }
-  return "http://127.0.0.1:0";
-}
-
-/** Spawned daemons bind an EPHEMERAL port (SHOWRUNNER_PORT=0 in the child env)
- * and write the real port to the pidfile AFTER bind — poll until the daemon
- * answers /api/health, then hand back the resolved base URL. */
-async function waitForDaemonUp(dir: string, timeoutMs = 15_000): Promise<string> {
+/** Spawned daemons bind a FIXED port (SHOWRUNNER_PORT=<freePort> in the child
+ * env) — there is no discovery file, so the test picks its port up front and
+ * the base URL is that known port. Poll until the daemon answers /api/health
+ * (a killed daemon's socket is released, so a reboot rebinds the same port). */
+async function waitForDaemonUp(baseUrl: string, timeoutMs = 15_000): Promise<void> {
   await waitFor(async () => {
     try {
-      await api(baseUrlFor(dir), "GET", "/health");
+      await api(baseUrl, "GET", "/health");
       return true;
     } catch {
       return false;
     }
   }, timeoutMs, "daemon up");
-  return baseUrlFor(dir);
 }
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -874,18 +858,20 @@ test(
   async () => {
     const dir = tmpDataDir("pause-restart-http");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-restart-cwd-"));
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   let daemonPid = 0;
   try {    // a SUBPROCESS daemon so we can actually kill it (in-process would kill the test)
     const boot = (): void => {
       const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
-        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: "0" },
+        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
       });
       child.unref();
       daemonPid = child.pid ?? 0;
     };
     boot();
-    let baseUrl = await waitForDaemonUp(dir, 10_000);
+    await waitForDaemonUp(baseUrl, 10_000);
 
     const happyBp = join(fixturesDir, "happy-blueprint.ts");
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: happyBp, cwd: runCwd, delayMs: 60 });
@@ -896,9 +882,8 @@ test(
       return ((json as { event_count: number }).event_count ?? 0) > 0;
     }, 10_000, "run started");
     process.kill(daemonPid, "SIGKILL");
-    // SIGKILL leaves the pidfile behind (only a graceful close removes it) —
-    // wait for the listener to go DOWN, then the restart re-binds an ephemeral
-    // port and overwrites the pidfile itself (startDaemon)
+    // wait for the listener to go DOWN — SIGKILL releases the socket, so the
+    // restart re-binds the SAME fixed port cleanly
     await waitFor(async () => {
       try {
         await api(baseUrl, "GET", "/health");
@@ -910,7 +895,7 @@ test(
 
     // restart: recovery surfaces the run as interrupted
     boot();
-    baseUrl = await waitForDaemonUp(dir, 10_000);
+    await waitForDaemonUp(baseUrl, 10_000);
     await waitForStatus(baseUrl, runId, "interrupted");
 
     // resume: the pin — any resume from interrupted flags needs_review;
