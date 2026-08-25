@@ -126,8 +126,8 @@ export interface ControlState {
 /**
  * One handle per in-flight run (running or paused): the loop registers it at
  * init, pauses suspend on it, and the HTTP surface dispatches menu actions
- * through it. The registry is module-level — the daemon is a single process,
- * so the loop and the server share it; it dies with the daemon (control
+ * through it. The registry is module-level — the server is a single process,
+ * so the loop and the server share it; it dies with the server (control
  * surface after a restart is T07/T08 territory).
  */
 export class RunControl {
@@ -381,7 +381,7 @@ function phaseIdForRun(state: ControlState, phaseName: string): string | null {
   return getPhaseByName(state.db, state.runId, phaseName)?.id ?? null;
 }
 
-// ── the registry (single daemon process) ─────────────────────────────────────
+// ── the registry (single server process) ─────────────────────────────────────
 
 const controls = new Map<string, RunControl>();
 
@@ -442,11 +442,11 @@ export function isPidAlive(pid: number): boolean {
 }
 
 /**
- * orphan cleanup — the daemon-startup sweep over the WHOLE processes
+ * orphan cleanup — the server-startup sweep over the WHOLE processes
  * table. Rows whose pid is dead (or bogus) are removed; rows whose pid is
- * ALIVE are orphaned children from a previous daemon instance killed with
+ * ALIVE are orphaned children from a previous server instance killed with
  * SIGKILL — they are SIGTERM'd (SIGKILL after 1s) and removed. The
- * daemon cannot take over a child whose stdout pipe it no longer owns, so
+ * server cannot take over a child whose stdout pipe it no longer owns, so
  * reaping is the only honest cleanup. Returns what was cleaned for tests.
  */
 export function cleanupProcesses(db: Database): { removed_dead: number; killed: number[] } {
@@ -468,7 +468,7 @@ export function cleanupProcesses(db: Database): { removed_dead: number; killed: 
  * Graceful shutdown (T07): stop every recorded child (SIGTERM → SIGKILL
  * after 1s) and remove its processes row. Events are already durable —
  * nothing is persisted here; the runs they belong to surface as interrupted
- * on the next daemon start.
+ * on the next server start.
  */
 export function stopRecordedChildren(db: Database): void {
   for (const p of listProcesses(db)) {
@@ -513,7 +513,7 @@ export function resumeInterruptedRun(db: Database, runId: string, by?: string): 
 
 /**
  * Stateless fail for a run with NO control handle (interrupted, or paused
- * after a daemon restart): fail the run row + kill recorded children + audit.
+ * after a server restart): fail the run row + kill recorded children + audit.
  * Runs WITH a live control go through RunControl.fail (the loop finalizes).
  */
 export function statelessFailRun(db: Database, runId: string, by?: string): RunRow {
@@ -545,9 +545,9 @@ export function statelessFailRun(db: Database, runId: string, by?: string): RunR
 }
 
 /**
- * Daemon-startup reconciliation: every run left in `running` when the
- * daemon restarts is surfaced as `interrupted` — orphaned children are killed
- * (the daemon cannot take over a child whose stdout it no longer owns), the
+ * Server-startup reconciliation: every run left in `running` when the
+ * server restarts is surfaced as `interrupted` — orphaned children are killed
+ * (the server cannot take over a child whose stdout it no longer owns), the
  * run_status event records the crash, and the run awaits a human continue.
  * `paused` runs are untouched (a pause is durable; their control surface is
  * T07/T08's restart concern).
@@ -563,7 +563,7 @@ export function reconcileInterruptedRuns(db: Database): string[] {
       agent_session_id: null,
       type: "run_status",
       ts: new Date().toISOString(),
-      data: { from: "running", to: "interrupted", reason: "daemon restarted — run interrupted for a human continue" },
+      data: { from: "running", to: "interrupted", reason: "server restarted — run interrupted for a human continue" },
     });
     updateRun(db, run.id, { status: "interrupted" });
     interrupted.push(run.id);

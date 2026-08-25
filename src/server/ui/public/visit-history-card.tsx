@@ -11,7 +11,7 @@ import { Card } from "./phase-card-shell.tsx";
  * its interval/duration/outcome, correction + attempt counts, and the per-visit
  * cause narrative (on_fail banners link back to the causing phase via a
  * server-navigable `?phase=` deep link). Pure presentation, ported from the
- * timeline panel's VisitHistory/VisitBlock over the daemon TimelinePhase shape.
+ * timeline panel's VisitHistory/VisitBlock over the server TimelinePhase shape.
  */
 export interface VisitHistoryCardProps {
   phase: TimelinePhase;

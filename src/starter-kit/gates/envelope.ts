@@ -14,7 +14,7 @@ interface ShapeParseResult {
 
 /**
  * envelopeShape — the envelope must satisfy a schema. Useful when a phase must
- * double-check a contract stricter than its own parse schema (the daemon
+ * double-check a contract stricter than its own parse schema (the server
  * already parses against phase.envelope; this gate exists for the extra
  * contract the phase wants to enforce on top).
  */

@@ -3,14 +3,14 @@ import { resolve } from "node:path";
 import { resolveDataDir } from "../core/index.ts";
 import { FIXTURE_NAMES, isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
 
-// cli -> daemon is a relative import (see daemon-lifecycle.ts for why)
-import { installSignalHandlers, startDaemon } from "../server/lifecycle.ts";
+// cli -> server is a relative import (see server-lifecycle.ts for why)
+import { installSignalHandlers, startServer } from "../server/lifecycle.ts";
 // the typed client is the single HTTP surface — base URL from the
 // configured port (SHOWRUNNER_PORT, default 44100)
-import { DaemonClient, isDaemonDown } from "../server/transport/client.ts";
+import { ServerClient, isServerDown } from "../server/transport/client.ts";
 import { syncTemplates } from "../server/services/templates.ts";
 import type { RunDetail, SubmitRunBody } from "../server/transport/client.ts";
-import { daemonBaseUrl, ensureDaemon, isDaemonUp, stopDaemon } from "./daemon-lifecycle.ts";
+import { serverBaseUrl, ensureServer, isServerUp, stopServer } from "./server-lifecycle.ts";
 import { buildDevSpawn } from "./dev.ts";
 import { formatEvent } from "./render.ts";
 import { watchRun } from "./watch.ts";
@@ -18,7 +18,7 @@ import { watchRun } from "./watch.ts";
 /**
  * showrunner — the CLI (submit, list, watch, detail).
  *
- *   showrunner daemon                  run the daemon in the foreground
+ *   showrunner server                  run the server in the foreground
  *   showrunner dev                     run the UI dev loop (HMR proxy chain, NODE_ENV=development)
  *   showrunner run <fixture>           submit a scripted fixture run (T01a observation path)
  *   showrunner run <blueprint.ts>      submit a blueprint run (T01b loop; FakePi sessions)
@@ -32,11 +32,11 @@ import { watchRun } from "./watch.ts";
  *   showrunner fail <run_id>           fail the run (kills children)
  *   showrunner restart-fresh <run_id> [phase]
  *   showrunner override <run_id> --gate <name> --reason <why> [--phase <name>]
- *   showrunner status                  daemon status: pool utilization + run status counts
- *   showrunner stop                    stop the daemon over HTTP (stops children, exits)
+ *   showrunner status                  server status: pool utilization + run status counts
+ *   showrunner stop                    stop the server over HTTP (stops children, exits)
  *
  * Global flags: --data-dir <dir> (env SHOWRUNNER_DATA_DIR is honored everywhere).
- * The CLI talks only to the daemon's HTTP API on one TCP listener.
+ * The CLI talks only to the server's HTTP API on one TCP listener.
  */
 
 interface Flags {
@@ -77,7 +77,7 @@ function usage(): void {
       "showrunner - agent orchestration, observable by construction",
       "",
       "usage:",
-      "  showrunner daemon                        run the daemon in the foreground",
+      "  showrunner server                        run the server in the foreground",
       "  showrunner dev [--port N]                run the UI dev loop (HMR proxy chain, NODE_ENV=development)",
       "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
       "  showrunner run <blueprint.ts> [--delay] [--cwd DIR] [--prompt \"<goal>\"] submit a blueprint run (driven by FakePi sessions; --prompt becomes the run's first instruction)",
@@ -91,9 +91,9 @@ function usage(): void {
       "  showrunner fail <run_id>                 fail the run (kills children)",
       "  showrunner restart-fresh <run_id> [phase] restart the paused phase with a new session",
       "  showrunner override <run_id> --gate <g> --reason <r>  override a failed gate on the pause",
-      "  showrunner status                      daemon status: pool utilization + run status counts",
+      "  showrunner status                      server status: pool utilization + run status counts",
       "  showrunner templates sync [--yes]        pull starter-kit updates into the data dir (drift reported; --yes overwrites)",
-      "  showrunner stop                          stop the daemon",
+      "  showrunner stop                          stop the server",
       "",
       "flags: --data-dir <dir>   data directory (default ~/.showrunner, env SHOWRUNNER_DATA_DIR)",
     ].join("\n"),
@@ -107,15 +107,15 @@ async function cmdRun(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
 
   const submit = async (body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     try {
       return (await client.submitRun(body as SubmitRunBody)) as unknown as Record<string, unknown>;
     } catch (err) {
-      if (isDaemonDown(err)) throw err;
-      // the daemon rejected the submit (bad blueprint, missing scripts, ...)
+      if (isServerDown(err)) throw err;
+      // the server rejected the submit (bad blueprint, missing scripts, ...)
       console.error(`run rejected: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
@@ -143,7 +143,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
     // FINDING-1 (`args?`): `--prompt "<goal>"` is the user
     // instruction channel the skills use (`showrunner run <bp> --prompt "…"`).
-    // It rides the opaque `args` array — the daemon snapshots it verbatim into
+    // It rides the opaque `args` array — the server snapshots it verbatim into
     // blueprint.json AND composes it as the [User request] section of the run's
     // first prompt, so the instruction actually reaches the agent.
     if (flags.rest.prompt !== undefined) body.args = ["--prompt", flags.rest.prompt];
@@ -162,8 +162,8 @@ async function cmdRun(flags: Flags): Promise<number> {
 
 async function cmdRuns(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   const { runs } = await client.listRuns();
   if (runs.length === 0) {
     console.log("no runs yet - submit one with: showrunner run happy");
@@ -189,14 +189,14 @@ async function cmdShow(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
 
   let detail: RunDetail;
   try {
     detail = await client.getRun(runId);
   } catch (err) {
-    if (!isDaemonDown(err)) {
+    if (!isServerDown(err)) {
       console.error(`run ${runId}: not found`);
       return 1;
     }
@@ -229,14 +229,14 @@ async function cmdWatch(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
 
   // fail fast on an unknown run id
   try {
     await client.getRun(runId);
   } catch (err) {
-    if (!isDaemonDown(err)) {
+    if (!isServerDown(err)) {
       console.error(`run ${runId}: not found`);
       return 1;
     }
@@ -266,17 +266,17 @@ async function cmdDev(flags: Flags): Promise<number> {
   return await child.exited;
 }
 
-async function cmdDaemon(flags: Flags): Promise<number> {
+async function cmdServer(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   try {
-    const handle = await startDaemon({ dataDir });
+    const handle = await startServer({ dataDir });
     installSignalHandlers(handle);
-    console.log(`showrunner daemon listening on ${handle.baseUrl} (pid ${process.pid})`);
+    console.log(`showrunner server listening on ${handle.baseUrl} (pid ${process.pid})`);
     console.log("Editing src/server? run `showrunner dev` for hot reload.");
-    // keep the process alive; SIGINT/SIGTERM handled inside the daemon module
+    // keep the process alive; SIGINT/SIGTERM handled inside the server module
     await new Promise<never>(() => {});
   } catch (err) {
-    console.error(`showrunner daemon: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`showrunner server: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
   return 0;
@@ -284,7 +284,7 @@ async function cmdDaemon(flags: Flags): Promise<number> {
 
 /**
  * `showrunner templates sync` — pull starter-kit updates into <dataDir>/templates/
- * WITHOUT starting the daemon. Missing files are added automatically; drift is
+ * WITHOUT starting the server. Missing files are added automatically; drift is
  * reported and NOT overwritten unless `--yes`/`--force` is passed (the confirm
  * seam). The safe default is report-only.
  */
@@ -315,8 +315,8 @@ async function cmdTemplates(flags: Flags): Promise<number> {
 async function cmdStop(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
   try {
-    await stopDaemon(dataDir);
-    console.log("daemon stopped");
+    await stopServer(dataDir);
+    console.log("server stopped");
     return 0;
   } catch (err) {
     console.error(`showrunner stop: ${err instanceof Error ? err.message : String(err)}`);
@@ -325,7 +325,7 @@ async function cmdStop(flags: Flags): Promise<number> {
 }
 
 // ── T04 control verbs: steer / pause / resume / approve (+ the full pause
-// menu: fail, restart-fresh, override). Each maps to a daemon control
+// menu: fail, restart-fresh, override). Each maps to a server control
 // endpoint and surfaces the resulting run state. `pause` has no manual-pause
 // endpoint (pauses are automatic) — it is the pause-state viewer / menu
 // trigger for a paused run. ───────────────────────────────────────────────────
@@ -337,19 +337,19 @@ interface RunSummary {
   ended_at: string | null;
 }
 
-async function fetchRun(client: DaemonClient, runId: string): Promise<RunSummary | null> {
+async function fetchRun(client: ServerClient, runId: string): Promise<RunSummary | null> {
   try {
     const body = await client.getRun(runId);
     return body.run;
   } catch (err) {
-    if (!isDaemonDown(err)) return null; // unknown run → caller reports
+    if (!isServerDown(err)) return null; // unknown run → caller reports
     throw err;
   }
 }
 
 /** Poll /runs/:id until the status leaves the pre-action state (timeout ~10s). */
 async function pollStatus(
-  client: DaemonClient,
+  client: ServerClient,
   runId: string,
   until: (s: string) => boolean,
   timeoutMs = 10_000,
@@ -376,8 +376,8 @@ async function cmdSteer(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     const res = await client.steerRun(runId, message, flags.rest.by);
     console.log(`steer queued for run ${runId} (${res.queued_steers} queued): ${message}`);
@@ -398,8 +398,8 @@ async function cmdPause(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     const body = await client.pause(runId);
     if (!body.paused) {
@@ -433,8 +433,8 @@ async function cmdApprove(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     await client.approve(runId, { by: flags.rest.by });
     const status = await pollStatus(client, runId, (s) => s !== "paused");
@@ -455,8 +455,8 @@ async function cmdResume(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     const res = await client.resume(runId, { by: flags.rest.by });
     console.log(`run ${runId} resumed — status: ${res.status}, needs_review: ${res.needs_review === 1 ? "yes" : "no"}`);
@@ -468,16 +468,16 @@ async function cmdResume(flags: Flags): Promise<number> {
   }
 }
 
-/** `showrunner status` — the daemon status verb: health + pool + run counts. */
+/** `showrunner status` — the server status verb: health + pool + run counts. */
 async function cmdStatus(flags: Flags): Promise<number> {
   const dataDir = flags.dataDir ?? resolveDataDir();
-  if (!(await isDaemonUp(daemonBaseUrl(dataDir)))) {
-    console.log(`daemon: down (no daemon at ${daemonBaseUrl(dataDir)}) — start one with \`showrunner daemon\``);
+  if (!(await isServerUp(serverBaseUrl(dataDir)))) {
+    console.log(`server: down (no server at ${serverBaseUrl(dataDir)}) — start one with \`showrunner server\``);
     return 0;
   }
   try {
-    const s = await new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) }).status();
-    console.log(`daemon: up (pid ${s.pid}, http ${daemonBaseUrl(dataDir)})`);
+    const s = await new ServerClient({ baseUrl: serverBaseUrl(dataDir) }).status();
+    console.log(`server: up (pid ${s.pid}, http ${serverBaseUrl(dataDir)})`);
     console.log(`data dir: ${s.data_dir}`);
     console.log(`uptime: ${Math.round(s.uptime_ms / 1000)}s`);
     console.log(`pool: ${s.pool.running.length}/${s.pool.slots} busy, ${s.pool.queued.length} queued`);
@@ -502,8 +502,8 @@ async function cmdFail(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     await client.failRun(runId, { by: flags.rest.by });
     const status = await pollStatus(client, runId, (s) => s === "failed" || s === "success");
@@ -518,7 +518,7 @@ async function cmdFail(flags: Flags): Promise<number> {
 }
 
 /** Resolve the paused phase (explicit arg, else the pause viewer's phase). */
-async function pausedPhase(client: DaemonClient, runId: string, explicit: string | undefined): Promise<string | null> {
+async function pausedPhase(client: ServerClient, runId: string, explicit: string | undefined): Promise<string | null> {
   if (explicit !== undefined && explicit !== "") return explicit;
   try {
     const body = await client.pause(runId);
@@ -535,8 +535,8 @@ async function cmdRestartFresh(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     const phase = await pausedPhase(client, runId, flags.positionals[1]);
     if (phase === null) {
@@ -564,8 +564,8 @@ async function cmdOverride(flags: Flags): Promise<number> {
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureDaemon(dataDir);
-  const client = new DaemonClient({ baseUrl: daemonBaseUrl(dataDir) });
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
   try {
     const phase = await pausedPhase(client, runId, flags.rest.phase);
     if (phase === null) {
@@ -597,8 +597,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdShow(flags);
     case "watch":
       return cmdWatch(flags);
-    case "daemon":
-      return cmdDaemon(flags);
+    case "server":
+      return cmdServer(flags);
     case "dev":
       return cmdDev(flags);
     case "stop":

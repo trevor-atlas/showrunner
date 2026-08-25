@@ -47,11 +47,11 @@ import { Document } from "../document.tsx";
  * T10b — the control surface: the control bar mounts the resume HEADER
  * action (only when the run is `interrupted`) and the pause menu
  * when the run is `paused`. Both post to remix POST routes that call
- * the daemon endpoints server-side; the browser never mutates daemon
+ * the server endpoints server-side; the browser never mutates server
  * state itself (no optimistic mutation).
  *
  * A missing run renders the 404 page with a back-link. The UI and
- * the daemon share one process (merged web server), so there is no "daemon
+ * the server share one process (merged web server), so there is no "server
  * down" shell state.
  */
 
@@ -112,7 +112,7 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
     const pillStatus = isRunStatus(run.status) ? run.status : "interrupted";
     const regionProps: RunLiveRegionProps = {
       runId,
-      // the client-entry boundary: the daemon wire values are plain JSON, so
+      // the client-entry boundary: the server wire values are plain JSON, so
       // the SerializableProps widening is structural only (see the region's
       // Serializable* types)
       timeline: timeline as unknown as SerializableTimelineView,

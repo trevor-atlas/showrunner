@@ -3,7 +3,7 @@ process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never 
  * GET /api/stats acceptance (issue #34): the all-time landing KPI/chart
  * aggregate, from REAL daemon data. Runs/phases/events are seeded directly
  * (like test/ui/run-list.test.ts) so every KPI has a deterministic value,
- * then the daemon runs in-process and the typed DaemonClient reads it back
+ * then the daemon runs in-process and the typed ServerClient reads it back
  * (mirroring test/daemon/server.test.ts).
  *
  * Hermetic: each test uses its own scratch data dir and closes its daemon.
@@ -12,10 +12,10 @@ import { test, expect } from "bun:test";
 
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 import { dbPathFor } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
-import { startDaemon } from "../../src/server/lifecycle.ts";
-import { type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer } from "../../src/server/lifecycle.ts";
+import { type ServerHandle } from "../../src/server/lifecycle.ts";
 import type { Database } from "bun:sqlite";
 
 const APPROVAL_BLUEPRINT = new URL("./fixtures/approval-blueprint.ts", import.meta.url).pathname;
@@ -98,7 +98,7 @@ function seedSpend(
 
 test("apiStats derives all-time KPIs from seeded runs/phases/events", async () => {
   const dir = tmpDataDir("stats");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     // Seed BEFORE start: only pre-start `running` rows get reconciled to
     // interrupted, so these statuses survive verbatim.
@@ -143,8 +143,8 @@ test("apiStats derives all-time KPIs from seeded runs/phases/events", async () =
 
     db.close();
 
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
-    const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+    daemon = await startServer({ dataDir: dir, port: 0 });
+    const client = new ServerClient({ baseUrl: daemon.baseUrl });
     const stats = await client.getStats();
 
     // counts: raw status keys only (no `queued`); interrupted is its own count
@@ -190,7 +190,7 @@ test("apiStats derives all-time KPIs from seeded runs/phases/events", async () =
 
 test("apiStats reports null KPIs when there are zero terminal runs", async () => {
   const dir = tmpDataDir("stats-empty");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     const db = openDb(dbPathFor(dir));
     // one interrupted run: terminal count is 0 → success_rate and
@@ -198,8 +198,8 @@ test("apiStats reports null KPIs when there are zero terminal runs", async () =>
     seedRun(db, "run-int-only", "interrupted", "scout", "2024-02-01T00:00:00.000Z", null);
     db.close();
 
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
-    const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+    daemon = await startServer({ dataDir: dir, port: 0 });
+    const client = new ServerClient({ baseUrl: daemon.baseUrl });
     const stats = await client.getStats();
 
     expect(stats.runs_count).toBe(1);
@@ -214,10 +214,10 @@ test("apiStats reports null KPIs when there are zero terminal runs", async () =>
 
 test("apiStats queued_count comes from a real 1-slot pool", async () => {
   const dir = tmpDataDir("stats-queue");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, poolSlots: 1, port: 0 });
-    const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+    daemon = await startServer({ dataDir: dir, poolSlots: 1, port: 0 });
+    const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
     // A pauses at require_approval and HOLDS the single slot (F1)…
     const a = await client.submitRun({ blueprint: APPROVAL_BLUEPRINT, cwd: dir });

@@ -17,7 +17,7 @@ export const SESSION_ID_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
  * Which session driver the run loop uses. Real pi is the PRODUCT default:
  * `SHOWRUNNER_FAKE=1` forces scripted FakePi sessions (tests, demos, CI);
  * `SHOWRUNNER_SMOKE=1` forces the real pi binary (the capstone smoke); with
- * neither set, the daemon auto-detects — real pi when a binary is found, the
+ * neither set, the server auto-detects — real pi when a binary is found, the
  * scripted sessions otherwise (a fresh checkout with no pi installed still
  * runs blueprints). Explicit `SHOWRUNNER_FAKE=1` wins over everything.
  */

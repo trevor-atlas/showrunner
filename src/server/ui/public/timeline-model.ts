@@ -1,6 +1,6 @@
 /**
  * The run-timeline chart + selection model (spec R4/R5) — pure, no UI. It
- * consumes the daemon's TimelineView (GET /runs/:id/timeline — per-visit
+ * consumes the server's TimelineView (GET /runs/:id/timeline — per-visit
  * segments already folded server-side, phases already in blueprint order) and
  * derives everything the chart renders:
  *

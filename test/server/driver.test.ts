@@ -62,7 +62,7 @@ test("happy fixture: full lifecycle lands as folded events, in order", async () 
     expect(toolCalls).toHaveLength(3);
     expect(toolCalls[0]).toMatchObject({ tool: "bash", tool_call_id: "call_01", ok: true });
     expect(toolCalls[0]!.result_snippet).toBe("src/\nindex.ts\n");
-    expect(toolCalls[1]).toMatchObject({ tool: "edit", tool_call_id: "call_02", args: { filePath: "packages/daemon/src/db.ts" } });
+    expect(toolCalls[1]).toMatchObject({ tool: "edit", tool_call_id: "call_02", args: { filePath: "packages/server/src/db.ts" } });
     // the two updates REPLACED: the folded snippet is the final accumulated text
     expect(toolCalls[2]!.result_snippet).toBe("# pass 12\n# fail 0\n");
 

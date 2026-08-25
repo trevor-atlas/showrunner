@@ -1,5 +1,5 @@
 /**
- * @showrunner/daemon/src/pi — the real pi session driver (T02, spec).
+ * src/server/engine/pi — the real pi session driver (T02, spec).
  *
  * Spawns `pi --mode rpc --session-id <id> --approve` behind the SessionDriver
  * seam: RPC command writer (id-matched responses), LF-only stdout reader

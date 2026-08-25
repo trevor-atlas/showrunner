@@ -51,7 +51,7 @@ export function validationError(
   return { verb, message: `check the ${verb} form — ${summary}`, fields };
 }
 
-/** A daemon 409/4xx (ApiError) surfaced on the form that submitted it. */
+/** A server 409/4xx (ApiError) surfaced on the form that submitted it. */
 export function apiControlError(verb: ControlError["verb"], err: { status: number; message: string }): ControlError {
   return { verb, message: `${verb} failed (${err.status}): ${err.message}` };
 }

@@ -19,10 +19,10 @@ import { get, post, route } from "remix/routes";
  *   routes.runs.phases.restart.href({ runId, phase })    -> ".../phases/:phase/restart-fresh" (POST)
  *
  * The POST routes are the remix-server side of the control verbs: the
- * browser posts a form here (T10b), the action calls the daemon
+ * browser posts a form here (T10b), the action calls the server
  * endpoint through the server-side client, then re-renders/redirects from
- * daemon state — the browser never talks to the daemon directly.
- * The URLs mirror the daemon's surface for readability.
+ * server state — the browser never talks to the server directly.
+ * The URLs mirror the server's surface for readability.
  */
 export const routes = route({
   // the colocated asset server (remix/assets) — source modules under app/**/public/**
@@ -39,7 +39,7 @@ export const routes = route({
   // — the landing stats snapshot proxy (issue #40): the RunStatsRegion
   // clientEntry refetches this on every global ledger change and re-renders
   // the KPI cards + charts. PATH PINNED to /stats.json (no collision with
-  // routes.runs.show /runs/:runId or the daemon's /api/* surface).
+  // routes.runs.show /runs/:runId or the server's /api/* surface).
   homeStats: get("/stats.json"),
   // — run detail, the events.json cursor proxy, the control
   // verbs (steer/resume/fail/approve), and the phase drill-in group
@@ -53,7 +53,7 @@ export const routes = route({
     // the run-scoped SSE change stream — wake-ups only, no payload
     live: get("/runs/:runId/events.sse"),
     // R6: the timeline.json refetch proxy — the live region polls this
-    // alongside events.json every tick so the chart re-derives from daemon
+    // alongside events.json every tick so the chart re-derives from server
     // state (new segments, closed visits, status/ended_at) between refreshes
     timeline: get("/runs/:runId/timeline.json"),
     // control verbs — one POST route per verb, one form per action
@@ -63,12 +63,12 @@ export const routes = route({
     approve: post("/runs/:runId/approve"),
     phases: {
       // R5: the lazy envelopes/gates proxies — the browser fetches a selected
-      // phase's data through these remix routes (never the daemon directly),
+      // phase's data through these remix routes (never the server directly),
       // mirroring the events.json cursor proxy pattern
       envelopes: get("/runs/:runId/phases/:phase/envelopes.json"),
       gates: get("/runs/:runId/phases/:phase/gates.json"),
       // the phase-card data proxies (issue #35) — the browser fetches each
-      // card's data through these remix routes, never the daemon/fs directly
+      // card's data through these remix routes, never the server/fs directly
       snapshot: get("/runs/:runId/phases/:phase/snapshot.json"),
       inputs: get("/runs/:runId/phases/:phase/inputs.json"),
       outputs: get("/runs/:runId/phases/:phase/outputs.json"),

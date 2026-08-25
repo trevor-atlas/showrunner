@@ -14,8 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { insertRun, openDb } from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
@@ -99,15 +99,15 @@ describe("run list (T09) — server-side daemon data", () => {
   it("renders every status pill, spend, and row order from a live daemon (plus one real FakePi run)", async () => {
     const dir = tmpDir("live");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       const seeded = seedRuns(dir);
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       // a genuinely in-flight run — inserted after daemon start so
       // startup reconciliation does not flip it to interrupted
       const runningId = insertRunning(dir);
       seeded.unshift(runningId);
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
       // a REAL FakePi run through the daemon pipeline
       const fx = await client.submitRun({ fixture: "happy", cwd: dir });
@@ -149,10 +149,10 @@ describe("run list (T09) — server-side daemon data", () => {
   it("renders the queued pill with a REAL spawn-queue position from a 1-slot pool", async () => {
     const dir = tmpDir("queue");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, poolSlots: 1, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, poolSlots: 1, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
       // A pauses at require_approval and holds the slot (F1)…
       const a = await client.submitRun({ blueprint: APPROVAL_BLUEPRINT, cwd: dir });
@@ -181,9 +181,9 @@ describe("run list (T09) — server-side daemon data", () => {
   it("renders the empty state when the daemon has no runs", async () => {
     const dir = tmpDir("empty");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       const { status, html } = await fetchHome();
       expect(status).toBe(200);
       expect(html).toContain("no runs yet");
@@ -199,10 +199,10 @@ describe("run list (T09) — server-side daemon data", () => {
   it("renders the shell + REAL rows from an in-process daemon (the old daemon-down state is impossible)", async () => {
     const dir = tmpDir("in-process");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       seedRuns(dir);
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
 
       const { status, html } = await fetchHome();
       expect(status).toBe(200);
@@ -223,10 +223,10 @@ describe("run list (T09) — server-side daemon data", () => {
   it("filters by status (?status=) server-side", async () => {
     const dir = tmpDir("filter");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       seedRuns(dir);
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
 
       const response = await router.fetch(
         new Request("http://localhost" + routes.home.href() + "?status=failed"),

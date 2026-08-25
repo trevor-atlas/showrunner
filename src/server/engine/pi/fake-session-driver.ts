@@ -37,7 +37,7 @@ export interface FakeSessionDriverOptions {
 /**
  * The scripted FakePi session driver (T01b) — the deterministic,
  * no-pi, no-token stand-in behind the same SessionDriver seam. It spawns
- * src/daemon/pi/harness/fake-session.ts (the exact process T01b's loop spawned)
+ * src/server/engine/pi/harness/fake-session.ts (the exact process T01b's loop spawned)
  * with the exact same arguments and env, so downstream behavior is
  * byte-compatible: prompt commands advance the script one turn, agent_settled
  * ends the turn, stdin EOF exits 0.
@@ -191,7 +191,7 @@ export class FakeSessionDriver implements SessionDriver {
    * stdin EOF → the process reaps itself (exit 0); resolves when gone.
    * HARDENED (capstone FINDING 3): if the child ever ignores stdin EOF and
    * lingers past a 1s grace period, escalate SIGTERM → SIGKILL after 1s (the
-   * same semantics as stop()) — a long-lived daemon must never accumulate
+   * same semantics as stop()) — a long-lived server must never accumulate
    * fake-session children, no matter how a script misbehaves.
    */
   async close(): Promise<void> {

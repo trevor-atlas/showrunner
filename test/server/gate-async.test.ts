@@ -10,7 +10,7 @@ import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import { daemonEntryPath } from "../../src/server/lifecycle.ts";
+import { serverEntryPath } from "../../src/server/lifecycle.ts";
 
 /**
  * The capstone FINDING 1 regression seam ("Backpressure" at the HTTP
@@ -90,7 +90,7 @@ async function bootDaemon(label: string): Promise<BootedDaemon> {
   // port up front and hands it to the child via SHOWRUNNER_PORT (parallel-safe:
   // each boot gets its own port).
   const port = await freePort();
-  const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+  const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
     stdio: ["ignore", logFd, logFd],
     env: { ...process.env, SHOWRUNNER_PORT: String(port) },
   });

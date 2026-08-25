@@ -3,15 +3,15 @@
  * phase drill-in ("from the run's blueprint snapshot, not the live
  * blueprint — what actually ran").
  *
- * The daemon snapshots the RENDERED configuration at submit time into
- * `{data_dir}/runs/<run_id>/blueprint.json` (packages/daemon runner.ts
- * `snapshotBlueprint`, record files). There is NO daemon HTTP endpoint for
+ * The server snapshots the RENDERED configuration at submit time into
+ * `{data_dir}/runs/<run_id>/blueprint.json` (src/server/engine/runner.ts
+ * `snapshotBlueprint`, record files). There is NO server HTTP endpoint for
  * it (the table stops at /raw) — the drill-in reads the file the same
- * way the daemon's own resume path does (runner.ts `prepareResume`), from the
- * data dir resolved by the same @showrunner/core helper the daemon client
+ * way the server's own resume path does (runner.ts `prepareResume`), from the
+ * data dir resolved by the same @showrunner/core helper the server client
  * uses. Later edits to the live blueprint module never reach this file.
  *
- * Browser never imports this module (server-side only, like app/lib/daemon.ts).
+ * Browser never imports this module (server-side only, like src/server/lib/model.ts).
  */
 import { readFileSync } from "node:fs";
 

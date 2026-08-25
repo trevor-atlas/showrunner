@@ -10,7 +10,7 @@ import { Pre } from "./phase-card-shell.tsx";
  * block. The old drill-in OUTPUT card's raw tail moved here so a run's output
  * stays viewable after the phase drill-in page folded into the run page.
  *
- * Pure presentation over the daemon RawTail shape ({ raw, line_count,
+ * Pure presentation over the server RawTail shape ({ raw, line_count,
  * truncated }): the summary reports the full line count and, when the tail
  * dropped earlier lines, the truncated flag. The owner (run-live-region)
  * SSR-seeds it and refetches raw.json on every SSE change wake-up — this

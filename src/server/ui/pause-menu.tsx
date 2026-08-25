@@ -7,11 +7,11 @@ import { routes } from "../routes.ts";
  * The pause menu (`PauseMenu` + `SteerForm` /
  * `OverrideForm`): the control surface shown on run detail when the run is
  * PAUSED. One form per action; every form posts to a remix POST route (which
- * calls the daemon endpoint through the server-side client — the
- * browser never talks to the daemon) and re-renders/redirects from
- * daemon state. No optimistic mutation: nothing here flips client state.
+ * calls the server endpoint through the server-side client — the
+ * browser never talks to the server) and re-renders/redirects from
+ * server state. No optimistic mutation: nothing here flips client state.
  *
- * Which actions render comes from the daemon's own pause viewer (
+ * Which actions render comes from the server's own pause viewer (
  * `/runs/:id/pause`): the `actions` array is `effectiveMenu(info)` per pause
  * kind (approval → approve+steer+fail; budget_exhausted →
  * steer+override+restart_fresh+fail; guard/blocked/hook → steer+restart_fresh
@@ -28,7 +28,7 @@ export type ControlVerb = "steer" | "override" | "restart" | "fail" | "approve" 
 
 /** A control failure surfaced on the form that submitted it. `fields` holds
  * data-schema validation messages (keyed by field name); `message` is the
- * top-level text — an ApiError's status+message for daemon 409/4xx, or a
+ * top-level text — an ApiError's status+message for server 409/4xx, or a
  * validation summary. */
 export interface ControlError {
   verb: ControlVerb;
@@ -44,7 +44,7 @@ export interface PauseMenuProps {
   kind: string;
   /** the pause reason (the run_status event's reason) */
   reason: string | null;
-  /** the daemon's effective menu — which forms to render */
+  /** the server's effective menu — which forms to render */
   actions: readonly string[];
   /** steers queued while paused (delivered on continuation) */
   queuedSteers: readonly string[];
@@ -82,7 +82,7 @@ export function PauseMenu(handle: Handle<PauseMenuProps>) {
 
         {!hasActions && error === null ? (
           <p mix={noteStyle} data-pause-note>
-            the daemon has no control handle for this pause (restarted?) — no actions available
+            the server has no control handle for this pause (restarted?) — no actions available
           </p>
         ) : null}
 
@@ -132,7 +132,7 @@ export function PauseMenu(handle: Handle<PauseMenuProps>) {
 }
 
 /** The audited steer form: message → POST /runs/:runId/steer (the
- * daemon's run-keyed steer — on a paused run the message is queued and the
+ * server's run-keyed steer — on a paused run the message is queued and the
  * run stays paused; delivery lands with the continuation machinery).
  * `message` is validated with data-schema (required, non-blank). */
 function SteerForm(handle: Handle<{ runId: string; error: ControlError | null }>) {

@@ -41,11 +41,11 @@ import { startLiveSnapshot, type LiveApplyOutcome } from "./live-snapshot.ts";
  * region: `apply` always returns "applied" (a transient failure keeps the last
  * snapshot; the stream never stops).
  *
- * The browser NEVER talks to the daemon: it only refetches the rendered
+ * The browser NEVER talks to the server: it only refetches the rendered
  * snapshot proxy (the iron convention).
  */
 
-/** The client-entry boundary widens the daemon wire type with the
+/** The client-entry boundary widens the server wire type with the
  * SerializableProps index signature — the values are plain JSON (exactly what
  * the /runs-list.json proxy returns), so the widening is structural only (the
  * same `as unknown as` the run-detail region uses). */

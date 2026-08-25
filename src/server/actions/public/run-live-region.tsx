@@ -18,12 +18,12 @@ import { TimelinePanel } from "../../ui/public/timeline-panel.tsx";
 import { RawTranscript } from "../../ui/public/raw-transcript.tsx";
 
 /**
- * The client-entry boundary widens the daemon wire types (client.ts/db.ts)
+ * The client-entry boundary widens the server wire types (client.ts/db.ts)
  * with the SerializableProps index signature. The values are plain JSON — the
  * serialization at the entry boundary is exactly what the API returns —
  * so the widened types are structural only; the intersection documents that
  * these props ARE serializable (the same `as unknown as` widening the
- * server-side client uses at the daemon boundary).
+ * server-side client uses at the server boundary).
  */
 export type SerializableTimelineView = TimelineView & SerializableObject;
 export type SerializableEnvelopeRow = EnvelopeRow & SerializableObject;
@@ -57,7 +57,7 @@ export type SerializableRawTail = RawTail & SerializableObject;
  * browser URL (history.replaceState with the same ?phase= query, so the
  * selection is always deep-linkable). The panel's envelopes/gates are fetched
  * LAZILY on selection through the envelopes.json / gates.json remix proxies
- * (the browser never talks to the daemon — the iron convention); the initial
+ * (the browser never talks to the server — the iron convention); the initial
  * selection's data is server-rendered by renderRunDetail and seeds the cache.
  *
  * R6 live behavior: each refetch fetches events.json AND timeline.json in
@@ -240,7 +240,7 @@ export const RunLiveRegion = clientEntry(
 
     /** #41 lazy fetch: a selected phase's full card record through the six
      * phase proxies (envelopes/gates + the four #35 surfaces). The browser
-     * never talks to the daemon. Same inflight dedup + per-surface error state
+     * never talks to the server. Same inflight dedup + per-surface error state
      * as the old envelopes/gates fetch. */
     const loadPhaseData = async (name: string): Promise<void> => {
       if (inflight.has(name)) return; // a slow round-trip must not stack

@@ -36,8 +36,8 @@ import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../../src/core/index.ts";
 
 import { freePort } from "../helpers.ts";
-import { daemonEntryPath } from "../../../src/server/lifecycle.ts";
-import { DaemonClient } from "../../../src/server/transport/client.ts";
+import { serverEntryPath } from "../../../src/server/lifecycle.ts";
+import { ServerClient } from "../../../src/server/transport/client.ts";
 import type { RunDetail } from "../../../src/server/transport/client.ts";
 import { backfillMissedEvents } from "../../../src/server/engine/backfill.ts";
 import { openDb } from "../../../src/server/repository/db.ts";
@@ -76,7 +76,7 @@ const HAPPY_BP = join(HERE, "..", "fixtures", "happy-blueprint.ts");
 const POLL_TOOL = join(REPO_ROOT, "src", "starter-kit", "tools", "poll.ts");
 
 const keep = process.env.SHOWRUNNER_SMOKE_KEEP === "1";
-// the smoke's DaemonClient would otherwise pool keep-alive sockets; a CLI
+// the smoke's ServerClient would otherwise pool keep-alive sockets; a CLI
 // subprocess holding the daemon's attention >5s (its 10s pollStatus deadline)
 // lets the daemon's keepAliveTimeout close the idle socket, and a stale reuse
 // then EPIPEs. Fresh connection per request — the smoke is not hot-path code.
@@ -114,7 +114,7 @@ const SMOKE_BASE_URL = `http://127.0.0.1:${SMOKE_PORT}`;
 async function waitForHealth(_dataDir: string): Promise<void> {
   await waitFor(async () => {
     try {
-      await new DaemonClient({ baseUrl: SMOKE_BASE_URL }).health();
+      await new ServerClient({ baseUrl: SMOKE_BASE_URL }).health();
       return true;
     } catch {
       return false;
@@ -122,7 +122,7 @@ async function waitForHealth(_dataDir: string): Promise<void> {
   }, 20_000, `daemon up at ${SMOKE_BASE_URL}`);
 }
 
-async function waitForStatus(client: DaemonClient, runId: string, status: string, timeoutMs = 120_000): Promise<void> {
+async function waitForStatus(client: ServerClient, runId: string, status: string, timeoutMs = 120_000): Promise<void> {
   await waitFor(async () => {
     const d = await client.getRun(runId);
     return d.run.status === status;
@@ -130,7 +130,7 @@ async function waitForStatus(client: DaemonClient, runId: string, status: string
 }
 
 /** Wait until the run has a live agent session; return its pid. */
-async function waitForLiveChild(client: DaemonClient, runId: string, timeoutMs = 120_000): Promise<number> {
+async function waitForLiveChild(client: ServerClient, runId: string, timeoutMs = 120_000): Promise<number> {
   let pid = 0;
   await waitFor(async () => {
     const d = await client.getRun(runId);
@@ -179,7 +179,7 @@ function bootDaemon(dataDir: string, extra: Record<string, string> = {}): { chil
   const logFd = openSync(logPath, "a");
   // FIXED port (SHOWRUNNER_PORT=SMOKE_PORT): the daemon has no discovery file,
   // so the smoke chose the port up front and the CLI reaches it on the same port
-  const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dataDir], {
+  const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dataDir], {
     stdio: ["ignore", logFd, logFd],
     env: {
       ...process.env,
@@ -269,7 +269,7 @@ async function scenarioCapstone(): Promise<void> {
   await waitForHealth(dataDir);
   console.log(`smoke: daemon up (pid ${daemon.child.pid ?? "?"})`);
 
-  const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+  const client = new ServerClient({ baseUrl: daemon.baseUrl });
   const startedAt = Date.now();
   const sub = await client.submitRun({ blueprint: CAPSTONE_BP, cwd: repo });
   const runId = sub.run_id;
@@ -378,7 +378,7 @@ async function scenarioCrash(): Promise<void> {
 
   const daemon = bootDaemon(dataDir);
   await waitForHealth(dataDir);
-  const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+  const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
   // 2a: the child dies mid-flight (not the daemon) → crash/needs_review, no orphans
   const sub = await client.submitRun({ blueprint: HAPPY_BP, cwd: repo });
@@ -426,7 +426,7 @@ async function scenarioBackfill(): Promise<void> {
 
   let daemon = bootDaemon(dataDir, { PI_CODING_AGENT_SESSION_DIR: sessionRoot });
   await waitForHealth(dataDir);
-  let client = new DaemonClient({ baseUrl: daemon.baseUrl });
+  let client = new ServerClient({ baseUrl: daemon.baseUrl });
 
   const sub = await client.submitRun({ blueprint: HAPPY_BP, cwd: repo });
   const runId = sub.run_id;
@@ -477,7 +477,7 @@ async function scenarioBackfill(): Promise<void> {
   daemon = bootDaemon(dataDir, { PI_CODING_AGENT_SESSION_DIR: sessionRoot });
   await waitForHealth(dataDir);
   // the restarted daemon bound a NEW ephemeral port — re-point the client at it
-  client = new DaemonClient({ baseUrl: daemon.baseUrl });
+  client = new ServerClient({ baseUrl: daemon.baseUrl });
   await waitForStatus(client, runId, "interrupted", 120_000);
   const detail = await client.getRun(runId);
   check("run surfaced interrupted after restart", detail.run.status === "interrupted");

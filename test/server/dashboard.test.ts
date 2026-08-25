@@ -1,8 +1,8 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 
 import { test, expect, afterAll } from "bun:test";
-import { startDaemon } from "../../src/server/lifecycle.ts";
-import type { DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer } from "../../src/server/lifecycle.ts";
+import type { ServerHandle } from "../../src/server/lifecycle.ts";
 import { tmpDataDir, cleanupDir } from "./helpers.ts";
 
 /**
@@ -20,7 +20,7 @@ import { tmpDataDir, cleanupDir } from "./helpers.ts";
 
 const dataDir = tmpDataDir("dashboard");
 
-let daemon: DaemonHandle | null = null;
+let daemon: ServerHandle | null = null;
 let port = 0;
 
 afterAll(async () => {
@@ -43,7 +43,7 @@ async function fetchHomeWarm(): Promise<{ status: number; html: string }> {
 }
 
 test("the merged server serves BOTH the dashboard (GET /) and the /api JSON on ONE ephemeral port", async () => {
-  daemon = await startDaemon({ dataDir, port: 0 });
+  daemon = await startServer({ dataDir, port: 0 });
   port = daemon.port;
   expect(daemon.baseUrl).toBe(`http://127.0.0.1:${port}`);
   expect(port).toBeGreaterThan(0); // 0 = ephemeral → the real port is on the handle
@@ -62,7 +62,7 @@ test("the merged server serves BOTH the dashboard (GET /) and the /api JSON on O
 test("SHOWRUNNER_PORT=0 → the daemon binds an ephemeral port (env knob, no port option)", async () => {
   const saved = process.env.SHOWRUNNER_PORT;
   process.env.SHOWRUNNER_PORT = "0";
-  const ephemeral = await startDaemon({ dataDir: tmpDataDir("dashboard-ephemeral") });
+  const ephemeral = await startServer({ dataDir: tmpDataDir("dashboard-ephemeral") });
   try {
     expect(ephemeral.port).toBeGreaterThan(0);
     const health = await fetch(`${ephemeral.baseUrl}/api/health`, { signal: AbortSignal.timeout(5_000) });

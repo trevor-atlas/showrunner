@@ -25,9 +25,9 @@ const HMR_ENTRY = fileURLToPath(new URL("../server/hmr.ts", import.meta.url));
  */
 export function buildDevSpawn(flags: DevFlags, env: Record<string, string | undefined>): DevSpawn {
   const childEnv: Record<string, string | undefined> = { ...env, NODE_ENV: "development" };
-  // hmr.ts sets the child daemon's PORT=appPort, but startDaemon resolves
+  // hmr.ts sets the child server's PORT=appPort, but startServer resolves
   // SHOWRUNNER_PORT before PORT — a leaked SHOWRUNNER_PORT would make the inner
-  // daemon bind that port and collide with the proxy. Drop it so appPort wins.
+  // server bind that port and collide with the proxy. Drop it so appPort wins.
   delete childEnv.SHOWRUNNER_PORT;
   if (flags.dataDir !== undefined) childEnv.SHOWRUNNER_DATA_DIR = flags.dataDir;
   if (flags.rest.port !== undefined) childEnv.PORT = flags.rest.port;

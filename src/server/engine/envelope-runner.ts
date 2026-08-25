@@ -31,7 +31,7 @@ import type { EventIds } from "./queue.ts";
  *  - the `blocked` short-circuit (pre-gate, burns no corrections, never
  *    routed through on_fail)
  *  - gate execution: a THROWN gate is caught and treated
- *    as a violation (error text) — a crashing gate never crashes the daemon
+ *    as a violation (error text) — a crashing gate never crashes the server
  *  - recording envelope rows + gate_results rows per the schema, and the
  *    `envelope` / `gate_result` events
  *  - the gate-override mechanism: who + why + when audited next to the
@@ -182,7 +182,7 @@ function recordAttemptRow(
 
 /**
  * Run every gate; record a gate_results row + `gate_result` event per gate.
- * A throwing gate becomes a violation with the error text — the daemon
+ * A throwing gate becomes a violation with the error text — the server
  * never crashes because a gate crashed.
  */
 async function runGates(
@@ -211,7 +211,7 @@ async function runGates(
         ? { gate: name, pass: true, violations: [] }
         : { gate: name, pass: false, violations: result.violations };
     } catch (err) {
-      // a thrown gate is a violation, never a daemon crash
+      // a thrown gate is a violation, never a server crash
       const message = err instanceof Error ? err.message : String(err);
       run = { gate: name, pass: false, violations: [`gate "${name}" crashed: ${message}`] };
     }

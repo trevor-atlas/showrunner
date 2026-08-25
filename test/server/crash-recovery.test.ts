@@ -12,10 +12,10 @@ import { runDirFor } from "../../src/core/index.ts";
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
 import { backfillMissedEvents } from "../../src/server/engine/backfill.ts";
 import { cleanupProcesses } from "../../src/server/engine/pause-control.ts";
-import { daemonEntryPath, startDaemon } from "../../src/server/lifecycle.ts";
+import { serverEntryPath, startServer } from "../../src/server/lifecycle.ts";
 import { cursorEvents, eventCount, insertAgentSession, insertPhase, insertProcess, insertRun, listProcesses, openDb } from "../../src/server/repository/db.ts";
 import { sessionDirNameForCwd, writeAgentMap } from "../../src/server/repository/workspace/index.ts";
-import { type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { type ServerHandle } from "../../src/server/lifecycle.ts";
 
 /**
  * T07 crash recovery & daemon lifecycle (issue #12): kill-9 durability,
@@ -133,7 +133,7 @@ test(
     const runCwd = mkdtempSync(join(tmpdir(), "showrunner-kill9-cwd-"));
     let daemonPid = 0;
     const boot = (): void => {
-      const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+      const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
         env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
       });
@@ -411,7 +411,7 @@ test(
     const sessionRoot = mkdtempSync(join(tmpdir(), "showrunner-backfill-e2e-sess-"));
     let daemonPid = 0;
     const boot = (): void => {
-      const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+      const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
         env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port), PI_CODING_AGENT_SESSION_DIR: sessionRoot },
       });
@@ -451,7 +451,7 @@ test(
         .at(-1)!;
       const db = openDb(join(dir, "showrunner.db")); // read-side while the daemon idles
       try {
-        // the daemon's startup backfill already ran (startDaemon is synchronous
+        // the daemon's startup backfill already ran (startServer is synchronous
         // before listen): the run's raw record now holds every line the session
         // file has — the missed tail is restored, deduplicated
         const rawPath = join(runDirFor(dir, runId), "raw_output.jsonl");
@@ -491,9 +491,9 @@ test(
 test("GET /status reports health, pool utilization, and run status counts", async () => {
   const dir = tmpDataDir("status");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-status-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
+    daemon = await startServer({ dataDir: dir, port: 0, poolSlots: 1 });
     // unix-mode daemon: the handle always binds a socket here (string)
     const baseUrl = daemon.baseUrl;
     const s0 = (await api(baseUrl, "GET", "/status")).json as {
@@ -547,9 +547,9 @@ test("GET /status reports health, pool utilization, and run status counts", asyn
 test("graceful shutdown stops recorded children and closes the listener", async () => {
   const dir = tmpDataDir("shutdown");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-shutdown-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
+    daemon = await startServer({ dataDir: dir, port: 0, poolSlots: 1 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 30 });
     const runId = (sub.json as { run_id: string }).run_id;
@@ -575,7 +575,7 @@ test("graceful shutdown stops recorded children and closes the listener", async 
       db.close();
     }
     // the run left mid-flight surfaces as interrupted on the next start
-    const daemon2 = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
+    const daemon2 = await startServer({ dataDir: dir, port: 0, poolSlots: 1 });
     try {
       await waitForStatus(daemon2.baseUrl, runId, "interrupted");
     } finally {
@@ -597,7 +597,7 @@ test("no auto-resume (v1): a restarted daemon surfaces interrupted but never dri
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-noresume-cwd-"));
   let daemonPid = 0;
   const boot = (): void => {
-    const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+    const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
       stdio: "ignore",
       env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
     });
@@ -646,7 +646,7 @@ test("kill-9 does not tear the events log: ids are contiguous and strictly ascen
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-tear-cwd-"));
   let daemonPid = 0;
   const boot = (): void => {
-    const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+    const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
       stdio: "ignore",
       env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
     });

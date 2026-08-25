@@ -166,5 +166,5 @@ test("fixture registry resolves paths and guards names", () => {
   expect(fakePiEntryPath()).toEndWith("/fake-pi.ts");
   expect(isFixtureName("happy")).toBe(true);
   expect(isFixtureName("nope")).toBe(false);
-  expect(HERE.endsWith("/test/daemon/pi/")).toBe(true); // the harness suite lives in test/daemon/pi/
+  expect(HERE.endsWith("/test/server/pi/")).toBe(true); // the harness suite lives in test/server/pi/
 });

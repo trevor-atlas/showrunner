@@ -12,7 +12,7 @@
     "dev": "NODE_ENV=development bun --watch src/server/main.ts",
     "hmr": "NODE_ENV=development bun src/server/hmr.ts",
     "start": "NODE_ENV=production bun src/server/main.ts",
-    "smoke": "SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.ts"
+    "smoke": "SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/server/smoke/smoke.ts"
   },
   "dependencies": {
     "remix": "3.0.0-beta.10",

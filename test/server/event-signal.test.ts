@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { dbPathFor } from "../../src/core/index.ts";
 import { insertEvent, insertRun, onEventWritten, openDb } from "../../src/server/repository/db.ts";
 import { subscribeRun } from "../../src/server/transport/change-bus.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 
 function tmpDir(label: string): string {
   return mkdtempSync(join(tmpdir(), `showrunner-t5-${label}-`));
@@ -91,7 +91,7 @@ describe("repository event-written emitter", () => {
 });
 
 describe("createWebServer wiring: event-write → change bus", () => {
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   let dir: string | null = null;
   const savedDataDir = process.env.SHOWRUNNER_DATA_DIR;
 
@@ -107,7 +107,7 @@ describe("createWebServer wiring: event-write → change bus", () => {
   it("a write through insertEvent wakes a run subscriber (exactly one signal — chokepoint guard)", async () => {
     dir = tmpDir("wire");
     process.env.SHOWRUNNER_DATA_DIR = dir;
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
 
     const db = openDb(dbPathFor(dir));
     insertRun(db, { id: "run-a", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });
@@ -125,7 +125,7 @@ describe("createWebServer wiring: event-write → change bus", () => {
   it("disposes the subscription when the server tears down", async () => {
     dir = tmpDir("dispose");
     process.env.SHOWRUNNER_DATA_DIR = dir;
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
 
     const db = openDb(dbPathFor(dir));
     insertRun(db, { id: "run-b", blueprint: "b", status: "running", cwd: "/", needs_review: 0, started_at: "t", ended_at: null });

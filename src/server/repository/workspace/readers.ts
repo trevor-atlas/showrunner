@@ -31,7 +31,7 @@ import type { Envelope } from "../../../core/index.ts";
  * ({ phase → { pi_session_id, pid, visit, model } }).
  *
  * The read side lives here (readers.ts); the write side lives in writers.ts.
- * Both are re-exported from index.ts, and src/daemon/handoff.ts is a thin
+ * Both are re-exported from index.ts, and src/server/repository/workspace/writers.ts is a thin
  * re-export shim over this module so existing importers keep compiling.
  */
 

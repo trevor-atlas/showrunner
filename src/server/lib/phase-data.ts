@@ -29,7 +29,7 @@ export interface ContextEntry {
 }
 
 /**
- * Resolve each context entry the way the daemon did at run time
+ * Resolve each context entry the way the server did at run time
  * (handoff.ts resolveContextFile: cwd first, then the blueprint module dir):
  * an entry that resolves to an existing file is marked "(inlined)"; anything
  * else was passed through as a literal. Best-effort — files may have changed

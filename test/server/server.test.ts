@@ -8,8 +8,8 @@ import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
 import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
-import { startDaemon } from "../../src/server/lifecycle.ts";
-import { type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer } from "../../src/server/lifecycle.ts";
+import { type ServerHandle } from "../../src/server/lifecycle.ts";
 
 // The merged daemon listens on ONE TCP port (no unix socket anymore): the
 // API is served under the same listener as the dashboard. Each test starts
@@ -65,9 +65,9 @@ async function waitForDone(dataDir: string, runId: string, baseUrl: string, trie
 
 test("the daemon API serves health, submit, runs, detail, events cursor, raw", async () => {
   const dir = tmpDataDir("server");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     // merged daemon: ONE TCP listener; baseUrl carries the (ephemeral) port
     const baseUrl = daemon.baseUrl;
 
@@ -147,9 +147,9 @@ test("POST /runs with a blueprint module drives it to completion (, T01b)", asyn
   // a PARALLEL IC may have left context_handoff residue in the repo root
   // (packages/starter-kit, T12) — F3 asserts THIS test adds none
   const rootHadContextDir = existsSync(join(process.cwd(), "context_handoff"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     const demo = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "demo-blueprint.ts");
@@ -197,9 +197,9 @@ test("POST /runs with a blueprint module drives it to completion (, T01b)", asyn
 
 test("POST /runs rejects a blueprint path without scripted sessions", async () => {
   const dir = tmpDataDir("server-noscript");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const submitted = await api(baseUrl, "POST", "/api/runs", { blueprint: "/nonexistent/blueprint.ts" });
     expect(submitted.status).toBe(400);
@@ -213,13 +213,13 @@ test("POST /runs rejects a blueprint path without scripted sessions", async () =
 test("a second daemon on the same FIXED port refuses to start (bind-based EADDRINUSE guard)", async () => {
   const dir = tmpDataDir("server-guard");
   const port = await freePort();
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     // first daemon claims the fixed port; a second boot on the same port hits
     // EADDRINUSE and is rejected with a clear "already running" error — no
     // file is consulted, the live socket IS the guard
-    daemon = await startDaemon({ dataDir: dir, port });
-    await expect(startDaemon({ dataDir: dir, port })).rejects.toThrow(/daemon already running/);
+    daemon = await startServer({ dataDir: dir, port });
+    await expect(startServer({ dataDir: dir, port })).rejects.toThrow(/server already running/);
   } finally {
     await daemon?.close();
     cleanupDir(dir);
@@ -228,13 +228,13 @@ test("a second daemon on the same FIXED port refuses to start (bind-based EADDRI
 
 test("two ephemeral (port: 0) daemons on the same data dir both start — no false guard", async () => {
   const dir = tmpDataDir("server-ephemeral-pair");
-  let a: DaemonHandle | null = null;
-  let b: DaemonHandle | null = null;
+  let a: ServerHandle | null = null;
+  let b: ServerHandle | null = null;
   try {
     // ephemeral binds can never collide (the OS hands back a free port), so the
     // double-boot guard must NOT fire — the test suite relies on this
-    a = await startDaemon({ dataDir: dir, port: 0 });
-    b = await startDaemon({ dataDir: dir, port: 0 });
+    a = await startServer({ dataDir: dir, port: 0 });
+    b = await startServer({ dataDir: dir, port: 0 });
     expect(a.port).toBeGreaterThan(0);
     expect(b.port).toBeGreaterThan(0);
     expect(a.port).not.toBe(b.port);
@@ -247,10 +247,10 @@ test("two ephemeral (port: 0) daemons on the same data dir both start — no fal
 
 test("POST /api/shutdown responds ok and raises SIGTERM on the daemon (the `stop` verb's graceful path)", async () => {
   const dir = tmpDataDir("server-shutdown");
-  const daemon = await startDaemon({ dataDir: dir, port: 0 });
+  const daemon = await startServer({ dataDir: dir, port: 0 });
   // the endpoint self-signals SIGTERM AFTER flushing the response; catch it so
   // the graceful path is provable in-process without killing the test runner
-  // (startDaemon installs no signal handlers, so this is the only SIGTERM sink)
+  // (startServer installs no signal handlers, so this is the only SIGTERM sink)
   let signalled = false;
   const onTerm = (): void => {
     signalled = true;
@@ -279,7 +279,7 @@ test("POST /api/shutdown responds ok and raises SIGTERM on the daemon (the `stop
 
 test("daemon.close stops the listener", async () => {
   const dir = tmpDataDir("server-close");
-  const daemon = await startDaemon({ dataDir: dir, port: 0 });
+  const daemon = await startServer({ dataDir: dir, port: 0 });
   const baseUrl = daemon.baseUrl;
   expect(daemon.port).toBeGreaterThan(0);
   await daemon.close();
@@ -294,9 +294,9 @@ test("daemon.close stops the listener", async () => {
 
 test("GET /runs/:id/spend returns exact per-phase token totals (SQL SUM — no sweep cap, no truncated)", async () => {
   const dir = tmpDataDir("server-spend-tokens");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const submitted = await api(baseUrl, "POST", "/api/runs", { fixture: "happy", delayMs: 0 });
     expect(submitted.status).toBe(201);
@@ -320,9 +320,9 @@ test("GET /runs/:id/spend returns exact per-phase token totals (SQL SUM — no s
 
 test("?full=1 run detail rides the initial sweep: 13 events + next_cursor 13; the flagless shape omits them", async () => {
   const dir = tmpDataDir("server-full-detail");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const submitted = await api(baseUrl, "POST", "/api/runs", { fixture: "happy", delayMs: 0 });
     const { run_id } = submitted.json as { run_id: string };
@@ -352,9 +352,9 @@ test("?full=1 run detail rides the initial sweep: 13 events + next_cursor 13; th
 test("GET /runs/:id/phases/:phase/outputs lists the outputs dir + FINDINGS.md; 404 for a ghost run/phase", async () => {
   const dir = tmpDataDir("server-phase-outputs");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const demo = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "demo-blueprint.ts");
     const submitted = await api(baseUrl, "POST", "/api/runs", { blueprint: demo, cwd: runCwd, delayMs: 0 });
@@ -399,9 +399,9 @@ test("GET /runs/:id/phases/:phase/outputs lists the outputs dir + FINDINGS.md; 4
 test("pause viewer: override_targets = [\"neverGreen\"] on a budget pause (gate names, row order)", async () => {
   const dir = tmpDataDir("server-pause-override-targets");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // the budget-exhaustion blueprint's gate always fails → the correction
@@ -428,9 +428,9 @@ test("pause viewer: override_targets = [\"neverGreen\"] on a budget pause (gate 
 test("pause viewer: override_targets absent on an approval pause (the menu offers no override)", async () => {
   const dir = tmpDataDir("server-pause-approval");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-run-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     const approval = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures", "approval-blueprint.ts");

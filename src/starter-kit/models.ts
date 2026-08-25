@@ -10,7 +10,7 @@
  */
 
 export interface RosterEntry {
-  /** the model id exactly as the daemon's pi reports it (--list-models) */
+  /** the model id exactly as the server's pi reports it (--list-models) */
   id: string;
   /** why this role is filled by this model */
   note: string;

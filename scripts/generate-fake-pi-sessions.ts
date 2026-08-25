@@ -1,8 +1,8 @@
 /**
  * Generate the on-disk FakePi sessions under src/blueprints/fake-pi/ from the
- * same builders the harness uses (src/daemon/pi/harness/session-builder.ts) — the CLI path
+ * same builders the harness uses (src/server/engine/pi/harness/session-builder.ts) — the CLI path
  * (`showrunner run <path-to-blueprint>.ts`) resolves each phase's scripted
- * session from <moduleDir>/fake-pi/<phase-slug>.json (daemon).
+ * session from <moduleDir>/fake-pi/<phase-slug>.json (server).
  *
  *   bun scripts/generate-fake-pi-sessions.ts
  *

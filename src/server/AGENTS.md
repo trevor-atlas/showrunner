@@ -1,54 +1,74 @@
-# Showrunner UI — Agent Guide
+# Showrunner server — Agent Guide
 
-The Showrunner dashboard (`@showrunner/ui`): the remix@next (v3 beta) dashboard.
-Built on the `remix` package only — **not React**. See the guides at
-https://guides.remix.run (read start-here, request-handling,
+`src/server/` is the long-lived server process: it owns SQLite and serves BOTH
+the JSON API (`/api/*`) and the remix@next (v3 beta) dashboard on ONE TCP
+listener (default `127.0.0.1:44100`, `SHOWRUNNER_PORT` overrides). The
+dashboard is built on the `remix` package only — **not React**. See the guides
+at https://guides.remix.run (read start-here, request-handling,
 routing-and-controllers, rendering-ui, streaming-ui-with-frames,
-data-and-validation, files-and-assets, interactivity before touching this
-package).
+data-and-validation, files-and-assets, interactivity before touching the UI
+layers).
 
 ## Commands
 
 ```sh
 bun install
 bun run typecheck   # tsc --noEmit
-bun test            # bun test (daemon runs in-process against scratch dirs)
+bun test            # bun test (the server runs in-process against scratch dirs)
 bun src/cli/index.ts dev   # `showrunner dev` — the first-class UI dev loop (remix HMR, NODE_ENV=development)
-bun main.ts         # full daemon + dashboard in-process, port 44100 (SHOWRUNNER_PORT overrides)
+bun main.ts         # full server + dashboard in-process, port 44100 (SHOWRUNNER_PORT overrides)
 bun --watch main.ts   # dev reload (restarts on every edit → interrupts in-flight runs)
 bun hmr             # what `showrunner dev` runs: hot-swaps most edits without restart (hmr.ts spawns main.ts as its HMR child)
 ```
 
-Everything runs under bun — `main.ts` imports `startDaemon` from the daemon
-and boots it in-process, and remix's node entry composes with bun's node:http
-compat (the same path the daemon's merged listener uses, `src/daemon/web.ts`).
-Run `bun test` from THIS directory: bun anchors tsconfig discovery at the cwd,
-so running the UI tests from the repo root misses this package's
-`jsxImportSource` and falls back to React's JSX runtime.
+Everything runs under bun — `main.ts` imports `startServer` from
+`lifecycle.ts` and boots the server in-process, and remix's node entry composes
+with bun's `node:http` compat (the same path the merged listener uses,
+`transport/http.ts`). Run `bun test` from THIS directory: bun anchors tsconfig
+discovery at the cwd, so running the UI tests from the repo root misses this
+package's `jsxImportSource` and falls back to React's JSX runtime.
 
-## Layout
+## Layout — the layers
 
-- `main.ts` — the UI dev entry: calls `startDaemon` (src/daemon/daemon.ts)
-  IN-PROCESS to boot a full daemon, then serves the remix router on the same
-  merged TCP listener via `src/daemon/web.ts` (port 44100, `SHOWRUNNER_PORT`).
-- `hmr.ts` — remix's HMR runner (unchanged); spawns `main.ts` as its HMR child.
-- `routes.ts` — the typed route map (`remix/routes`): `/`, the run-detail group (`/runs/:runId`, `/runs/:runId/events.json`, `/runs/:runId/timeline.json`, the control POST routes, and `/runs/:runId/phases/:phase` + its `envelopes.json`/`gates.json` proxies + control POST routes), and the colocated asset server.
+Requests flow **router → controller → service → engine → repository**, with
+**transport** owning the wire (HTTP + SSE) and **lib** the server-side data
+bridge the dashboard controllers read through.
+
+- `lifecycle.ts` — `startServer` / `ServerHandle`: opens the DB, boots the pool,
+  claims the port (bind-based double-boot guard), runs crash recovery, and
+  returns the handle. `main.ts` is the standalone dev entry that calls it.
+- `routes.ts` — the typed route map (`remix/routes`): `/`, the run-detail group
+  (`/runs/:runId`, `events.json`, `timeline.json`, the control POST routes, the
+  `/runs/:runId/phases/:phase` drill-in + its `envelopes.json`/`gates.json`
+  proxies), and the colocated asset server.
 - `router.ts` — middleware (`staticFiles` + `render`) and controller mapping.
-- `actions/controller.tsx` — the `/` action: fetches GET /runs SERVER-SIDE
-  via `lib/daemon.ts` and renders `RunListPage`. Never call the daemon from
-  the browser — no CORS, no daemon credentials in the browser.
-- `actions/run-list-page.tsx` — the run list shell; the live toolbar + table are the `RunListLive` clientEntry (push-live off the `/live.sse` ledger).
-- `actions/runs/` — the run-detail group: `/runs/:runId` (header, control bar, timeline chart, detail panel, live feed), the `events.json` + `timeline.json` cursor/timeline proxies, the phase drill-in group, and the control POST routes.
-- `actions/runs/phases/` — the phase drill-in page (config, envelope, gates, spend, output) plus the lazy `envelopes.json`/`gates.json` proxies and the phase-scoped control verbs.
-- `actions/public/` — the browser runtime entry, the `RunListLive` and `RunLiveRegion` clientEntries, and the SSE substrate (`sse.ts`).
-- `ui/` — server-only shared components (`NeedsReviewBanner`, `PauseMenu`, phase drill-in cards) and `format.ts`.
-- `ui/public/` — the browser module graph: `StatusPill` (+ the `runStatus` fold), `EmptyState`, the run-list `list-model.ts`, the timeline chart + panel (`timeline.tsx`, `timeline-panel.tsx`, `timeline-model.ts`), the `EventFeed`, and the browser-local `format.ts` copies.
-- `lib/daemon.ts` — the server-side daemon data layer: calls the api
-  core (src/daemon/server.ts) IN-PROCESS against the state held by
-  src/daemon/web-state.ts (the merged web server — no socket round trip).
-- `test/` — the T09 e2e (bun test + `router.fetch`, scratch daemons).
+- `transport/` — the wire layer: `http.ts` (the merged web server + the
+  `Request → Response` dispatcher for `/api/*`), `client.ts` (the typed HTTP
+  client the CLI uses), `state.ts` (the in-process state holder registered by
+  `createWebServer`), and `change-bus.ts` (the write-side signal bus that wakes
+  SSE subscribers).
+- `actions/` — the remix controllers (the run list, the run-detail group, the
+  phase drill-in group, the control POST routes) and `actions/public/` (the
+  browser runtime entry, the `RunListLive`/`RunLiveRegion` clientEntries, and
+  the SSE substrate). Controllers read data SERVER-SIDE through `lib/`; the
+  browser never calls the API directly.
+- `services/` — the read/compute view-model layer (run list, run stats, run
+  detail, phase record, timeline, templates): pure gathers over the repository.
+- `engine/` — the run loop, pool, driver, pi session harness, backfill,
+  pause-control, and tracer — everything that actually drives agent sessions.
+- `repository/` — persistence: `db.ts` (SQLite, the single events-write
+  chokepoint) and `workspace/` (the run workspace filesystem protocol).
+- `lib/` — the dashboard's server-side data bridge: `model.ts` calls the api
+  core IN-PROCESS against the state held by `transport/state.ts` (no socket
+  round trip), plus `blueprint-snapshot.ts` / `phase-data.ts` gathers.
+- `ui/` — server-only shared components (`NeedsReviewBanner`, `PauseMenu`, phase
+  drill-in cards) and `format.ts`.
+- `ui/public/` — the browser module graph: `StatusPill` (+ the `runStatus`
+  fold), `EmptyState`, the run-list `list-model.ts`, the timeline chart + panel,
+  the `EventFeed`, and the browser-local `format.ts` copies.
 
-  Note: the package tree lives at `src/server/`; the standalone test suite is at `test/server/`.
+Note: the package tree lives at `src/server/`; the standalone test suite is at
+`test/server/`.
 
 ## Conventions
 
@@ -56,6 +76,8 @@ so running the UI tests from the repo root misses this package's
   render function; state is a setup-scope variable; updates via `handle.update()`.
 - Server-rendered by default; mark the smallest interactive piece with
   `clientEntry(import.meta.url, ...)` — props must be `SerializableProps`.
+- The browser module graph (`ui/public/`) must not pull server-only types or
+  modules.
 - No React, no react-router, no hooks, no styling library — `remix/ui`'s
   `css()`, `mix`, `on(...)` are the stack.
 - `remix` is pinned exactly (`3.0.0-beta.10`) — do not float it.

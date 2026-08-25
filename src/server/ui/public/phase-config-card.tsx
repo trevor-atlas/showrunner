@@ -12,7 +12,7 @@ import { Card, mono, Pre } from "./phase-card-shell.tsx";
  * state.
  *
  * NOTE (verified against runner.ts:415 `envelope: renderSchema(...)`):
- * `SnapshotPhase.envelope` is typed `unknown` but the daemon serializes a
+ * `SnapshotPhase.envelope` is typed `unknown` but the server serializes a
  * PRE-RENDERED schema STRING (a multi-line `{ … }` type description), not a zod
  * object. "Render the contract" means render that string; `renderEnvelopeContract`
  * coerces defensively with `String()` and falls back for older/empty snapshots.

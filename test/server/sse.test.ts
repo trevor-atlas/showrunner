@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { insertEvent, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { createCoalescedNotifier } from "../../src/server/actions/public/sse.ts";
 import { routes } from "../../src/server/routes.ts";
@@ -82,7 +82,7 @@ describe("createCoalescedNotifier", () => {
 // ── e2e over real TCP ───────────────────────────────────────────────────────
 
 const dataDir = mkdtempSync(join(tmpdir(), "showrunner-sse-e2e-"));
-let daemon: DaemonHandle | null = null;
+let daemon: ServerHandle | null = null;
 
 afterAll(async () => {
   await daemon?.close();
@@ -106,7 +106,7 @@ async function openSse(
 
 describe("SSE e2e over real TCP", () => {
   it("streams a byte-exact change frame as events are written, then closes on abort", async () => {
-    daemon = await startDaemon({ dataDir, port: 0 });
+    daemon = await startServer({ dataDir, port: 0 });
     const base = daemon.baseUrl;
 
     const db = openDb(dbPathFor(dataDir));
@@ -169,7 +169,7 @@ describe("SSE e2e over real TCP", () => {
   }, { timeout: 30_000 });
 
   it("holds the socket open past one heartbeat interval (a keepalive arrives)", async () => {
-    if (daemon === null) daemon = await startDaemon({ dataDir, port: 0 });
+    if (daemon === null) daemon = await startServer({ dataDir, port: 0 });
     const base = daemon.baseUrl;
 
     // drive a short heartbeat via the test knob and confirm a keepalive frame

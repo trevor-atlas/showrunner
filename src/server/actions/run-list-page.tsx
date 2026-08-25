@@ -15,8 +15,8 @@ import { RunStatsRegion, type SerializableRunStats } from "./public/run-stats-re
  * initial (filtered) rows and then goes push-live off the `/live.sse` ledger
  * stream (issue #39) — the old manual refresh button is gone.
  *
- * The UI and the daemon share one process (merged web server), so there is no
- * "daemon down" shell state.
+ * The UI and the server share one process (merged web server), so there is no
+ * "server down" shell state.
  */
 
 export interface RunListPageProps {
@@ -43,7 +43,7 @@ export function RunListPage(handle: Handle<RunListPageProps>) {
           </header>
 
           <RunStatsRegion
-            // the client-entry boundary: RunStats is plain daemon JSON, so the
+            // the client-entry boundary: RunStats is plain server JSON, so the
             // SerializableProps widening is structural only (same `as unknown
             // as` the list region uses)
             stats={stats as unknown as SerializableRunStats}
@@ -51,7 +51,7 @@ export function RunListPage(handle: Handle<RunListPageProps>) {
           />
 
           <RunListLive
-            // the client-entry boundary: the daemon wire values are plain JSON,
+            // the client-entry boundary: the server wire values are plain JSON,
             // so the SerializableProps widening is structural only (see the
             // region's SerializableRunListItem type)
             runs={runs as unknown as SerializableRunListItem[]}

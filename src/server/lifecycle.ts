@@ -11,13 +11,13 @@ import { materializeTemplates } from "./services/templates.ts";
 import { createWebServer, getRouter } from "./transport/http.ts";
 
 /**
- * The long-lived daemon: owns SQLite and serves BOTH the JSON
+ * The long-lived server: owns SQLite and serves BOTH the JSON
  * API (under /api/*) and the remix dashboard on ONE TCP listener (default
- * 127.0.0.1:44100, src/daemon/web.ts). The dashboard lives "under the remix
+ * 127.0.0.1:44100, src/server/transport/http.ts). The dashboard lives "under the remix
  * side": the same process that owns the data serves the web UI.
  */
 
-export interface DaemonHandle {
+export interface ServerHandle {
   dataDir: string;
   /** the TCP port the merged web server listens on (ephemeral when 0 was passed) */
   port: number;
@@ -29,7 +29,7 @@ export interface DaemonHandle {
 /** pool size override (default: SHOWRUNNER_POOL_SIZE ?? 2) — test seam */
 const POOL_SLOTS = Number(process.env.SHOWRUNNER_POOL_SIZE ?? "2") || 2;
 
-/** The port the daemon binds: explicit option > SHOWRUNNER_PORT > PORT (the
+/** The port the server binds: explicit option > SHOWRUNNER_PORT > PORT (the
  * remix HMR dev chain sets PORT when it spawns the dev server) > 44100.
  * 0 = ephemeral: the OS picks a free port (read back from server.address()). */
 function resolvePort(opts: { port?: number }): number {
@@ -37,7 +37,7 @@ function resolvePort(opts: { port?: number }): number {
   return Number(process.env.SHOWRUNNER_PORT ?? process.env.PORT ?? "44100");
 }
 
-export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; port?: number } = {}): Promise<DaemonHandle> {
+export async function startServer(opts: { dataDir?: string; poolSlots?: number; port?: number } = {}): Promise<ServerHandle> {
   const dataDir = opts.dataDir ?? resolveDataDir();
   mkdirSync(dataDir, { recursive: true });
   // Materialize the starter kit into <dataDir>/templates/ (copy-if-absent):
@@ -49,8 +49,8 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
   const server = createWebServer({ db, dataDir, pool, startedAt: Date.now() });
 
   // Double-boot guard, bind-based: a FIXED port already in use means another
-  // daemon owns this data dir. A dead process holds no socket, so EADDRINUSE
-  // is proof of a LIVE daemon — there is no stale file to reap. Ephemeral
+  // server owns this data dir. A dead process holds no socket, so EADDRINUSE
+  // is proof of a LIVE server — there is no stale file to reap. Ephemeral
   // (port 0) can never collide: the OS always hands back a free port, so no
   // guard is meaningful there. The bind is claimed BEFORE crash recovery so a
   // losing second boot never touches the shared DB.
@@ -70,30 +70,30 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
     // release the DB handle this losing boot opened before surfacing the error
     db.close();
     if (port !== 0 && (err as NodeJS.ErrnoException).code === "EADDRINUSE") {
-      throw new Error(`daemon already running for data dir ${dataDir} (port ${port} in use)`);
+      throw new Error(`server already running for data dir ${dataDir} (port ${port} in use)`);
     }
     throw err;
   }
 
   // crash recovery, in reap-then-restore order (safe now that we own the port):
   //   orphan cleanup — sweep the processes table: dead-pid rows are
-  //   removed, ALIVE pids are orphaned children of a SIGKILLed daemon and are
+  //   removed, ALIVE pids are orphaned children of a SIGKILLed server and are
   //   SIGTERM'd (SIGKILL after 1s) and removed.
   const orphans = cleanupProcesses(db);
   //   crash surfacing — runs left `running` become `interrupted` (the
   //   children are already reaped above; a human continue comes via resume).
   const interrupted = reconcileInterruptedRuns(db);
-  //   backfill — restore the session tail the daemon missed while down
+  //   backfill — restore the session tail the server missed while down
   //   (JSONL re-read, deduped against the run's own raw file; idempotent).
   const backfill = backfillMissedEvents(db, dataDir);
   if (orphans.killed.length > 0 || orphans.removed_dead > 0) {
-    console.log(`showrunner daemon: reaped ${orphans.killed.length} orphaned child(ren) (${orphans.removed_dead} dead rows removed)`);
+    console.log(`showrunner server: reaped ${orphans.killed.length} orphaned child(ren) (${orphans.removed_dead} dead rows removed)`);
   }
   if (interrupted.length > 0) {
-    console.log(`showrunner daemon: ${interrupted.length} run(s) interrupted by the previous crash — resume to continue`);
+    console.log(`showrunner server: ${interrupted.length} run(s) interrupted by the previous crash — resume to continue`);
   }
   if (backfill.lines_restored > 0) {
-    console.log(`showrunner daemon: backfilled ${backfill.lines_restored} missed line(s) → ${backfill.events_folded} event(s) for ${backfill.sessions.length} session(s)`);
+    console.log(`showrunner server: backfilled ${backfill.lines_restored} missed line(s) → ${backfill.events_folded} event(s) for ${backfill.sessions.length} session(s)`);
   }
 
   {
@@ -106,7 +106,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
     // in-memory ModuleStore, .../lib/module-store.d.ts), so the warm MUST run
     // in this process; the `build` script cannot precompile for it. Fired after
     // bind (never awaited before it) so it cannot deadlock the listener. A warm
-    // failure is logged and does NOT kill the daemon — the first request then
+    // failure is logged and does NOT kill the server — the first request then
     // surfaces the error and retries. Development stays lazy (needs watch+hmr).
     if ((process.env.NODE_ENV ?? "development") === "production") {
       void (async () => {
@@ -116,7 +116,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
           await warmEntryAssets();
         } catch (err) {
           console.error(
-            `showrunner daemon: boot-time asset warm failed (${err instanceof Error ? err.message : String(err)}) — the first request will retry`,
+            `showrunner server: boot-time asset warm failed (${err instanceof Error ? err.message : String(err)}) — the first request will retry`,
           );
         }
       })();
@@ -137,25 +137,25 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
   };
 }
 
-/** Absolute path of this entry module - the CLI spawns it as the daemon process. */
-export function daemonEntryPath(): string {
+/** Absolute path of this entry module - the CLI spawns it as the server process. */
+export function serverEntryPath(): string {
   return fileURLToPath(import.meta.url);
 }
 
 /**
- * Install SIGINT/SIGTERM handlers that shut the daemon down gracefully
- * (close the server, close the DB). The daemon's HTTP shutdown endpoint
+ * Install SIGINT/SIGTERM handlers that shut the server down gracefully
+ * (close the server, close the DB). The server's HTTP shutdown endpoint
  * (POST /api/shutdown) rides this same path by signalling the process.
- * Registered both when daemon.ts is the entry and when the CLI runs
- * `showrunner daemon` in-process. Handlers live for the process lifetime -
- * a daemon, by definition, does not outlive its signal handlers.
+ * Registered both when server.ts is the entry and when the CLI runs
+ * `showrunner server` in-process. Handlers live for the process lifetime -
+ * a server, by definition, does not outlive its signal handlers.
  */
-export function installSignalHandlers(handle: DaemonHandle): void {
+export function installSignalHandlers(handle: ServerHandle): void {
   let closing = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (closing) return;
     closing = true;
-    console.log(`showrunner daemon: ${signal}, shutting down`);
+    console.log(`showrunner server: ${signal}, shutting down`);
     await handle.close();
     process.exit(0);
   };
@@ -175,11 +175,11 @@ if (import.meta.main) {
     }
   }
   try {
-    const handle = await startDaemon({ dataDir });
-    console.log(`showrunner daemon listening on ${handle.baseUrl} (pid ${process.pid})`);
+    const handle = await startServer({ dataDir });
+    console.log(`showrunner server listening on ${handle.baseUrl} (pid ${process.pid})`);
     installSignalHandlers(handle);
   } catch (err) {
-    console.error(`showrunner daemon: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`showrunner server: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

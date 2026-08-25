@@ -8,9 +8,9 @@ import type { EventRow, EventType } from "../../core/index.ts";
 import { backfillV3 } from "../engine/backfill-v3.ts";
 
 /**
- * The SQLite layer. One single-writer connection owned by the daemon;
+ * The SQLite layer. One single-writer connection owned by the server;
  * readers (CLI, UI, tail) open separate read-only connections or go through the
- * daemon's HTTP API. Every event row is validated against the core event
+ * server's HTTP API. Every event row is validated against the core event
  * schemas before insert - zod is the single source of truth.
  */
 
@@ -521,11 +521,11 @@ export function sumSpendTokenTotals(
 /** Per-run reported-vs-estimated spend split, summed from the spend EVENTS
  * (not `phases.spend_usd`). The events table is the source because
  * `phases.spend_usd` LAGS after crash recovery: backfill folds spend events
- * only and never calls updatePhase (src/daemon/backfill.ts), so a recovered
+ * only and never calls updatePhase (src/server/engine/backfill.ts), so a recovered
  * run's phase rows understate spend while its events do not. Mirrors the
  * sumEstimatedPhaseSpend json_extract pattern: type='spend', usd non-null
- * (usd:null spend events — reported-zero with no roster entry, src/daemon/
- * tracer.ts — are excluded), split on the `estimated` flag. */
+ * (usd:null spend events — reported-zero with no roster entry, src/server/
+ * engine/tracer.ts — are excluded), split on the `estimated` flag. */
 export interface RunSpendSplit {
   run_id: string;
   reported_usd: number;
@@ -839,7 +839,7 @@ export function listProcesses(db: Database): ProcessRow[] {
 }
 
 /** Every live child recorded for one run (agent-session rows plus any run-kind
- * rows) — the kill target set for fail / daemon-restart recovery. */
+ * rows) — the kill target set for fail / server-restart recovery. */
 export function listRunProcesses(db: Database, runId: string): ProcessRow[] {
   return q<ProcessRow>(
     db,

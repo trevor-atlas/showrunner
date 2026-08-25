@@ -1,6 +1,6 @@
 /**
  * The run pool: N concurrent run slots (default 2), spawns beyond
- * the pool queue at the daemon. A run holds a slot from first spawn to its
+ * the pool queue at the server. A run holds a slot from first spawn to its
  * terminal state — `release` is called when the run's `done` resolves.
  *
  * Queue-position surfacing (GET /runs, POST /runs —) is served by

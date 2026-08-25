@@ -217,7 +217,7 @@ export interface RunStats {
   blueprints: { blueprint: string; runs: number }[];
 }
 
-export interface DaemonStatus {
+export interface ServerStatus {
   ok: boolean;
   pid: number;
   data_dir: string;

@@ -3,7 +3,7 @@
  * timeline-model.ts): the clientEntry owns rendering + event wiring, this
  * module owns the filter/sort/derivation logic so it is unit-testable in
  * isolation. Browser-bundle-safe: imports only the moved `runStatus` fold and
- * a type-only daemon import (the same widening the clientEntry uses).
+ * a type-only server import (the same widening the clientEntry uses).
  */
 
 import type { RunListItem } from "../../contract.ts";

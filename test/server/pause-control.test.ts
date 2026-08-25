@@ -16,10 +16,10 @@ import { getControl, reconcileInterruptedRuns, resumeInterruptedRun } from "../.
 import { FakeSessionDriver } from "../../src/server/engine/pi/index.ts";
 import { RunPool } from "../../src/server/engine/pool.ts";
 import { runBlueprint } from "../../src/server/engine/runner.ts";
-import { daemonEntryPath, startDaemon } from "../../src/server/lifecycle.ts";
+import { serverEntryPath, startServer } from "../../src/server/lifecycle.ts";
 import { cursorEvents, getRun, insertRun, listAgentSessions, listEnvelopes, listGateResults, listPhases, openDb } from "../../src/server/repository/db.ts";
 import { type BlueprintRun, type ScriptMap, type ScriptedTurn } from "../../src/server/engine/runner.ts";
-import { type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { type ServerHandle } from "../../src/server/lifecycle.ts";
 
 /**
  * The pause & control surface (T04) — human-in-the-loop machinery
@@ -729,9 +729,9 @@ const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 test("HTTP: approve + the pause viewer + steer land on a require_approval pause", async () => {
   const dir = tmpDataDir("pause-http");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-http-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     // unix-mode daemon: the handle always binds a socket here (string)
     const baseUrl = daemon.baseUrl;
     const approvalBp = join(fixturesDir, "approval-blueprint.ts");
@@ -780,10 +780,10 @@ test("HTTP: approve + the pause viewer + steer land on a require_approval pause"
 test("F1 (server): a paused run blocks the next queued spawn while holding the slot", async () => {
   const dir = tmpDataDir("pause-f1-srv");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-f1-cwd-"));
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     // a 1-slot pool: the paused run occupies the only slot
-    daemon = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
+    daemon = await startServer({ dataDir: dir, port: 0, poolSlots: 1 });
     // unix-mode daemon: the handle always binds a socket here (string)
     const baseUrl = daemon.baseUrl;
     const pauseBp = join(fixturesDir, "pause-blueprint.ts");
@@ -851,7 +851,7 @@ test(
   let daemonPid = 0;
   try {    // a SUBPROCESS daemon so we can actually kill it (in-process would kill the test)
     const boot = (): void => {
-      const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
+      const child = spawn(process.execPath, [serverEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
         env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
       });

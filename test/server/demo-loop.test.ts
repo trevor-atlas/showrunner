@@ -33,8 +33,8 @@ import { fileURLToPath } from "node:url";
 
 import { dbPathFor, type EventType } from "../../src/core/index.ts";
 import type { TimelineView } from "../../src/server/transport/client.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { getRun, insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { getControl } from "../../src/server/engine/pause-control.ts";
 import { loadBlueprintModule, resolveScriptedSessions, runBlueprint } from "../../src/server/engine/runner.ts";
@@ -43,7 +43,7 @@ import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 import { computeTimelineLayout } from "../../src/server/ui/public/timeline-model.ts";
 
-const DEMO_LOOP_FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "daemon", "fixtures", "demo-loop");
+const DEMO_LOOP_FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "demo-loop");
 const DEMO_LOOP_BP = join(DEMO_LOOP_FIXTURE_DIR, "demo-loop.ts");
 const DEMO_LOOP_FAKE_PI = join(DEMO_LOOP_FIXTURE_DIR, "fake-pi");
 
@@ -119,9 +119,9 @@ describe("demo-loop e2e (R7 #4/#5/#3/#6) — the completed fixture through the d
   it("R7 #6 (UI half): the fixture paused mid-run (blocked package) renders the paused treatment, the open bubble extends toward now across two refreshes, and the selection survives", async () => {
     const dir = tmpDir("paused");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
 
       // a SECOND run of the SAME blueprint module with a scripted package
       // envelope that asserts blocked (EnvelopeBase.blocked) — driven into

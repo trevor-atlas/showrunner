@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { insertRun, openDb } from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
@@ -91,10 +91,10 @@ describe("landing stat cards + charts (#40) — server-side daemon data", () => 
   it("renders the four KPI values and the three chart containers from real stats", async () => {
     const dir = tmpDir("stats");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       seedRuns(dir);
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       insertRunning(dir); // 1 running (not reconciled) → active = running + paused
 
       const { status, html } = await fetchPath(routes.home.href());
@@ -135,10 +135,10 @@ describe("landing stat cards + charts (#40) — server-side daemon data", () => 
   it("keeps the stats region filter-independent AND introduces no data-status leak (?status=failed)", async () => {
     const dir = tmpDir("stats-filter");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       seedRuns(dir);
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
 
       const { html } = await fetchPath(routes.home.href() + "?status=failed");
 

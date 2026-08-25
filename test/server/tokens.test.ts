@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 import { TOKEN_CSS } from "../../src/server/ui/tokens.ts";
@@ -62,9 +62,9 @@ describe("design tokens (issue #31)", () => {
     const dir = mkdtempSync(join(tmpdir(), "showrunner-ui-tokens-"));
     const saved = process.env.SHOWRUNNER_DATA_DIR;
     process.env.SHOWRUNNER_DATA_DIR = dir;
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       const response = await router.fetch(new Request("http://localhost" + routes.home.href()));
       const html = await response.text();
       expect(response.status).toBe(200);

@@ -28,8 +28,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { loadBlueprintModule, snapshotBlueprint } from "../../src/server/engine/runner.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { router } from "../../src/server/router.ts";
@@ -84,11 +84,11 @@ async function followRedirect(res: Response): Promise<{ status: number; html: st
   return fetchHtml(location);
 }
 
-const runStatus = async (client: DaemonClient, runId: string): Promise<string | undefined> =>
+const runStatus = async (client: ServerClient, runId: string): Promise<string | undefined> =>
   (await client.listRuns()).runs.find((r) => r.id === runId)?.status;
 
 /** Submit the budget-exhaustion blueprint on FakePi and wait for the pause. */
-async function startPausedRun(client: DaemonClient, cwd: string): Promise<string> {
+async function startPausedRun(client: ServerClient, cwd: string): Promise<string> {
   const { run_id: runId } = await client.submitRun({ blueprint: CONTROLS, cwd });
   await waitFor(async () => (await runStatus(client, runId)) === "paused", 20_000, "budget pause");
   return runId;
@@ -99,10 +99,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls");
     const cwd = tmpDir("controls-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
 
       // ── the pause menu renders from the daemon's own actions list ───────
@@ -152,10 +152,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-override");
     const cwd = tmpDir("controls-override-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
 
       const over = await postControl(routes.runs.phases.override.href({ runId, phase: "build" }), {
@@ -194,10 +194,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-approve");
     const cwd = tmpDir("controls-approve-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const { run_id: runId } = await client.submitRun({ blueprint: APPROVAL, cwd });
       await waitFor(async () => (await runStatus(client, runId)) === "paused", 20_000, "approval pause");
 
@@ -231,10 +231,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-restart");
     const cwd = tmpDir("controls-restart-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
       expect((await client.getRun(runId)).sessions).toHaveLength(1); // visit 1
 
@@ -270,10 +270,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-fail");
     const cwd = tmpDir("controls-fail-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
 
       const failed = await postControl(routes.runs.fail.href({ runId }));
@@ -301,7 +301,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-resume");
     const cwd = tmpDir("controls-resume-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       // seed an INTERRUPTED run directly (status + pending phase +
       // snapshot) — the same shape prepareResume reads (contract.test.ts)
@@ -315,8 +315,8 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       snapshotBlueprint(runDirFor(dir, runId), blueprint, 3, HAPPY);
       seedDb.close();
 
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
       // the interrupted run renders the resume HEADER action (not in the menu)
       const before = await fetchHtml(routes.runs.show.href({ runId }));
@@ -350,10 +350,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-409");
     const cwd = tmpDir("controls-409-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
 
       // resume on a PAUSED run → daemon 409 → the resume control re-renders
@@ -376,7 +376,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
   it("steer on a paused run with NO control handle 409s on the form (the seeded run has no live daemon handle)", async () => {
     const dir = tmpDir("controls-409-steer");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       // seed a paused run DIRECTLY — no loop, no control handle
       const runId = "99999999-0000-4000-8000-000000000009";
@@ -387,7 +387,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       insertEvent(seedDb, { run_id: runId, phase_id: "ph-build", agent_session_id: null, type: "run_status", ts: startedAt, data: { from: "running", to: "paused", reason: "seeded pause" } });
       seedDb.close();
 
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
 
       // the paused run renders the menu shell (no control handle → no actions)
       const before = await fetchHtml(routes.runs.show.href({ runId }));
@@ -414,10 +414,10 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
     const dir = tmpDir("controls-validation");
     const cwd = tmpDir("controls-validation-cwd");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
       const runId = await startPausedRun(client, cwd);
 
       // steer: empty message → 400 + inline field error; whitespace-only → too
@@ -475,7 +475,7 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
   it("polish: the spend endpoint sums 5500 spend events exactly (SQL SUM — no sweep cap, no truncated)", async () => {
     const dir = tmpDir("controls-spend-sweep");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
       const runId = "55555555-0000-4000-8000-000000000005";
       const startedAt = new Date().toISOString();
@@ -497,8 +497,8 @@ describe("run detail controls (T10b) — pause menu + control verbs", () => {
       }
       db.close();
 
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
-      const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+      daemon = await startServer({ dataDir: dir, port: 0 });
+      const client = new ServerClient({ baseUrl: daemon.baseUrl });
 
       // the api core sums all 5500 (SQL SUM is exact — the old 10-page cap
       // would have reported 5,000)

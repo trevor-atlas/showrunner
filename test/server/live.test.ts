@@ -1,9 +1,9 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi, never real pi
 /**
- * The SSE stream factory (src/server/lib/live.ts) at the byte level plus the
+ * The SSE stream factory (src/server/lib/sse.ts) at the byte level plus the
  * two remix SSE routes through `router.fetch`. The stream factory tests drive
  * a fake subscribe/signal (no daemon); the route tests start an in-process
- * daemon (so requireWebState is set) and assert the event-stream headers and
+ * daemon (so requireServerState is set) and assert the event-stream headers and
  * the run-scoped 404-before-stream.
  */
 import { afterEach, describe, expect, it } from "bun:test";
@@ -12,14 +12,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { insertRun, openDb } from "../../src/server/repository/db.ts";
 import {
   CHANGE_FRAME,
   HEARTBEAT_FRAME,
   createSseStream,
   createSseResponse,
-} from "../../src/server/lib/live.ts";
+} from "../../src/server/lib/sse.ts";
 import { router } from "../../src/server/router.ts";
 import { routes } from "../../src/server/routes.ts";
 
@@ -150,7 +150,7 @@ function setDataDir(dir: string): () => void {
 }
 
 describe("SSE routes through router.fetch", () => {
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   let restoreDataDir: (() => void) | null = null;
   let dir: string | null = null;
 
@@ -166,7 +166,7 @@ describe("SSE routes through router.fetch", () => {
   it("GET /live.sse opens an event-stream and closes on abort", async () => {
     dir = tmpDir("live-route");
     restoreDataDir = setDataDir(dir);
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
 
     const ac = new AbortController();
     const res = await router.fetch(
@@ -181,7 +181,7 @@ describe("SSE routes through router.fetch", () => {
   it("GET /runs/:runId/events.sse opens an event-stream for a real run", async () => {
     dir = tmpDir("run-live-route");
     restoreDataDir = setDataDir(dir);
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
 
     const db = openDb(dbPathFor(dir));
     insertRun(db, {
@@ -209,7 +209,7 @@ describe("SSE routes through router.fetch", () => {
   it("GET /runs/:runId/events.sse 404s (JSON) for a ghost run before opening a stream", async () => {
     dir = tmpDir("ghost-live-route");
     restoreDataDir = setDataDir(dir);
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
 
     const res = await router.fetch(
       new Request("http://localhost" + routes.runs.live.href({ runId: "ghost" })),

@@ -2,8 +2,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * The scripted pi fixture registry. The daemon's minimal submit
- * path drives these through the FakePi harness; daemon and core tests replay
+ * The scripted pi fixture registry. The server's minimal submit
+ * path drives these through the FakePi harness; server and core tests replay
  * them for deterministic, CI-safe assertions.
  */
 export const FIXTURE_NAMES = ["happy", "gate-fail", "crash"] as const;
@@ -38,7 +38,7 @@ export function fixturePath(name: FixtureName): string {
   return join(HERE, "fixtures", `${name}.jsonl`);
 }
 
-/** Absolute path to the FakePi entry script (spawned by the daemon driver). */
+/** Absolute path to the FakePi entry script (spawned by the server driver). */
 export function fakePiEntryPath(): string {
   return join(HERE, "fake-pi.ts");
 }

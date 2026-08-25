@@ -10,7 +10,7 @@ import {
 } from "../repository/db.ts";
 import {
   ApiError,
-  type DaemonStatus,
+  type ServerStatus,
   type EventsPage,
   type PhaseEnvelopes,
   type PhaseGates,
@@ -34,7 +34,7 @@ import {
 import type { ApiState } from "../transport/state.ts";
 
 /**
- * The query (read) verbs of the daemon's local HTTP API: health, status, the
+ * The query (read) verbs of the server's local HTTP API: health, status, the
  * runs list (with phase counts), run detail, per-phase reads (envelopes,
  * gates, outputs), spend, timeline, the events cursor, and the raw tail. The
  * per-endpoint core functions are exported so the UI actions can call them
@@ -45,7 +45,7 @@ import type { ApiState } from "../transport/state.ts";
 
 /** The events-page size and the sweep batch — exported so the UI's
  * events proxy imports the same constant (no re-declared 500 in the
- * controller). The daemon caps the cursor query at this; the detail
+ * controller). The server caps the cursor query at this; the detail
  * sweep batches this per page. sweepRunEvents' default in db.ts is the
  * same 500 (db.ts cannot import server.ts, so the value lives in both). */
 export const MAX_EVENTS_LIMIT = 500;
@@ -64,7 +64,7 @@ export function apiHealth(_state: ApiState): { ok: true } {
   return { ok: true };
 }
 
-export function apiStatus(state: ApiState): DaemonStatus {
+export function apiStatus(state: ApiState): ServerStatus {
   // status verb (T07): health + pool utilization + run status counts
   const runs = listRuns(state.db);
   const byStatus: Record<string, number> = { total: runs.length };
@@ -117,7 +117,7 @@ export function apiSpend(state: ApiState, runId: string): SpendBreakdown {
  * GET /runs/:id/timeline (R3) — per-visit segments folded from the run's
  * phase_start/phase_end events, in blueprint order. 404 when the run is
  * missing (apiSpend's semantics). Returns the TimelineView contract; the
- * model's buildTimeline calls buildTimelineView (kept in daemon/timeline.ts).
+ * model's buildTimeline calls buildTimelineView (kept in services/timeline.ts).
  */
 export function apiTimeline(state: ApiState, runId: string): TimelineView {
   const run = getRun(state.db, runId);
@@ -168,7 +168,7 @@ export function apiPhaseGates(state: ApiState, runId: string, phaseName: string)
 /** GET /runs/:id/phases/:phase/outputs — what the agent actually wrote in
  * the phase's outputs dir (files + FINDINGS.md content). Same 404
  * semantics as the envelope/gate phase-scoped reads; reads the run's
- * record dir only — the daemon stays the sole SQLite writer, and the UI
+ * record dir only — the server stays the sole SQLite writer, and the UI
  * lost its last fs path past the seam. */
 export function apiPhaseOutputs(state: ApiState, runId: string, phaseName: string): PhaseOutputs {
   const phase = requirePhaseOrThrow(state, runId, phaseName);

@@ -93,7 +93,7 @@ export function submitFixture(db: Database, dataDir: string, opts: SubmitOptions
   // the roster is read BEFORE any row is created — a malformed
   // prices.json is a config error that must fail fast with NO run row left
   // behind (a fixture submit returning 500 must not strand a zombie 'running'
-  // run; the daemon survives either way — T13 #5). The blueprint path
+  // run; the server survives either way — T13 #5). The blueprint path
   // validates at submit (a clean 400); this path validates here, before insert.
   const roster = loadRoster(dataDir);
   const runDir = runDirFor(dataDir, runId);

@@ -3,7 +3,7 @@ import { uiHmr } from 'remix/ui-hmr/assets'
 import { fileURLToPath } from 'node:url'
 
 // Anchor the asset server at THIS module's tree (src/server), not process.cwd() —
-// the daemon mounts this listener in-process from any cwd.
+// the server mounts this listener in-process from any cwd.
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const nodeEnv = process.env.NODE_ENV ?? 'development'
 const isDevelopment = nodeEnv === 'development'

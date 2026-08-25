@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
  * The starter kit is shipped as source (src/starter-kit); on boot it is
  * MATERIALIZED into the user data dir so users can edit their own copy.
  * Resolved relative to THIS module (not process.cwd()) so it works no matter
- * where the daemon is launched from.
+ * where the server is launched from.
  */
 const STARTER_KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "starter-kit");
 
@@ -83,7 +83,7 @@ export interface SyncResult {
 
 /**
  * Explicit post-bootstrap pull of starter-kit updates into <dataDir>/templates/,
- * WITHOUT starting the daemon. One classification pass over src/starter-kit/**:
+ * WITHOUT starting the server. One classification pass over src/starter-kit/**:
  *   - MISSING  → copied automatically (added)
  *   - SAME     → left alone
  *   - DRIFTED  → reported; overwritten ONLY when `confirm(relPath)` resolves true

@@ -7,13 +7,13 @@
  * create-or-continue `--session-id`. Each `prompt` command advances the script
  * one turn: the turn's events are streamed to stdout (agent_settled ends the
  * turn) and the turn's envelope is written to <output>/envelope.json — the
- * agent's "typed result". stdin EOF exits 0 (the daemon reaps by
+ * agent's "typed result". stdin EOF exits 0 (the server reaps by
  * closing stdin).
  *
- * The same `--session-id` is reused across corrections: the daemon re-prompts
+ * The same `--session-id` is reused across corrections: the server re-prompts
  * the SAME process, and the script advances to the next turn. When the script
  * runs out of turns, the last turn repeats (so a budget-exhausted phase keeps
- * producing the same failing envelope until the daemon gives up).
+ * producing the same failing envelope until the server gives up).
  *
  * Usage: bun fake-session.ts <session-file.json> --session-id <id> --output <dir>
  *
@@ -77,7 +77,7 @@ const unterminatedFinal = script.unterminatedFinalLine === true;
 // v3 session-file mimicry (verified): real pi writes its session tree at
 // <sessionDir>/--<sanitized-cwd>--/<ts>_<id>.jsonl (sanitized: leading separator
 // stripped, [/\:] → "-"). FakePi mirrors that when PI_CODING_AGENT_SESSION_DIR
-// is set (tests) so the daemon's "don't fight pi's session tree" contract is
+// is set (tests) so the server's "don't fight pi's session tree" contract is
 // provable hermetically — env unset = no session file, no ~/.pi pollution.
 const mirrorSessionFile = ((): string | null => {
   const root = process.env.PI_CODING_AGENT_SESSION_DIR;
@@ -114,7 +114,7 @@ function streamTurn(turn: ScriptedTurn, turnIdx: number): Promise<void> {
       const lastOfTurn = i === events.length;
       const lastOfScript = turnIdx === lastTurnIdx && lastOfTurn;
       // the envelope must be durable before agent_settled is emitted: the
-      // daemon reads the file as soon as it sees the settle line
+      // server reads the file as soon as it sees the settle line
       if (lastOfTurn) {
         writeEnvelope(turn.envelope);
         writeArtifacts(turn.artifacts);
@@ -148,7 +148,7 @@ function writeArtifacts(artifacts: Record<string, string> | undefined): void {
 async function handleCommand(cmd: Record<string, unknown>): Promise<void> {
   const type = cmd.type;
   if (type !== "prompt" && type !== "steer" && type !== "follow_up") {
-    // unknown/machinery command: ignore (the daemon only sends prompts today)
+    // unknown/machinery command: ignore (the server only sends prompts today)
     return;
   }
   const turnIdx = Math.min(turnCounter, lastTurnIdx);
@@ -197,7 +197,7 @@ process.stdin.on("data", (chunk: string) => {
   }
 });
 process.stdin.on("end", () => {
-  // stdin closed = the daemon reaped us; exit 0 once the stream settles
+  // stdin closed = the server reaped us; exit 0 once the stream settles
   stdinEnded = true;
   if (!streaming && commandQueue.length === 0) process.exit(0);
 });

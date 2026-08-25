@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import { inputsDirFor, outputsDirFor } from "../../src/server/repository/workspace/index.ts";
 import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";
@@ -241,9 +241,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
     const cwd = tmpDir("proxy-cwd");
     writeFileSync(join(cwd, "README.md"), "# readme\n");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedRun(dir, cwd);
 
       const plan = await fetchProxy(RUN, "plan", "snapshot");
@@ -279,9 +279,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
   it("snapshot.json returns phase: null for a run with no blueprint snapshot", async () => {
     const dir = tmpDir("proxy-nosnap");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedNoSnapshotRun(dir);
 
       const res = await fetchProxy(RUN_NOSNAP, "solo", "snapshot");
@@ -302,9 +302,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
     const cwd = tmpDir("proxy-inputs-cwd");
     writeFileSync(join(cwd, "README.md"), "# readme\n");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedRun(dir, cwd);
 
       const build = await fetchProxy(RUN, "build", "inputs");
@@ -338,9 +338,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
     const cwd = tmpDir("proxy-outputs-cwd");
     writeFileSync(join(cwd, "README.md"), "# readme\n");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedRun(dir, cwd);
 
       const build = await fetchProxy(RUN, "build", "outputs");
@@ -365,9 +365,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
     const cwd = tmpDir("proxy-spend-cwd");
     writeFileSync(join(cwd, "README.md"), "# readme\n");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedRun(dir, cwd);
 
       const res = await fetchProxy(RUN, "build", "spend");
@@ -397,9 +397,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
   it("spend.json sums 5500 spend events exactly — SQL SUM, no sweep cap, no truncated", async () => {
     const dir = tmpDir("proxy-spend-sweep");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedSweepRun(dir);
 
       const res = await fetchProxy(RUN_SWEEP, "build", "spend");
@@ -421,9 +421,9 @@ describe("phase-card data proxies (#35) — snapshot/inputs/outputs/spend.json",
     const cwd = tmpDir("proxy-404-cwd");
     writeFileSync(join(cwd, "README.md"), "# readme\n");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedRun(dir, cwd);
 
       const kinds: ProxyKind[] = ["snapshot", "inputs", "outputs", "spend"];

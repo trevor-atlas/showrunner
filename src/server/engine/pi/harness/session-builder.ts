@@ -29,7 +29,7 @@ export function baseEnvelope(extra: Record<string, unknown> = {}): Record<string
 /**
  * One scripted turn: a full event stream ending in agent_settled, plus the
  * envelope the fake "writes" to envelope.json. Mirrors the raw event shapes
- * the daemon's own fixtures use (verified shapes).
+ * the server's own fixtures use (verified shapes).
  */
 export function turn(envelope: Record<string, unknown>, opts: TurnOptions = {}): ScriptedTurn {
   const model = opts.model ?? "fake-pi";

@@ -11,7 +11,7 @@ import { getControl } from "../../src/server/engine/pause-control.ts";
  *
  * Note: the daemon is imported RELATIVELY, not as a package dep — bun 1.4
  * cannot resolve a `file:` dep's own `file:` deps, so the starter kit (like
- * the CLI) does not declare @showrunner/daemon (see cli/daemon-lifecycle.ts).
+ * the CLI) does not declare @showrunner/daemon (see cli/server-lifecycle.ts).
  */
 
 export function tmpDir(label: string): string {

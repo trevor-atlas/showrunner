@@ -1,16 +1,16 @@
 /**
- * The dashboard's server-side daemon access (`app/lib/daemon.ts`).
+ * The dashboard's server-side server access (`src/server/lib/model.ts`).
  *
- * Since the merged web server (Phase 2) the UI and the daemon share ONE
+ * Since the merged web server (Phase 2) the UI and the server share ONE
  * process: the unix socket and the typed client round trip are gone.
  * Every function here calls the corresponding api core function
- * (src/daemon/server.ts) IN-PROCESS against the daemon's state, held by
- * src/daemon/web-state.ts. A "daemon down" state is impossible — there is no
- * socket to miss, so no unreachable-daemon error and no down banner exist.
+ * (src/server/transport/http.ts) IN-PROCESS against the server's state, held by
+ * src/server/transport/state.ts. A "server down" state is impossible — there is no
+ * socket to miss, so no unreachable-server error and no down banner exist.
  *
- * The browser NEVER imports this module and NEVER talks to the daemon: actions
- * fetch daemon data here, server-side, and the browser only receives rendered
- * HTML (no CORS, no daemon credentials in the browser).
+ * The browser NEVER imports this module and NEVER talks to the server: actions
+ * fetch server data here, server-side, and the browser only receives rendered
+ * HTML (no CORS, no server credentials in the browser).
  */
 
 import {
@@ -37,7 +37,7 @@ import {
 } from "../services/control.ts";
 import { ApiError } from "../contract.ts";
 import { resolveDataDir } from "../../core/index.ts";
-import { requireWebState } from "../transport/state.ts";
+import { requireServerState } from "../transport/state.ts";
 import { buildPhaseRecordModel, type PhaseRecordModel } from "../services/phase-record.ts";
 import type {
   ControlResult,
@@ -58,54 +58,54 @@ import type {
  * UI's events proxy imports (no re-declared 500 in the controller). */
 export { MAX_EVENTS_LIMIT };
 
-/** The run list rows — in-process against the daemon's state. */
+/** The run list rows — in-process against the server's state. */
 export async function listRuns(): Promise<{ runs: RunListItem[] }> {
-  return apiListRuns(requireWebState());
+  return apiListRuns(requireServerState());
 }
 
 /** The run detail — phases, spend, envelope count, sessions, and the FULL
  * event history (the initial SSR sweep rides the ?full=1 detail call — the
  * controller reads detail.events/detail.next_cursor instead of sweeping). */
 export async function getRunDetail(runId: string): Promise<RunDetail> {
-  return apiRunDetail(requireWebState(), runId, new URLSearchParams({ full: "1" }));
+  return apiRunDetail(requireServerState(), runId, new URLSearchParams({ full: "1" }));
 }
 
 /** GET /runs/:id/phases/:phase/envelopes — a phase's envelope history. */
 export async function getPhaseEnvelopes(runId: string, phase: string): Promise<PhaseEnvelopes> {
-  return apiPhaseEnvelopes(requireWebState(), runId, phase);
+  return apiPhaseEnvelopes(requireServerState(), runId, phase);
 }
 
 /** GET /runs/:id/phases/:phase/gates — gate results incl. overridden. */
 export async function getPhaseGates(runId: string, phase: string): Promise<PhaseGates> {
-  return apiPhaseGates(requireWebState(), runId, phase);
+  return apiPhaseGates(requireServerState(), runId, phase);
 }
 
 /** GET /runs/:id/phases/:phase/outputs — what the agent wrote in the
  * phase's outputs dir: the file listing + FINDINGS.md content. */
 export async function getPhaseOutputs(runId: string, phase: string): Promise<PhaseOutputs> {
-  return apiPhaseOutputs(requireWebState(), runId, phase);
+  return apiPhaseOutputs(requireServerState(), runId, phase);
 }
 
 /** GET /runs/:id/spend — per-phase spend breakdown (+ estimated markers). */
 export async function getSpend(runId: string): Promise<SpendBreakdown> {
-  return apiSpend(requireWebState(), runId);
+  return apiSpend(requireServerState(), runId);
 }
 
 /** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
 export async function getTimeline(runId: string): Promise<TimelineView> {
-  return apiTimeline(requireWebState(), runId);
+  return apiTimeline(requireServerState(), runId);
 }
 
 /** GET /api/stats — the all-time landing KPI/chart aggregate. */
 export async function getStats(): Promise<RunStats> {
-  return apiStats(requireWebState());
+  return apiStats(requireServerState());
 }
 
 /** GET /runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */
 export async function getRaw(runId: string, opts: { lines?: number } = {}): Promise<RawTail> {
   const query = new URLSearchParams();
   if (opts.lines !== undefined) query.set("lines", String(Math.max(1, Math.floor(opts.lines))));
-  return apiRaw(requireWebState(), runId, query);
+  return apiRaw(requireServerState(), runId, query);
 }
 
 /** GET /runs/:id/events — the cursor page (drill-in sums spend). */
@@ -113,42 +113,42 @@ export async function getRunEvents(runId: string, opts: { cursor?: number; limit
   const query = new URLSearchParams();
   if (opts.cursor !== undefined) query.set("cursor", String(opts.cursor));
   if (opts.limit !== undefined) query.set("limit", String(opts.limit));
-  return apiEvents(requireWebState(), runId, query);
+  return apiEvents(requireServerState(), runId, query);
 }
 
 /** GET /runs/:id/pause — the pause viewer (kind, phase, actions, queued steers). */
 export async function getPause(runId: string): Promise<PauseView> {
-  return apiPause(requireWebState(), runId);
+  return apiPause(requireServerState(), runId);
 }
 
 // ── control verbs (T10b) ───────────────────────────────────────────────
-// Every verb calls the api core in-process; on success the daemon has
+// Every verb calls the api core in-process; on success the server has
 // already written the human_action event and the new run state, so the
-// action can re-render/redirect from daemon state. A 409 / 4xx surfaces as a
+// action can re-render/redirect from server state. A 409 / 4xx surfaces as a
 // server-side ApiError — the actions translate it onto the form.
 
 /** POST /runs/:id/steer — the pause menu's steer (run-keyed; queues on a paused run). */
 export async function controlSteer(runId: string, message: string): Promise<ControlResult> {
-  return apiSteerRun(requireWebState(), runId, { message });
+  return apiSteerRun(requireServerState(), runId, { message });
 }
 
 /** POST /runs/:id/resume — continue an interrupted run. */
 export async function controlResume(runId: string): Promise<ControlResult> {
-  return apiResume(requireWebState(), runId, {});
+  return apiResume(requireServerState(), runId, {});
 }
 
 /** POST /runs/:id/fail — fail the run and kill its children. */
 export async function controlFail(runId: string): Promise<ControlResult> {
-  return apiFailRun(requireWebState(), runId, {});
+  return apiFailRun(requireServerState(), runId, {});
 }
 
 /** POST /runs/:id/approve — approve a require_approval pause. */
 export async function controlApprove(runId: string): Promise<ControlResult> {
-  return apiApprove(requireWebState(), runId, {});
+  return apiApprove(requireServerState(), runId, {});
 }
 
 /** POST /runs/:id/phases/:phase/override — override a failed gate (audited).
- * The dashboard audits its overrides as "web" (the daemon defaults to "cli"
+ * The dashboard audits its overrides as "web" (the server defaults to "cli"
  * only for CLI callers that send no by) — the who is the point. */
 export async function controlOverrideGate(
   runId: string,
@@ -157,20 +157,20 @@ export async function controlOverrideGate(
   reason: string,
   by: string = "web",
 ): Promise<ControlResult> {
-  return apiOverrideGate(requireWebState(), runId, phase, { gate, reason, by });
+  return apiOverrideGate(requireServerState(), runId, phase, { gate, reason, by });
 }
 
 /** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */
 export async function controlRestartFresh(runId: string, phase: string): Promise<ControlResult> {
-  return apiRestartFresh(requireWebState(), runId, phase, {});
+  return apiRestartFresh(requireServerState(), runId, phase, {});
 }
 
 /** The assembled phase record (snapshot/inputs/outputs/spend + envelopes/gates/
  * visits) for one phase, or null for a ghost run/phase — in-process against the
- * daemon's db + data dir. The read of the state holder lives HERE (behind lib/)
+ * server's db + data dir. The read of the state holder lives HERE (behind lib/)
  * so the UI controllers never reach the holder directly (T5). */
 export function getPhaseRecord(runId: string, phase: string): PhaseRecordModel | null {
-  return buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, phase);
+  return buildPhaseRecordModel(requireServerState().db, resolveDataDir(), runId, phase);
 }
 
 /**

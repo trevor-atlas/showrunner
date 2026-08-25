@@ -59,8 +59,8 @@ interface PendingRequest {
  * Backpressure: the read loop never blocks on SQLite. Raw lines are
  * handed to the `onLine` callback synchronously — the tracer appends them to
  * raw_output.jsonl (the safe buffer) and pushes folded events to the queue
- * sink — and the RPC layer only touches in-memory maps. If the daemon stops
- * draining stdout, pi stalls on its own pipe; the daemon never blocks the
+ * sink — and the RPC layer only touches in-memory maps. If the server stops
+ * draining stdout, pi stalls on its own pipe; the server never blocks the
  * read loop on a DB write.
  */
 export class PiSession implements SessionDriver {
@@ -124,7 +124,7 @@ export class PiSession implements SessionDriver {
       this.stderrBytes += chunk.length;
       if (this.stderrBytes <= this.stderrLimit) this.stderrChunks.push(chunk.toString("utf8"));
     });
-    // a dead child's pipe must not crash the daemon with an unhandled 'error'
+    // a dead child's pipe must not crash the server with an unhandled 'error'
     child.stdin?.on("error", () => {});
 
     // stdout: pure JSONL, LF-only framing — Node readline is non-compliant

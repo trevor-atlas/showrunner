@@ -2,18 +2,18 @@ import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 
 /**
- * The typed HTTP client for the daemon's API — ships for the CLI and the
+ * The typed HTTP client for the server's API — ships for the CLI and the
  * UI (the UI is a server-side client: remix actions fetch this API; the
- * browser never talks to the daemon directly). One method per
+ * browser never talks to the server directly). One method per
  * endpoint, typed request/response.
  *
- * Transport: node:http over TCP only — the daemon's merged web server serves
+ * Transport: node:http over TCP only — the server's merged web server serves
  * the API under `/api/*` on ONE listener (default 127.0.0.1:44100, port
  * overridable via SHOWRUNNER_PORT). The unix socket is gone; `baseUrl`
  * defaults to http://127.0.0.1:${SHOWRUNNER_PORT ?? 44100}.
  *
  * The wire shapes and ApiError live in contract.ts — the client re-exports
- * them here so the CLI (cli/index.ts, cli/daemon-lifecycle.ts, cli/watch.ts)
+ * them here so the CLI (cli/index.ts, cli/server-lifecycle.ts, cli/watch.ts)
  * compiles unchanged.
  */
 
@@ -23,7 +23,7 @@ import { ApiError } from "../contract.ts";
 // and re-exported so consumers (the CLI, the UI) keep their imports.
 import type {
   ControlResult,
-  DaemonStatus,
+  ServerStatus,
   EventsPage,
   EventsQuery,
   PauseView,
@@ -49,7 +49,7 @@ import type {
 export { ApiError };
 export type {
   ControlResult,
-  DaemonStatus,
+  ServerStatus,
   EventsPage,
   EventsQuery,
   PauseView,
@@ -72,24 +72,24 @@ export type {
   TimelineView,
 };
 
-/** Distinguish "the daemon is down" (connection errors) from API errors. */
-export function isDaemonDown(err: unknown): boolean {
+/** Distinguish "the server is down" (connection errors) from API errors. */
+export function isServerDown(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
   return code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EADDRNOTAVAIL";
 }
 
 // ── the client ───────────────────────────────────────────────────────────────
 
-export interface DaemonClientOptions {
+export interface ServerClientOptions {
   /** explicit http base URL (e.g. the CLI's configured port) — defaults to
    * http://127.0.0.1:${SHOWRUNNER_PORT ?? 44100} */
   baseUrl?: string;
 }
 
-export class DaemonClient {
+export class ServerClient {
   private readonly baseUrl: string;
 
-  constructor(opts: DaemonClientOptions = {}) {
+  constructor(opts: ServerClientOptions = {}) {
     const base = opts.baseUrl ?? `http://127.0.0.1:${process.env.SHOWRUNNER_PORT ?? 44100}`;
     this.baseUrl = base.replace(/\/+$/, "");
   }
@@ -139,17 +139,17 @@ export class DaemonClient {
 
   // ── read endpoints ──────────────────────────────────────────────────
 
-  /** GET /api/health — daemon up probe. */
+  /** GET /api/health — server up probe. */
   health(): Promise<{ ok: boolean }> {
     return this.typed("GET", "/api/health");
   }
 
   /** GET /api/status — health + pool utilization + run status counts (T07). */
-  status(): Promise<DaemonStatus> {
+  status(): Promise<ServerStatus> {
     return this.typed("GET", "/api/status");
   }
 
-  /** POST /api/shutdown — ask the daemon to stop itself gracefully (the CLI's
+  /** POST /api/shutdown — ask the server to stop itself gracefully (the CLI's
    * `stop` verb). Replaces the old file-based SIGTERM dance. */
   shutdown(): Promise<{ ok: boolean }> {
     return this.typed("POST", "/api/shutdown");

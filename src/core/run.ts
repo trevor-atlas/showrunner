@@ -7,7 +7,7 @@ export type RunStatus =
   | "paused" // waiting on a human (approval, blocked, budget-exhausted, guard)
   | "success"
   | "failed"
-  | "interrupted"; // daemon crashed; awaiting manual continue
+  | "interrupted"; // server crashed; awaiting manual continue
 
 export interface RunRecord {
   id: string; // uuid
@@ -16,7 +16,7 @@ export interface RunRecord {
   started_at: string; // ISO-8601
   ended_at: string | null;
   cwd: string; // the run's working directory
-  pool_id: string | null; // which daemon pool slot owns it
+  pool_id: string | null; // which server pool slot owns it
   needs_review: boolean; // set when resumed after mid-tool-call death
 }
 

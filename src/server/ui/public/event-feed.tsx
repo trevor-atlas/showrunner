@@ -3,7 +3,7 @@ import { css, on, ref, type Handle } from "remix/ui";
 import { fmtDuration, fmtMoney, fmtTime } from "./format.ts";
 
 /**
- * The live feed: folded daemon events (types 1–12)
+ * The live feed: folded server events (types 1–12)
  * rendered newest-last, one typed row per event. Tool calls read aloud like
  * `bash: ls -la src` and expand (via a native <details>) to the raw args +
  * result snippet; corrections show ⚠ with the message; gate results ✗/✓ with
@@ -17,7 +17,7 @@ import { fmtDuration, fmtMoney, fmtTime } from "./format.ts";
  */
 
 /** The event row shape the feed renders (serializable at the client-entry
- * boundary; the daemon's `data` column is arbitrary JSON, validated per type
+ * boundary; the server's `data` column is arbitrary JSON, validated per type
  * at render time). */
 export type FeedEvent = {
   id: number;
@@ -286,7 +286,7 @@ function SpendRow(handle: Handle<{ event: FeedEvent }>) {
 
 /**
  * The naming rule for tool calls: name the row the way you'd read
- * it aloud — `bash: ls -la src`, `edit: packages/daemon/src/db.ts`. String
+ * it aloud — `bash: ls -la src`, `edit: packages/server/src/db.ts`. String
  * args are used as-is; object args pick the most name-like field; anything
  * else falls back to compact JSON.
  */

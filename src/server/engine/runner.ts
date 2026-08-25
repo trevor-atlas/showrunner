@@ -774,7 +774,7 @@ async function driveVisit(
   // scripted FakePi sessions. Both speak the same SessionDriver interface, so
   // this block never touches the child process directly — spawn, RPC command
   // writing, stdout framing, stderr capture, and lifecycle live in
-  // packages/daemon/src/pi/.
+  // src/server/engine/pi/.
   const useRealPi = sessionDriverKind() === "real";
 
   // tracer: folds this visit's stream into tool_call/spend/agent_end
@@ -1223,7 +1223,7 @@ function hookContext(state: LoopState, phaseName: string): PhaseHookContext {
 
 /** shell(): one subprocess one-liner, full result. Runs TRULY async
  * (spawn, promisified — never spawnSync): a hook command must not block the
- * daemon's event loop (backpressure; the FINDING-1 freeze was the hook
+ * server's event loop (backpressure; the FINDING-1 freeze was the hook
  * shell AND the gate shell both blocking on spawnSync). The 30s cap is kept
  * — a hook that exceeds it returns code -1 (the hook decides how to fail). */
 async function runShell(cwd: string, cmd: string): Promise<ShellResult> {
@@ -1246,7 +1246,7 @@ export function renderSchema(schema: z.ZodTypeAny): string {
 }
 
 function renderType(s: z.ZodTypeAny): string {
-  // zod schema introspection by typeName, not instanceof — the daemon and the
+  // zod schema introspection by typeName, not instanceof — the server and the
   // blueprint module resolve different zod copies, so instanceof fails across
   // them while _def.typeName is stable and copy-agnostic
   const typeName = (s as unknown as { _def?: { typeName?: string } })._def?.typeName ?? "unknown";
@@ -1395,7 +1395,7 @@ export async function submitBlueprintRun(
 export function composeContinuePrompt(blueprint: Blueprint, phase: BlueprintPhase, runDir: string): string {
   return [
     `[Phase] ${blueprint.name} → ${phase.name}`,
-    "[Resume] your previous session for this phase was interrupted by a daemon",
+    "[Resume] your previous session for this phase was interrupted by a server",
     "restart. The session context has been restored — continue the work from",
     "where you left off, complete the phase, and write your final result to",
     `${phaseDirFor(runDir, phase.name)}/outputs/envelope.json.`,

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * The event taxonomy: exactly twelve event types, each with its data
- * shape. These schemas are the single source of truth - the daemon validates
+ * shape. These schemas are the single source of truth - the server validates
  * every event's data against them before inserting (no hand-rolled
  * validation).
  */
@@ -24,7 +24,7 @@ export const EVENT_TYPES = [
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
-/** 1 — run accepted by daemon */
+/** 1 — run accepted by server */
 export const RunSubmittedData = z.object({
   blueprint: z.string(),
   cwd: z.string(),
@@ -197,7 +197,7 @@ export interface EventRow {
   phase_id: string | null;
   agent_session_id: string | null;
   type: EventType;
-  ts: string; // ISO-8601, daemon wall clock
+  ts: string; // ISO-8601, server wall clock
   data: unknown;
 }
 

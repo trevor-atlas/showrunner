@@ -1,5 +1,5 @@
 /**
- * The UI's single adapter to the daemon's stored envelope/violations format
+ * The UI's single adapter to the server's stored envelope/violations format
  *. Extracted verbatim from the three former local copies
  * (timeline-panel, envelope-card, gates-card) — pure dedup, byte-identical
  * behavior.
@@ -13,7 +13,7 @@
  *
  * The module is deliberately import-free: it lives in the BROWSER module
  * graph (timeline-panel renders inside the run-live-region clientEntry) and
- * must not pull daemon/server-only types or modules.
+ * must not pull server-only types or modules.
  */
 export interface ParsedEnvelope {
   summary: string;

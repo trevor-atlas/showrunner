@@ -1,22 +1,22 @@
-import { startDaemon, installSignalHandlers } from "./lifecycle.ts";
+import { startServer, installSignalHandlers } from "./lifecycle.ts";
 
 /**
  * The standalone dev server entry (src/server/main.ts). Runs under bun — `bun main.ts`
  * (or `bun --watch main.ts` for dev).
  *
- * Since the merged web server, the daemon owns the listener: booting this
- * entry starts the daemon in-process (default data dir) on the single TCP
- * port — `/api/*` + the dashboard on the same listener (src/daemon/web.ts).
+ * Since the merged web server, the server owns the listener: booting this
+ * entry starts the server in-process (default data dir) on the single TCP
+ * port — `/api/*` + the dashboard on the same listener (src/server/transport/http.ts).
  * The port honors `PORT` (the remix HMR chain sets it when it spawns this
- * entry) via startDaemon's resolution: `opts.port ?? SHOWRUNNER_PORT ??
+ * entry) via startServer's resolution: `opts.port ?? SHOWRUNNER_PORT ??
  * PORT ?? 44100`.
  *
  * Documented trade-off (accepted): `bun --watch server.ts` restarts the
- * in-process daemon → in-flight runs become `interrupted` (recoverable via
+ * in-process server → in-flight runs become `interrupted` (recoverable via
  * resume); `bun hmr` avoids restarts for UI work.
  */
 
-const handle = await startDaemon();
+const handle = await startServer();
 installSignalHandlers(handle);
 
 if (process.env.REMIX_NODE_HMR) {

@@ -1,10 +1,10 @@
 /**
  * The in-process change bus: a "something changed" wake-up fires here every
- * time an event row is written to the daemon's SQLite, per-run and globally.
+ * time an event row is written to the server's SQLite, per-run and globally.
  * The two remix SSE proxy routes subscribe here and push a wake-up frame to
  * the browser; the browser then refetches from its cursor.
  *
- * INVARIANT: `insertEvent` (src/daemon/db.ts) is the SINGLE events-write
+ * INVARIANT: `insertEvent` (src/server/repository/db.ts) is the SINGLE events-write
  * chokepoint — the only place that writes an events row. transport subscribes
  * `emitRunChange` to db.ts's `onEventWritten` emitter, so every write path (the
  * run loop, the controls, backfill, the queue's EventSink) signals through

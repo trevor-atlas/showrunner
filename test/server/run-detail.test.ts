@@ -27,8 +27,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { dbPathFor, type EventType } from "../../src/core/index.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
-import { startDaemon, type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
+import { startServer, type ServerHandle } from "../../src/server/lifecycle.ts";
 import {
   insertAgentSession,
   insertEnvelope,
@@ -469,9 +469,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("R5 proxies: envelopes.json / gates.json serve a phase's data for the panel's lazy fetch, and 404 for a ghost phase", async () => {
     const dir = tmpDir("detail-proxies");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       // build has one rejected envelope → the attempt history
@@ -514,9 +514,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("live loop seam: the events.json cursor proxy streams new events as the run progresses (same query, sliding window, ~1s cadence)", async () => {
     const dir = tmpDir("detail-poll");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       // the clientEntry's first poll: full history from cursor 0
@@ -558,9 +558,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("404s with a back-link for a ghost run (page + proxy)", async () => {
     const dir = tmpDir("detail-404");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       const ghost = "99999999-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
       const page = await fetchDetail(ghost);
@@ -582,9 +582,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("renders real daemon data against an in-process daemon (the old daemon-down shell is impossible)", async () => {
     const dir = tmpDir("detail-in-process");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       const res = await fetchDetail(RUN_A);
@@ -604,9 +604,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("R6: the timeline.json proxy serves the fresh R3 view (blueprint order, open segments, R2 causes) and 404s for a ghost run", async () => {
     const dir = tmpDir("detail-timeline-proxy");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       const first = await fetchTimeline(RUN_A);
@@ -644,9 +644,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("R6 poll refetch seam: the running page's timeline.json grows a new segment after the daemon's DB gains a revisit phase_start (the hydrated region's per-tick refetch)", async () => {
     const dir = tmpDir("detail-timeline-refetch");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       // the page the hydrated region would be polling: RUN_B (running)
@@ -696,9 +696,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("R6 paused: the active bubble carries the striped paused treatment and the pause reason surfaces in the panel header (and the pause menu)", async () => {
     const dir = tmpDir("detail-paused-r6");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       const { status, html } = await fetchDetail(RUN_A);
@@ -733,9 +733,9 @@ describe("run detail (T10a + R4/R5) — server-side daemon data + the cursor pro
   it("R6 interrupted: an interrupted run renders its open segment with the interrupted outcome (amber) and keeps the resume path alive", async () => {
     const dir = tmpDir("detail-interrupted-r6");
     const restore = setDataDir(dir);
-    let daemon: DaemonHandle | null = null;
+    let daemon: ServerHandle | null = null;
     try {
-      daemon = await startDaemon({ dataDir: dir, port: 0 });
+      daemon = await startServer({ dataDir: dir, port: 0 });
       seedDetailData(dir);
 
       const { status, html } = await fetchDetail(RUN_D);

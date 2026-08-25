@@ -10,7 +10,7 @@
  * sumRunSpend, envelopeCount, listAgentSessions, eventCount, cursorEvents,
  * sumSpendTokenTotals), no HTTP/routing, no React, no writes, no view state.
  *
- * The timeline fold stays in daemon/timeline.ts (buildTimelineView) — the
+ * The timeline fold stays in services/timeline.ts (buildTimelineView) — the
  * model CALLS it (buildTimeline is the model's entry point; the derivation
  * lives in the one tested place it always has).
  */
@@ -103,7 +103,7 @@ export function buildSpendBreakdown(db: Database, run: RunRow): SpendBreakdown {
 }
 
 /** GET /runs/:id/timeline — the model's timeline entry point: it CALLS
- * buildTimelineView (the fold stays in daemon/timeline.ts). The 404 check
+ * buildTimelineView (the fold stays in services/timeline.ts). The 404 check
  * stays with the caller (apiTimeline). */
 export function buildTimeline(db: Database, dataDir: string, run: RunRow): TimelineView {
   return buildTimelineView(db, dataDir, run);

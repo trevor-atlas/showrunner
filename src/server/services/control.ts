@@ -24,7 +24,7 @@ import { drivePreparedRun, driveResumedRun, prepareBlueprintRun, prepareResume }
 import type { ApiState } from "../transport/state.ts";
 
 /**
- * The control/mutation verbs of the daemon's local HTTP API: submit, shutdown,
+ * The control/mutation verbs of the server's local HTTP API: submit, shutdown,
  * and the T04 control surface (steer / session-steer / pause-view / approve /
  * fail / resume / override / restart-fresh). Every control verb writes a
  * human_action event; each surfaces the resulting run state. The per-endpoint
@@ -36,7 +36,7 @@ import type { ApiState } from "../transport/state.ts";
 
 /**
  * POST /api/shutdown — graceful stop over HTTP (the CLI's `stop` verb). The
- * daemon replaces the old file-based SIGTERM dance: the response flushes first,
+ * server replaces the old file-based SIGTERM dance: the response flushes first,
  * then we raise SIGTERM on ourselves so the installed signal handlers run the
  * SAME graceful close (stop children, close server + DB) and exit(0). A dead
  * process holds no socket, so there is no stale state to reap.
@@ -125,15 +125,15 @@ export async function apiSubmitRun(state: ApiState, body: Record<string, unknown
 
 // ── T04 control surface (the pause viewer behind the CLI's
 // `pause` verb). Every control verb writes a human_action event; each
-// surfaces the resulting run state. The control handle is the daemon's
-// in-process registry — a paused run after a daemon restart has none, and
+// surfaces the resulting run state. The control handle is the server's
+// in-process registry — a paused run after a server restart has none, and
 // those verbs answer 409 (the continuation surface is T07/T08). ───────────────
 
 export function apiPause(state: ApiState, runId: string): PauseView {
   const run = getRun(state.db, runId);
   if (!run) throw new ApiError(404, `run ${runId} not found`);
   const control = getControl(runId);
-  // a paused run without a control handle (daemon restarted) is still PAUSED —
+  // a paused run without a control handle (server restarted) is still PAUSED —
   // the viewer reports the state, without the in-memory menu (T07/T08's surface)
   const paused = run.status === "paused";
   if (paused && control !== null && control.paused) {
@@ -166,7 +166,7 @@ export function apiPause(state: ApiState, runId: string): PauseView {
     reason: lastRunStatusReason(state.db, runId),
     actions: [],
     ...(paused
-      ? { note: "paused, but the daemon has no control handle for it (restarted?) — the continuation surface is T07" }
+      ? { note: "paused, but the server has no control handle for it (restarted?) — the continuation surface is T07" }
       : {}),
   };
 }
@@ -178,7 +178,7 @@ export function apiSteerRun(state: ApiState, runId: string, body: Record<string,
   if (control === null) {
     throw new ApiError(
       409,
-      `run ${runId} has no active control handle (status ${run.status}) — steer needs a live daemon`,
+      `run ${runId} has no active control handle (status ${run.status}) — steer needs a live server`,
     );
   }
   try {
@@ -202,7 +202,7 @@ export function apiSteerRun(state: ApiState, runId: string, body: Record<string,
 export function apiSessionSteer(state: ApiState, piSessionId: string, body: Record<string, unknown>): ControlResult {
   const control = getControlByLiveSession(piSessionId);
   if (control === null) {
-    throw new ApiError(409, `no live session ${piSessionId} on the daemon (a paused run has no live process)`);
+    throw new ApiError(409, `no live session ${piSessionId} on the server (a paused run has no live process)`);
   }
   try {
     const message = typeof body.message === "string" ? body.message : "";
@@ -238,7 +238,7 @@ export function apiFailRun(state: ApiState, runId: string, body: Record<string, 
     if (control !== null) {
       control.fail(by); // the loop finalizes (kills the live child)
     } else {
-      statelessFailRun(state.db, runId, by); // interrupted / restarted-daemon runs
+      statelessFailRun(state.db, runId, by); // interrupted / restarted-server runs
     }
   } catch (err) {
     throw new ApiError(409, err instanceof Error ? err.message : String(err));

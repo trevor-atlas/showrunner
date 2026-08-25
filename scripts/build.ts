@@ -5,12 +5,12 @@
  * AssetServer exposes only fetch/getHref/getPreloads/close —
  * node_modules/@remix-run/assets/dist/lib/asset-server.d.ts — backed by an
  * in-memory ModuleStore, .../lib/module-store.d.ts), so this separate build
- * process CANNOT precompile anything the daemon later loads. What it CAN do is
+ * process CANNOT precompile anything the server later loads. What it CAN do is
  * force the entire client entry graph to compile+minify here (NODE_ENV=production
  * makes assets.ts minify) and fail the build on any asset-compiler error, so
  * that error surfaces in CI instead of on a user's first page load. The real
- * first-load speedup is the boot-time warm inside the daemon process
- * (src/daemon/daemon.ts).
+ * first-load speedup is the boot-time warm inside the server process
+ * (src/server/lifecycle.ts).
  */
 import { entryHref, entryPreloads } from "../src/server/assets.ts";
 

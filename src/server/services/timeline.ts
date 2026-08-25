@@ -69,7 +69,7 @@ export function buildTimelineView(db: Database, dataDir: string, run: RunRow): T
   return {
     run_id: run.id,
     blueprint: run.blueprint,
-    // the runs table stores only validated statuses (single-writer daemon) —
+    // the runs table stores only validated statuses (single-writer server) —
     // the narrow cast to the contract's RunStatus/PhaseStatus is honest
     status: run.status as RunStatus,
     needs_review: run.needs_review !== 0,

@@ -10,15 +10,15 @@ import { loadRoster } from "./roster.ts";
 import { Tracer } from "./tracer.ts";
 
 /**
- * backfill — restore events the daemon missed while it was down.
+ * backfill — restore events the server missed while it was down.
  *
  * CHOICE (documented): re-read the pi session JSONL instead of `get_entries`.
- * After a SIGKILL the daemon owns no live pi process to query, and pi appends
+ * After a SIGKILL the server owns no live pi process to query, and pi appends
  * every `message_end` to its session tree (<session-dir>/--<cwd>--/<ts>_<id>.jsonl)
  * — the same durable record `get_entries {since}` would serve — so the JSONL
  * is read directly and folded through the tracer. The dedup key is the run's
  * OWN raw_output.jsonl (append-only, byte-identical): every raw line the
- * daemon already folded is in that file, so a restored line is one the daemon
+ * server already folded is in that file, so a restored line is one the server
  * never saw. That makes the sweep idempotent — the events table stays
  * append-only, no double-inserted events. (get_entries is the real-pi
  * alternative when the session tree's JSONL shape ever diverges from the RPC
@@ -133,10 +133,10 @@ function sessionLines(path: string): string[] {
 
 /**
  * Backfill the missed session tails for every INTERRUPTED run. Called on
- * daemon start AFTER orphan cleanup (the children are reaped first, so
+ * server start AFTER orphan cleanup (the children are reaped first, so
  * their session files are stable). Fully synchronous — events are inserted
  * directly (this is offline recovery, not live streaming, so the async
- * EventSink backpressure queue is not needed) and the daemon only reports up
+ * EventSink backpressure queue is not needed) and the server only reports up
  * once the restore is durable. Idempotent: restored lines land in the run's
  * raw file, so a second sweep finds nothing to do.
  */
@@ -192,7 +192,7 @@ export function backfillMissedEvents(
         piSessionId: s.pi_session_id,
         sink: (evt) => {
           report.events_folded += 1;
-          // direct insert: validated + durable before the daemon reports up
+          // direct insert: validated + durable before the server reports up
           insertEvent(db, {
             run_id: run.id,
             phase_id: phase.id,
@@ -207,7 +207,7 @@ export function backfillMissedEvents(
 
       summary.sessions_scanned += 1;
       for (const line of sessionLines(file)) {
-        if (seen.has(line)) continue; // already folded by the pre-crash daemon
+        if (seen.has(line)) continue; // already folded by the pre-crash server
         seen.add(line);
         report.lines_restored += 1;
         summary.lines_restored += 1;

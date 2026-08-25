@@ -31,12 +31,12 @@ import { startLiveSnapshot, type LiveApplyOutcome } from "./live-snapshot.ts";
  * single-snapshot region: `apply` always returns "applied" (a transient
  * failure keeps the last snapshot; the stream never stops).
  *
- * The browser NEVER talks to the daemon: it only refetches the rendered
+ * The browser NEVER talks to the server: it only refetches the rendered
  * snapshot proxy (the iron convention). getStats() is server-only and lives in
  * the controller action, never in this clientEntry graph.
  */
 
-/** The client-entry boundary widens the daemon wire type (RunStats) with the
+/** The client-entry boundary widens the server wire type (RunStats) with the
  * SerializableProps index signature — the values are plain JSON (exactly what
  * the /stats.json proxy returns), so the widening is structural only. */
 export type SerializableRunStats = RunStats & SerializableObject;

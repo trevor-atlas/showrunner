@@ -10,11 +10,11 @@ import { runDirFor } from "../../src/core/index.ts";
 
 import { CURSOR_SQL } from "../../src/server/repository/db.ts";
 import { loadBlueprintModule, snapshotBlueprint } from "../../src/server/engine/runner.ts";
-import { startDaemon } from "../../src/server/lifecycle.ts";
+import { startServer } from "../../src/server/lifecycle.ts";
 import { insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
-import { DaemonClient } from "../../src/server/transport/client.ts";
+import { ServerClient } from "../../src/server/transport/client.ts";
 import { type SubmitRunBody } from "../../src/server/contract.ts";
-import { type DaemonHandle } from "../../src/server/lifecycle.ts";
+import { type ServerHandle } from "../../src/server/lifecycle.ts";
 import type {
   ControlResult,
   EventsPage,
@@ -124,9 +124,9 @@ function scratchCwd(label: string): string {
 test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 404 semantics", async () => {
   const dir = tmpDataDir("contract-read");
   const cwd = scratchCwd("contract-read-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: DEMO, cwd, delayMs: 0 });
     expect(sub.status).toBe(201);
@@ -230,7 +230,7 @@ test("read surface: detail, envelopes, gates, spend, raw tail, list — and the 
 
 test("cursor contract: limit honored (500 cap, default), next_cursor advances, idempotent at the tail", async () => {
   const dir = tmpDataDir("contract-cursor");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     // seed >500 events through the DB BEFORE the daemon starts (the events
     // table is append-only; the HTTP layer has no ingest endpoint by design)
@@ -244,7 +244,7 @@ test("cursor contract: limit honored (500 cap, default), next_cursor advances, i
     }
     seedDb.close();
 
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // default limit is 500 and the cap is honored (limit=1000 still yields 500)
@@ -289,9 +289,9 @@ test("cursor contract: limit honored (500 cap, default), next_cursor advances, i
 test("F2: run_submitted fires at acceptance (a queued run has it before it drives); queue position surfaces on POST /runs and GET /runs", async () => {
   const dir = tmpDataDir("contract-queue");
   const cwd = scratchCwd("contract-queue-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0, poolSlots: 1 });
+    daemon = await startServer({ dataDir: dir, port: 0, poolSlots: 1 });
     const baseUrl = daemon.baseUrl;
 
     // A: approval pause holds the only slot (F1: paused runs keep their slot)
@@ -369,9 +369,9 @@ test("F2: run_submitted fires at acceptance (a queued run has it before it drive
 test("control surface: approve + audited gate override + restart-fresh + fail, with human_action events and guardrails", async () => {
   const dir = tmpDataDir("contract-control");
   const cwd = scratchCwd("contract-control-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // ── approve (require_approval pause) ──
@@ -453,9 +453,9 @@ test("control surface: approve + audited gate override + restart-fresh + fail, w
 test("override audit: a request WITHOUT by records cli; with by:\"web\" records web on the gate_overrides row", async () => {
   const dir = tmpDataDir("contract-override-by");
   const cwd = scratchCwd("contract-override-by-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // run 1: override WITHOUT by → the daemon's default ("cli") is audited
@@ -504,9 +504,9 @@ test("override audit: a request WITHOUT by records cli; with by:\"web\" records 
 test("session steer delivers between turns; resume and fail answer 409 outside their contract", async () => {
   const dir = tmpDataDir("contract-steer");
   const cwd = scratchCwd("contract-steer-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // steer at a session that does not exist → 409
@@ -559,7 +559,7 @@ test("session steer delivers between turns; resume and fail answer 409 outside t
 test("resume over HTTP: an interrupted run relaunches from its recorded phase and succeeds", async () => {
   const dir = tmpDataDir("contract-resume");
   const cwd = scratchCwd("contract-resume-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
     // build an INTERRUPTED run directly (status interrupted + the
     // snapshot + pending phase rows) — prepareResume reads exactly this
@@ -573,7 +573,7 @@ test("resume over HTTP: an interrupted run relaunches from its recorded phase an
     snapshotBlueprint(runDirFor(dir, runId), blueprint, 3, HAPPY);
     seedDb.close();
 
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     // resume on a missing run → 404 (the ghost path above covers 409-on-non-interrupted)
@@ -601,9 +601,9 @@ test("resume over HTTP: an interrupted run relaunches from its recorded phase an
 test("hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseEnd)", async () => {
   const dir = tmpDataDir("contract-hooks");
   const cwd = scratchCwd("contract-hooks-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK, cwd, delayMs: 0 });
     const runId = (sub.json as SubmitRunResult).run_id;
@@ -621,9 +621,9 @@ test("hooks fire with ctx.shell() in the run cwd (onPhaseStart AND onPhaseEnd)",
 test("a throwing onPhaseStart audits + parks the run at the hook_failed menu (never dies silently)", async () => {
   const dir = tmpDataDir("contract-hook-start");
   const cwd = scratchCwd("contract-hook-start-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK_START_FAIL, cwd, delayMs: 0 });
     const runId = (sub.json as SubmitRunResult).run_id;
@@ -667,9 +667,9 @@ test("a throwing onPhaseStart audits + parks the run at the hook_failed menu (ne
 test("a throwing onPhaseEnd records the phase FAILED + audits, then parks at the hook_failed menu", async () => {
   const dir = tmpDataDir("contract-hook-end");
   const cwd = scratchCwd("contract-hook-end-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HOOK_END_FAIL, cwd, delayMs: 0 });
     const runId = (sub.json as SubmitRunResult).run_id;
@@ -699,9 +699,9 @@ test("a throwing onPhaseEnd records the phase FAILED + audits, then parks at the
 
 test("submit errors are clean 400s: missing module, bad args, no fixture/blueprint", async () => {
   const dir = tmpDataDir("contract-submit400");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     const baseUrl = daemon.baseUrl;
 
     const missing = await api(baseUrl, "POST", "/runs", { blueprint: "/nonexistent/blueprint.ts" });
@@ -724,11 +724,11 @@ test("submit errors are clean 400s: missing module, bad args, no fixture/bluepri
 test("typed client over the merged HTTP server; ApiError carries 404/409/400", async () => {
   const dir = tmpDataDir("contract-client");
   const cwd = scratchCwd("contract-client-cwd");
-  let daemon: DaemonHandle | null = null;
+  let daemon: ServerHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
+    daemon = await startServer({ dataDir: dir, port: 0 });
     expect(daemon.port).toBeGreaterThan(0); // ephemeral port read back on the handle
-    const client = new DaemonClient({ baseUrl: daemon.baseUrl });
+    const client = new ServerClient({ baseUrl: daemon.baseUrl });
     expect((await client.health()).ok).toBe(true);
     expect((await client.status()).data_dir).toBe(dir);
 
@@ -767,10 +767,10 @@ test("typed client over the merged HTTP server; ApiError carries 404/409/400", a
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 
-// apiTimeline (server producer) and DaemonClient.getTimeline (client
+// apiTimeline (server producer) and ServerClient.getTimeline (client
 // consumer) both honor the TimelineView contract.
 type _ServerTimelinePin = Assert<Equal<ReturnType<typeof apiTimeline>, TimelineView>>;
-type _ClientTimelinePin = Assert<Equal<Awaited<ReturnType<DaemonClient["getTimeline"]>>, TimelineView>>;
+type _ClientTimelinePin = Assert<Equal<Awaited<ReturnType<ServerClient["getTimeline"]>>, TimelineView>>;
 type _NeedsReviewPin = Assert<Equal<TimelineView["needs_review"], boolean>>;
 
 test("server and client re-export the SAME ApiError class (one wire contract)", () => {

@@ -5,7 +5,7 @@ import { createRequestListener } from "remix/node-fetch-server";
 import { onEventWritten } from "../repository/db.ts";
 import { ApiError } from "../contract.ts";
 import { emitRunChange } from "./change-bus.ts";
-import { setWebState, type ApiState } from "./state.ts";
+import { setServerState, type ApiState } from "./state.ts";
 import {
   apiEvents,
   apiHealth,
@@ -34,17 +34,17 @@ import {
 } from "../services/control.ts";
 
 /**
- * The daemon's merged web server: ONE node:http listener serving BOTH the
+ * The server's merged web server: ONE node:http listener serving BOTH the
  * JSON API (under `/api/*`, dispatched straight to the api core in
- * src/daemon/server.ts) AND the remix@next dashboard (everything else, via
+ * src/server/transport/http.ts) AND the remix@next dashboard (everything else, via
  * the lazily-imported router).
  *
- * The dashboard router is imported through a dynamic import so the daemon
+ * The dashboard router is imported through a dynamic import so the server
  * process never loads the UI graph unless a browser actually asks for a page
  * — and `/api/*` is dispatched BEFORE the router promise is ever touched, so
  * the JSON API keeps answering even while the UI import is slow. A dashboard
- * request AWAITS that import (it never 503s); in production the daemon warms
- * the import + entry assets at boot (src/daemon/daemon.ts) so the first
+ * request AWAITS that import (it never 503s); in production the server warms
+ * the import + entry assets at boot (src/server/lifecycle.ts) so the first
  * request is already a cache hit.
  */
 
@@ -60,7 +60,7 @@ let routerPromise: Promise<RouterModule> | null = null;
 
 /** Cached lazy import of the remix dashboard router. The dashboard listener
  * awaits this promise — a slow import delays the page, it never 503s. A failed
- * import is reset so the next request retries. Exported so the daemon can warm
+ * import is reset so the next request retries. Exported so the server can warm
  * it at boot in production. */
 export function getRouter(): Promise<RouterModule> {
   if (routerPromise === null) {
@@ -73,9 +73,9 @@ export function getRouter(): Promise<RouterModule> {
 }
 
 export function createWebServer(state: ApiState): Server {
-  // register the daemon state for in-process consumers (the UI actions call
+  // register the server state for in-process consumers (the UI actions call
   // the api core against it — no socket round trip, Phase 2 / T4)
-  setWebState(state);
+  setServerState(state);
   const listener = createRequestListener(async (request) => {
     if (isApiPath(request.url)) {
       return handleApiRequest(state, request);
@@ -127,7 +127,7 @@ async function readBodyLenient(request: Request): Promise<Record<string, unknown
   }
 }
 
-// ── wire dispatcher: Request → Response (used by src/daemon/web.ts for every
+// ── wire dispatcher: Request → Response (used by src/server/transport/http.ts for every
 // `/api/*` request; pure JS, no remix dependency) ────────────────────────────
 
 export async function handleApiRequest(state: ApiState, request: Request): Promise<Response> {

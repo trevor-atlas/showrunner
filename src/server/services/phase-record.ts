@@ -9,13 +9,13 @@
  * phase proxies serve today (phases/controller.tsx): snapshot/context, inputs,
  * outputs, spend, envelopes, gates, and visit history.
  *
- * The gathers are ported from app/lib/phase-data.ts and the api core's
+ * The gathers are ported from src/server/lib/phase-data.ts and the api core's
  * per-phase reads (server.ts apiSpend/apiPhaseEnvelopes/apiPhaseGates), reusing
  * the canonical readers rather than re-summing or re-copying: db.ts's SQL
  * readers, handoff.ts's filesystem readers, blueprint-snapshot.ts's snapshot
  * reader, and phase-data.ts's context-entry / input-cap helpers.
  *
- * Server-only (it reaches for the daemon db + node:fs via those readers), and —
+ * Server-only (it reaches for the server db + node:fs via those readers), and —
  * for now — dead code: nothing imports it yet (#48 wires the controller to it).
  */
 import type { Database } from "bun:sqlite";

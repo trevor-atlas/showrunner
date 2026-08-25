@@ -25,7 +25,7 @@ export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
   return async function matchesPlan(envelope, ctx) {
     const inputs = inputsDirFor(ctx);
     if (inputs === "") {
-      return violation("no inputs dir", "the daemon did not provide ctx.inputs_dir — cannot verify the phase was handed a plan");
+      return violation("no inputs dir", "the server did not provide ctx.inputs_dir — cannot verify the phase was handed a plan");
     }
     if (!existsSync(inputs)) {
       return violation("no plan to match", `no inputs materialized at ${inputs} — a planner phase must run first`);

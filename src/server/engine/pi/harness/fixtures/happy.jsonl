@@ -11,8 +11,8 @@
 {"type":"message_end","message":{"id":"m2","role":"assistant","content":[{"type":"text","text":"Let me look at the repo layout first."}],"usage":{"input":500,"output":42,"cacheRead":0,"cacheWrite":0,"totalTokens":542,"cost":{"total":0.00102}}}}
 {"type":"message_start","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}]}}
 {"type":"message_update","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}]},"usage":{"input":900,"output":260,"cacheRead":100,"cacheWrite":0,"totalTokens":1260,"cost":{"total":0.00291}}}
-{"type":"tool_execution_start","toolCallId":"call_02","toolName":"edit","args":{"filePath":"packages/daemon/src/db.ts","oldString":"","newString":"CREATE TABLE runs (...)"}}
-{"type":"tool_execution_end","toolCallId":"call_02","toolName":"edit","result":{"content":[{"type":"text","text":"Wrote packages/daemon/src/db.ts"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call_02","toolName":"edit","args":{"filePath":"packages/server/src/db.ts","oldString":"","newString":"CREATE TABLE runs (...)"}}
+{"type":"tool_execution_end","toolCallId":"call_02","toolName":"edit","result":{"content":[{"type":"text","text":"Wrote packages/server/src/db.ts"}]},"isError":false}
 {"type":"message_end","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}],"usage":{"input":900,"output":260,"cacheRead":100,"cacheWrite":0,"totalTokens":1260,"cost":{"total":0.00291}}}}
 {"type":"tool_execution_start","toolCallId":"call_03","toolName":"bash","args":"npm test"}
 {"type":"tool_execution_update","toolCallId":"call_03","toolName":"bash","partialResult":{"content":[{"type":"text","text":"# pass 12\n"}]}}

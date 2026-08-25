@@ -19,7 +19,7 @@ import {
   getRunEvents,
   getTimeline,
   isApiError,
-} from "../../lib/daemon.ts";
+} from "../../lib/model.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,
@@ -27,7 +27,7 @@ import type {
   PhaseSpendData,
 } from "../../lib/phase-data.ts";
 import { subscribeRun } from "../../transport/change-bus.ts";
-import { createSseResponse, heartbeatOverrideMs } from "../../lib/live.ts";
+import { createSseResponse, heartbeatOverrideMs } from "../../lib/sse.ts";
 import { routes } from "../../routes.ts";
 import type { ControlError } from "../../ui/pause-menu.tsx";
 import { apiControlError, steerFormSchema, validationError } from "./control-forms.ts";
@@ -44,13 +44,13 @@ import { NotFoundPage, RunDetailPage } from "./run-detail-page.tsx";
  * here) and — when the run is paused — the pause viewer (kind/phase/
  * actions/queued steers + the override target gates). The browser then
  * polls the proxy from the hydrated live region; it NEVER talks to the
- * daemon.
+ * server.
  *
  * The control actions: each validates its form with data-schema (no
  * zod in the UI), posts to the api core in-process, then REDIRECTS
  * (303) to the fresh run detail page on success — the re-render comes from
- * daemon state, never from a client-side flip. A validation failure or a
- * daemon 409/4xx re-renders the page with the error on the form that
+ * server state, never from a client-side flip. A validation failure or a
+ * server 409/4xx re-renders the page with the error on the form that
  * submitted it (no silent drop).
  *
  * `events` is the proxy: GET /runs/:id/events?cursor=N through the api
@@ -65,7 +65,7 @@ export default createController(routes.runs, {
       return renderRunDetail(context, context.params.runId);
     },
 
-    /** steer — POST /runs/:runId/steer → daemon POST /runs/:id/steer. */
+    /** steer — POST /runs/:runId/steer → server POST /runs/:id/steer. */
     async steer(context) {
       const runId = context.params.runId;
       const formData = await context.request.formData();
@@ -81,12 +81,12 @@ export default createController(routes.runs, {
         }
         throw err;
       }
-      // success: the daemon audited + queued the steer; the poll loop resumes
+      // success: the server audited + queued the steer; the poll loop resumes
       // automatically on the re-rendered page (no optimistic mutation)
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** resume — POST /runs/:runId/resume → daemon POST /runs/:id/resume. */
+    /** resume — POST /runs/:runId/resume → server POST /runs/:id/resume. */
     async resume(context) {
       const runId = context.params.runId;
       try {
@@ -100,7 +100,7 @@ export default createController(routes.runs, {
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** fail — POST /runs/:runId/fail → daemon POST /runs/:id/fail. */
+    /** fail — POST /runs/:runId/fail → server POST /runs/:id/fail. */
     async fail(context) {
       const runId = context.params.runId;
       try {
@@ -114,7 +114,7 @@ export default createController(routes.runs, {
       return redirect(routes.runs.show.href({ runId }), 303);
     },
 
-    /** approve — POST /runs/:runId/approve → daemon POST /runs/:id/approve. */
+    /** approve — POST /runs/:runId/approve → server POST /runs/:id/approve. */
     async approve(context) {
       const runId = context.params.runId;
       try {
@@ -132,7 +132,7 @@ export default createController(routes.runs, {
      * (issue #41). Mirrors `events`/`timeline` (same run-gone 404): the RAW
      * TRANSCRIPT section SSR-seeds from renderRunDetail's getRaw and refetches
      * this on every SSE change wake-up. Default 200 lines (apiRaw's default,
-     * capped 5000); the browser never talks to the daemon directly. */
+     * capped 5000); the browser never talks to the server directly. */
     async raw(context) {
       const runId = context.params.runId;
       try {
@@ -213,10 +213,10 @@ export default createController(routes.runs, {
 // ── the shared page render (show + control-error re-renders) ────────────────
 
 /**
- * Fetch everything the run detail page needs from the daemon and render it —
+ * Fetch everything the run detail page needs from the server and render it —
  * the single render path shared by `show` and every control action's error
  * re-render (a failed control POST re-renders the SAME page with the error on
- * the form that submitted it — the page state still comes from the daemon).
+ * the form that submitted it — the page state still comes from the server).
  */
 export async function renderRunDetail(
   context: {
@@ -254,7 +254,7 @@ export async function renderRunDetail(
   // phase only) — envelopes/gates AND the four #35 card surfaces
   // (snapshot/inputs/outputs/spend). The card surfaces come from the shared
   // phase-record view-model (#48/#49: the single phase-record assembler), the
-  // same one the phase proxies use; envelopes/gates stay on their daemon reads.
+  // same one the phase proxies use; envelopes/gates stay on their server reads.
   // Later selections fetch client-side through the phase proxies.
   let initialEnvelopes: EnvelopeRow[] = [];
   let initialGates: GateResultWithOverride[] = [];

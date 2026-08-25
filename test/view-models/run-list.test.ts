@@ -11,7 +11,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { cleanupDir, tmpDataDir } from "../daemon/helpers.ts";
+import { cleanupDir, tmpDataDir } from "../server/helpers.ts";
 import { dbPathFor } from "../../src/core/index.ts";
 import { insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import type { Database } from "bun:sqlite";
