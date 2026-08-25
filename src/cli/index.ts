@@ -272,6 +272,7 @@ async function cmdDaemon(flags: Flags): Promise<number> {
     const handle = await startDaemon({ dataDir });
     installSignalHandlers(handle);
     console.log(`showrunner daemon listening on ${handle.baseUrl} (pid ${process.pid})`);
+    console.log("Editing src/ui? run `showrunner dev` for hot reload.");
     // keep the process alive; SIGINT/SIGTERM handled inside the daemon module
     await new Promise<never>(() => {});
   } catch (err) {

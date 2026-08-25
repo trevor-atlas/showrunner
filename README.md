@@ -80,10 +80,13 @@ showrunner status            # is it up? pool utilization + run counts
 ```
 
 - **Restart (pick up new code).** The daemon runs the code that was on disk
-  when it started — there is no hot reload in production mode. To apply code
-  changes: `showrunner stop`, then `showrunner daemon` again (or
-  `bun --watch src/daemon/daemon.ts` while developing). Equivalent foreground
-  invocations: `bun src/cli/index.ts daemon` or `bun src/daemon/daemon.ts`.
+  when it started — there is no hot reload in production mode. For UI work,
+  don't stop/restart: `showrunner dev` runs remix HMR so `src/ui/**` edits
+  hot-swap in place (see [The UI dev loop](#the-ui-dev-loop) for the run-safety
+  tradeoffs). To apply non-UI code changes: `showrunner stop`, then
+  `showrunner daemon` again (or `bun --watch src/daemon/daemon.ts` while
+  developing). Equivalent foreground invocations: `bun src/cli/index.ts daemon`
+  or `bun src/daemon/daemon.ts`.
 - **Reset (wipe all runs).** Stop the daemon, delete the data, start again:
 
   ```bash
@@ -158,7 +161,7 @@ single tsconfig, a single node_modules, a single cwd.
   JSON API under `/api/*` AND the remix@next dashboard in-process.
 - **`src/cli`** — `showrunner`: a thin typed client over the daemon's HTTP API.
 - **`src/starter-kit`** — the replace-this content (agents, gates, blueprints, skills, poll tool).
-- **`src/ui`** — the remix@next dashboard (served by the daemon via `src/daemon/web.ts`; `bun --watch src/ui/server.ts` boots the whole daemon in-process for UI dev).
+- **`src/ui`** — the remix@next dashboard (served by the daemon via `src/daemon/web.ts`; `showrunner dev` — equivalently `bun src/cli/index.ts dev` / `bun hmr` — runs remix HMR for UI dev, and `bun --watch src/ui/server.ts` boots the whole daemon in-process with `--watch` reload).
 
 ## Docs
 
@@ -177,10 +180,42 @@ SHOWRUNNER_SMOKE=1 SHOWRUNNER_PI_BINARY=$(which pi) bun test/daemon/smoke/smoke.
                                       # the capstone smoke: real pi, real repo, real tokens (T13)
 ```
 
-Dev flow — every entry below boots a FULL daemon in-process (equivalent):
+### The UI dev loop
+
+`showrunner dev` is THE loop for UI work. It runs remix's built-in HMR (the
+proxy chain in `src/ui/hmr.ts`) with `NODE_ENV=development`, so accepted edits
+under `src/ui/**` hot-swap **in place** with no process restart:
 
 ```bash
-bun --watch src/ui/server.ts           # daemon + dashboard, dev reload
+showrunner dev                         # or: bun src/cli/index.ts dev
+showrunner dev --port 45000            # override the proxy port (default 44100)
+```
+
+Two paths, depending on whether a run is in flight:
+
+- **`showrunner dev` (remix HMR) — the fast UI loop.** Most `src/ui/**` edits
+  hot-swap with no restart. The catch: edits remix cannot hot-accept (typically
+  server-only module changes) make it **restart the child daemon**, and a daemon
+  restart flips in-flight runs to `interrupted`. Interrupted runs are
+  recoverable — `showrunner resume <run_id>` relaunches the phase — so this is a
+  documented tradeoff, not data loss (see `src/ui/server.ts`). Use `dev` when no
+  run is in flight, or when you can afford to resume.
+- **Plain `showrunner daemon` — never interrupts a run.** The plain daemon never
+  restarts on a UI edit, so an in-flight run keeps going untouched. Because
+  `NODE_ENV` is unset, its AssetServer watches and serves non-fingerprinted
+  assets `no-cache`, so **client-component edits** (e.g.
+  `src/ui/app/ui/public/timeline.tsx`) show up on reload. What it does NOT pick
+  up without a restart is the **server-rendered HTML** (the module-cached router
+  graph in `src/daemon/web.ts`). So to edit UI while a run is in progress: use
+  the plain daemon — the run survives, client edits refresh on reload, and
+  server-rendered HTML lands on the next restart.
+
+Production (`NODE_ENV=production`) behavior is unchanged: no hot reload.
+
+The underlying scripts are equivalent to `showrunner dev`:
+
+```bash
+bun hmr                                # what `showrunner dev` runs (hmr.ts spawns server.ts as its HMR child)
+bun --watch src/ui/server.ts           # daemon + dashboard, --watch reload (restarts on every edit → interrupts runs)
 bun --watch src/daemon/daemon.ts       # same daemon, no UI dev reload
-bun hmr                                # HMR without restarts (hmr.ts spawns server.ts as its HMR child)
 ```
