@@ -11,7 +11,7 @@ import type {
 import { routes } from "../../routes.ts";
 import type { FeedEvent } from "../../ui/public/event-feed.tsx";
 import { EventFeed } from "../../ui/public/event-feed.tsx";
-import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./sse.ts";
+import { startLiveSnapshot, type LiveApplyOutcome } from "./live-snapshot.ts";
 import { computeTimelineLayout } from "../../ui/public/timeline-model.ts";
 import { Timeline } from "../../ui/public/timeline.tsx";
 import { TimelinePanel } from "../../ui/public/timeline-panel.tsx";
@@ -89,10 +89,6 @@ export type SerializableRawTail = RawTail & SerializableObject;
  * Read-only: this region never POSTs — the control verbs are T10b's ticket
  * and live in the run-detail page's server-rendered forms.
  */
-
-/** The one-shot retry delay after a transient refetch failure (ms) — the old
- * "retry next tick" tolerance, now a single setTimeout with no poll loop. */
-const RETRY_MS = 1000;
 
 /** One selected phase's lazily-fetched card data (per-phase cache). #41 folded
  * the drill-in surfaces in, so a selection now caches the full card record:
@@ -179,18 +175,15 @@ export const RunLiveRegion = clientEntry(
     // every SSE change wake-up (the ONLY per-signal card refetch; the phase
     // cards load on selection, not per-signal — #38 kept that out of scope)
     let raw: RawTail = handle.props.initialRaw;
-    let rawInflight = false;
     // R5: the selection survives polls because it lives here, not in props
     let selection: string | null = handle.props.initialSelection;
     let autoScroll = true;
     let hoverPaused = false;
     let feedNode: HTMLElement | null = null;
-    let polling = false;
-    let terminal = isTerminalStatus(status);
-    // the run-scoped SSE subscription (armed below when window exists and the
-    // run is not already terminal) and the single pending one-shot retry timer
-    let subscription: SseSubscription | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // whether the run was ALREADY terminal at SSR — the live transport is only
+    // armed for a still-running run (the adapter owns the terminal freeze once
+    // it IS armed).
+    const terminalAtSetup = isTerminalStatus(status);
 
     // R5: the per-phase panel data cache — seeded with the server-rendered
     // initial selection; later selections are fetched lazily via the proxies
@@ -301,148 +294,113 @@ export const RunLiveRegion = clientEntry(
       }
     };
 
-    /** #41: refetch the run-scoped RAW TRANSCRIPT tail on the SSE signal. A
-     * failure keeps the last tail (best-effort) and never disturbs the
-     * events/timeline refetch path (#38 semantics unchanged). */
-    const refreshRaw = async (): Promise<void> => {
-      if (rawInflight || typeof window === "undefined") return;
-      rawInflight = true;
+    /** #41: best-effort refetch of the run-scoped RAW TRANSCRIPT tail, folded
+     * into the parallel `apply` round-trip. Never throws — a failure keeps the
+     * last tail (returns null) so it never turns the events/timeline refetch
+     * into a retry (#38 semantics unchanged). */
+    const fetchRawTail = async (): Promise<RawTail | null> => {
       try {
         const res = await fetch(new URL(handle.props.rawHref, window.location.href));
-        if (res.ok) {
-          raw = (await res.json()) as RawTail;
-          await handle.update();
-        }
+        if (res.ok) return (await res.json()) as RawTail;
       } catch {
         // keep the last tail
-      } finally {
-        rawInflight = false;
       }
+      return null;
     };
 
-    const poll = async (): Promise<void> => {
-      if (polling) return; // a slow round-trip must not stack refetches
-      polling = true;
-      try {
-        const eventsUrl = new URL(handle.props.eventsHref, window.location.href);
-        eventsUrl.searchParams.set("cursor", String(cursor));
-        const timelineUrl = new URL(handle.props.timelineHref, window.location.href);
-        // R6: the timeline refetch rides the SAME refetch as the events page —
-        // one round-trip, both fetches in flight. A 404 on either proxy = the
-        // run is gone → stop the live subscription; any other failure is
-        // transient — keep the last snapshot and schedule ONE delayed retry.
-        const [eventsResponse, timelineResponse] = await Promise.all([fetch(eventsUrl), fetch(timelineUrl)]);
-        if (eventsResponse.status === 404 || timelineResponse.status === 404) {
-          stopLive();
-          return;
-        }
-        if (!eventsResponse.ok || !timelineResponse.ok) {
-          scheduleRetry(); // transient — one delayed retry, not a poll loop
-          return;
-        }
-        const page = (await eventsResponse.json()) as { events: FeedEvent[]; next_cursor: number };
-        const view = (await timelineResponse.json()) as TimelineView;
-        if (page.events.length > 0) {
-          events = [...events, ...page.events];
-          cursor = page.next_cursor;
-        } else {
-          cursor = page.next_cursor; // idempotent at the tail
-        }
-        // keep the run status + timeline live from run_status events — a
-        // TERMINAL transition (success/failed) freezes the timeline at the
-        // run_status moment, drops the now-cursor, and stops the poll
-        // (polish, T10b — the timeline's live edges derive from these)
-        for (const ev of page.events) {
-          if (ev.type === "run_status") {
-            const data = (ev.data ?? {}) as { to?: unknown; reason?: unknown };
-            const to = data.to;
-            if (typeof to === "string" && isTrackedStatus(to)) {
-              status = to;
-              if (to === "success" || to === "failed") {
-                endedAt = ev.ts;
-                terminal = true;
-                stopLive();
-              }
-              // R6 pause surfacing: the run_status → paused event carries the
-              // pause reason (pauseAt writes `reason: pause.reason` — the same
-              // value the pause viewer reports), so the panel header can
-              // surface it LIVE with no extra proxy. Cleared on any other
-              // transition; the panel only renders it while the live status
-              // is paused anyway.
-              pauseReason = to === "paused" && typeof data.reason === "string" && data.reason !== "" ? data.reason : null;
+    /** The adapter's refetch (#58): one round-trip that fetches events.json +
+     * timeline.json + the RAW tail in PARALLEL, merges the cursor, and updates
+     * the render state — then returns the outcome the adapter acts on:
+     *   - "stopped": a 404 on either proxy (the run is gone) OR a terminal
+     *     transition (run_status → success/failed, or a terminal timeline
+     *     view) — the adapter tears the stream down (the T10b freeze);
+     *   - "retry": a transient non-404 failure — the adapter arms ONE delayed
+     *     retry (a fetch/parse throw propagates and the adapter treats it the
+     *     same way);
+     *   - "applied": otherwise — keep listening.
+     * The cursor merge + render state stay HERE; the adapter owns only WHEN. */
+    const apply = async (): Promise<LiveApplyOutcome> => {
+      const eventsUrl = new URL(handle.props.eventsHref, window.location.href);
+      eventsUrl.searchParams.set("cursor", String(cursor));
+      const timelineUrl = new URL(handle.props.timelineHref, window.location.href);
+      // R6: the events page, the timeline, and the RAW tail ride the SAME
+      // round-trip — all three in flight. The RAW fetch is best-effort and
+      // never throws, so only events/timeline decide the outcome.
+      const [eventsResponse, timelineResponse, rawTail] = await Promise.all([
+        fetch(eventsUrl),
+        fetch(timelineUrl),
+        fetchRawTail(),
+      ]);
+      // a 404 on either proxy = the run is gone → stop the live subscription
+      if (eventsResponse.status === 404 || timelineResponse.status === 404) {
+        return "stopped";
+      }
+      // any other failure is transient — keep the last snapshot, arm one retry
+      if (!eventsResponse.ok || !timelineResponse.ok) {
+        return "retry";
+      }
+      const page = (await eventsResponse.json()) as { events: FeedEvent[]; next_cursor: number };
+      const view = (await timelineResponse.json()) as TimelineView;
+      if (page.events.length > 0) {
+        events = [...events, ...page.events];
+      }
+      cursor = page.next_cursor; // idempotent at the tail
+      // keep the run status + timeline live from run_status events — a
+      // TERMINAL transition (success/failed) freezes the timeline at the
+      // run_status moment, drops the now-cursor, and stops the stream
+      // (polish, T10b — the timeline's live edges derive from these)
+      let reachedTerminal = false;
+      for (const ev of page.events) {
+        if (ev.type === "run_status") {
+          const data = (ev.data ?? {}) as { to?: unknown; reason?: unknown };
+          const to = data.to;
+          if (typeof to === "string" && isTrackedStatus(to)) {
+            status = to;
+            if (to === "success" || to === "failed") {
+              endedAt = ev.ts;
+              reachedTerminal = true;
             }
+            // R6 pause surfacing: the run_status → paused event carries the
+            // pause reason (pauseAt writes `reason: pause.reason` — the same
+            // value the pause viewer reports), so the panel header can
+            // surface it LIVE with no extra proxy. Cleared on any other
+            // transition; the panel only renders it while the live status
+            // is paused anyway.
+            pauseReason = to === "paused" && typeof data.reason === "string" && data.reason !== "" ? data.reason : null;
           }
         }
-        // R6: replace the chart/panel snapshot with the fresh R3 view — the
-        // open bubble extends to now, new segments appear, closed visits
-        // finalize, all between refreshes, with NO re-sort (blueprint order
-        // is fixed server-side). A terminal view (the run finished between
-        // refetches) freezes the subscription exactly like the terminal event
-        // does.
-        timeline = view;
-        if (view.status === "success" || view.status === "failed") {
-          status = view.status;
-          endedAt = view.ended_at;
-          terminal = true;
-          stopLive();
-        }
-        await handle.update();
-        if (autoScroll && !hoverPaused && feedNode) {
-          feedNode.scrollTop = feedNode.scrollHeight;
-        }
-      } catch {
-        // transient fetch/parse throw — schedule one delayed retry
-        scheduleRetry();
-      } finally {
-        polling = false;
       }
-    };
-
-    // Transient-failure tolerance without a poll: a non-404 failure or a
-    // fetch/parse throw schedules EXACTLY ONE retry ~1s later. The guard keeps
-    // it one-shot (no stacking) rather than a setInterval loop; a terminal run
-    // never retries. A retry that fails again reschedules the same single
-    // timer — the old "retry next tick" tolerance, so a blip never stalls.
-    const scheduleRetry = (): void => {
-      if (terminal || retryTimer !== null) return;
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        void poll();
-      }, RETRY_MS);
-    };
-
-    // stopLive: tear down the SSE subscription AND clear the pending one-shot
-    // retry — the terminal freeze, a 404 run-gone, and the abort listener all
-    // route through here.
-    const stopLive = (): void => {
-      if (subscription !== null) {
-        subscription.unsubscribe();
-        subscription = null;
+      // R6: replace the chart/panel snapshot with the fresh R3 view — the
+      // open bubble extends to now, new segments appear, closed visits
+      // finalize, all between refreshes, with NO re-sort (blueprint order
+      // is fixed server-side). A terminal view (the run finished between
+      // refetches) freezes the subscription exactly like the terminal event
+      // does.
+      timeline = view;
+      if (view.status === "success" || view.status === "failed") {
+        status = view.status;
+        endedAt = view.ended_at;
+        reachedTerminal = true;
       }
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
+      // fold in the best-effort RAW tail before the single re-render
+      if (rawTail !== null) raw = rawTail;
+      await handle.update();
+      if (autoScroll && !hoverPaused && feedNode) {
+        feedNode.scrollTop = feedNode.scrollHeight;
       }
+      return reachedTerminal ? "stopped" : "applied";
     };
 
     // Setup ALSO runs server-side during SSR (clientEntry components render
-    // like any other component) — the live subscription is browser-only, so
-    // only arm it when window exists AND the run is not already terminal. The
-    // abort listener mirrors that.
-    if (typeof window !== "undefined" && !terminal) {
-      // Wake-ups drive poll() through createCoalescedNotifier (#33): a change
-      // frame that lands while a poll is in flight schedules EXACTLY ONE
-      // trailing rerun instead of being dropped by poll's own `polling` guard.
-      // This is the backstop the old setInterval provided — without it the
-      // LAST frame (terminal run_status) landing mid-poll would be lost, the
-      // freeze would never happen, and the EventSource would leak on a done
-      // run. poll's `polling` guard stays as belt-and-suspenders.
-      // #41: each change wake-up drives the events/timeline refetch (poll, #38
-      // semantics unchanged) AND the run-scoped RAW TRANSCRIPT refetch. The
-      // per-phase cards are NOT refetched here — they load on selection only.
-      const notify = createCoalescedNotifier(() => Promise.all([poll(), refreshRaw()]).then(() => undefined));
-      subscription = subscribeSse(handle.props.liveHref, { onchange: notify });
-      handle.signal.addEventListener("abort", () => stopLive());
+    // like any other component) — the live transport is browser-only, so only
+    // arm it when window exists AND the run is not already terminal. The
+    // adapter owns the SSE subscription, the coalescing + in-flight guard, the
+    // one-shot retry, and the terminal/gone freeze; the region hands it the
+    // run-scoped change-stream href + the `apply` refetch and tears it down on
+    // abort.
+    if (typeof window !== "undefined" && !terminalAtSetup) {
+      const live = startLiveSnapshot({ href: handle.props.liveHref, apply });
+      handle.signal.addEventListener("abort", () => live.stop());
     }
 
     return () => {

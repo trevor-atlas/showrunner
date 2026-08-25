@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { dbPathFor, runDirFor } from "../../src/core/index.ts";
 import { startDaemon, type DaemonHandle } from "../../src/daemon/daemon.ts";
 import { insertEvent, insertPhase, insertRun, openDb } from "../../src/daemon/index.ts";
-import { inputsDirFor, outputsDirFor } from "../../src/daemon/handoff.ts";
+import { inputsDirFor, outputsDirFor } from "../../src/daemon/workspace/index.ts";
 import { snapshotPathFor } from "../../src/ui/app/lib/blueprint-snapshot.ts";
 import type {
   PhaseInputsData,

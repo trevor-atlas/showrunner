@@ -1,7 +1,5 @@
 import { defineBlueprint } from "../../core/index.ts";
-import { documenter } from "../agents/documenter.ts";
-import { DocumentEnvelope } from "../envelopes.ts";
-import { envelopeShape, filesExist } from "../gates/index.ts";
+import { documentPhase } from "./patterns.ts";
 
 /**
  * document — write up what just shipped: the git diff goes in via
@@ -9,17 +7,10 @@ import { envelopeShape, filesExist } from "../gates/index.ts";
  * refuses an envelope that lists no artifacts — docs must actually have been
  * written, not just promised.
  *
- * Replace-this: the agent, envelope, and gates are the point of this file.
+ * Replace-this: the shared document phase lives in patterns.ts; edit it (or
+ * inline a phase here) to change the agent, envelope, or gates.
  */
 export default defineBlueprint({
   name: "document",
-  phases: [
-    {
-      name: "document",
-      agent: documenter,
-      envelope: DocumentEnvelope,
-      gates: [envelopeShape(DocumentEnvelope), filesExist()],
-      budget: 3,
-    },
-  ],
+  phases: [documentPhase()],
 });

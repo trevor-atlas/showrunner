@@ -37,6 +37,7 @@ import {
   updateRun,
 } from "../../src/daemon/index.ts";
 import type { ScriptMap, ScriptedTurn } from "../../src/daemon/index.ts";
+import { listPhaseVisits } from "../../src/daemon/db.ts";
 
 /**
  * The run loop (T01b) — driven against scripted FakePi sessions
@@ -1138,6 +1139,117 @@ test("the blueprint snapshot records the rendered config", async () => {
   }
 });
 
+// ── phase declaration columns (createRunRows persists them at submit) ──
+
+test("createRunRows persists phase declaration columns; gates/context match the snapshot", async () => {
+  const env = openEnv("runner-declaration");
+  try {
+    const planner = defineAgent({
+      name: "planner",
+      model: "fake-pi",
+      prompt: "plan the work",
+      tools: ["bash"],
+      context: ["shared.md"],
+    });
+    const builder = defineAgent({
+      name: "builder",
+      model: "fake-pi",
+      prompt: "build the work",
+      tools: ["bash"],
+      context: [],
+    });
+    const blueprint = defineBlueprint({
+      name: "declared",
+      phases: [
+        {
+          name: "plan",
+          agent: planner,
+          envelope: QualityEnvelope,
+          gates: [qualityGate],
+          budget: 3,
+          on_fail: { to: "plan" },
+        },
+        {
+          name: "build",
+          agent: builder,
+          envelope: QualityEnvelope,
+          gates: [],
+          budget: 3,
+          context: ["notes.md"],
+        },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: {
+        plan: session([settledTurn({ quality: 7 })]),
+        build: session([settledTurn({ quality: 9 })]),
+      },
+    });
+    expect((await run.done).status).toBe("success");
+
+    const phases = listPhases(env.db, run.run_id);
+    const plan = phases.find((p) => p.name === "plan")!;
+    const build = phases.find((p) => p.name === "build")!;
+
+    // one enriched row per blueprint phase, ordinals in blueprint order
+    expect(plan.ordinal).toBe(0);
+    expect(build.ordinal).toBe(1);
+    expect(plan.agent_model).toBe("fake-pi");
+    expect(build.agent_model).toBe("fake-pi");
+    expect(plan.require_approval).toBe(0);
+    expect(plan.on_fail_to).toBe("plan");
+    expect(build.on_fail_to).toBeNull();
+    // gate_names uses gateName(g, i): a named gate keeps its fn name
+    expect(plan.gate_names).toBe(JSON.stringify(["qualityGate"]));
+    expect(build.gate_names).toBe("[]");
+    // context_entries = agent defaults then phase additions (literal, unresolved)
+    expect(plan.context_entries).toBe(JSON.stringify(["shared.md"]));
+    expect(build.context_entries).toBe(JSON.stringify(["notes.md"]));
+
+    // acceptance: stored gate names / context entries match the blueprint
+    // snapshot — the DB row and blueprint.json must AGREE, including for a
+    // phase that declares first-class phase-level context (build)
+    const snap = JSON.parse(
+      readFileSync(join(runDirFor(env.dir, run.run_id), "blueprint.json"), "utf8"),
+    ) as { phases: { name: string; gates: string[]; agent: { context: string[] }; context?: string[] }[] };
+    const effectiveContext = (name: string): string[] => {
+      const ph = snap.phases.find((p) => p.name === name)!;
+      return [...ph.agent.context, ...(ph.context ?? [])];
+    };
+    const gatesOf = (name: string): string[] => snap.phases.find((p) => p.name === name)!.gates;
+    expect(plan.gate_names).toBe(JSON.stringify(gatesOf("plan")));
+    expect(build.gate_names).toBe(JSON.stringify(gatesOf("build")));
+    expect(plan.context_entries).toBe(JSON.stringify(effectiveContext("plan")));
+    expect(build.context_entries).toBe(JSON.stringify(effectiveContext("build")));
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("createRunRows records require_approval = 1 for an approval-gated phase", async () => {
+  const env = openEnv("runner-declaration-approval");
+  try {
+    const blueprint = defineBlueprint({
+      name: "gated",
+      phases: [
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [], budget: 3, require_approval: true },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn()]) },
+    });
+    // the run pauses at approval; the declaration row already exists
+    await run.done;
+    expect(listPhases(env.db, run.run_id)[0]!.require_approval).toBe(1);
+  } finally {
+    closeEnv(env);
+  }
+});
+
 // ── raw record: byte-identical, incl. an unterminated final line ───────
 
 test("raw_output.jsonl is byte-identical to the stream, incl. an unterminated final line", async () => {
@@ -1473,6 +1585,132 @@ test("a session that dies before agent_settled fails the run with needs_review",
       (e) => e.type === "tool_call" && (e.data as { truncated?: boolean }).truncated,
     );
     expect(truncated.length).toBeGreaterThanOrEqual(1);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+// ── #45: Visit as a first-class persisted concept (phase_visits + envelope link) ──
+
+test("phase_visits: a completed run records one row per visit with the cause, terminal status, and agent_session_id", async () => {
+  const env = openEnv("runner-visit-rows");
+  try {
+    // build exhausts its budget (alwaysFail, budget 1) and routes on_fail to
+    // rescue — build gets a failed visit (cause flow), rescue a success visit
+    // (cause on_fail from build's visit 1)
+    const blueprint = defineBlueprint({
+      name: "escalate",
+      phases: [
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "rescue" } },
+        { name: "rescue", agent: agent("rescuer"), envelope: QualityEnvelope, gates: [], budget: 3 },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]), rescue: session([settledTurn({ quality: 8 })]) },
+    });
+    expect((await run.done).status).toBe("success");
+
+    const phases = listPhases(env.db, run.run_id);
+    const build = phases.find((p) => p.name === "build")!;
+    const rescue = phases.find((p) => p.name === "rescue")!;
+    const sessions = listAgentSessions(env.db, run.run_id);
+
+    // one visit row per phase, keyed by visit_number, terminal status recorded
+    const buildVisits = listPhaseVisits(env.db, build.id);
+    expect(buildVisits).toHaveLength(1);
+    expect(buildVisits[0]!.visit_number).toBe(1);
+    expect(buildVisits[0]!.status).toBe("failed");
+    expect(JSON.parse(buildVisits[0]!.cause!)).toEqual({ kind: "flow" });
+    expect(buildVisits[0]!.started_at).toBeTruthy();
+    expect(buildVisits[0]!.ended_at).toBeTruthy();
+    // the visit links the pi session that ran it (the AgentSessionRow.id)
+    const buildSession = sessions.find((s) => s.phase_id === build.id)!;
+    expect(buildVisits[0]!.agent_session_id).toBe(buildSession.id);
+
+    const rescueVisits = listPhaseVisits(env.db, rescue.id);
+    expect(rescueVisits).toHaveLength(1);
+    expect(rescueVisits[0]!.status).toBe("success");
+    expect(JSON.parse(rescueVisits[0]!.cause!)).toEqual({
+      kind: "on_fail",
+      from_phase: "build",
+      from_visit: 1,
+    });
+    const rescueSession = sessions.find((s) => s.phase_id === rescue.id)!;
+    expect(rescueVisits[0]!.agent_session_id).toBe(rescueSession.id);
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("phase_visits: envelope attempts carry the visit_id of the visit that produced them; distinct visits get distinct rows", async () => {
+  const env = openEnv("runner-visit-envelopes");
+  try {
+    // an on_fail self-loop with budget 1 + maxVisits 2: each visit makes two
+    // envelope attempts (attempt 0 fails → one correction → attempt 1 fails →
+    // budget), then the guard pauses at visit 2 — two visits, four envelopes
+    const blueprint = defineBlueprint({
+      name: "loop",
+      phases: [
+        { name: "build", agent: agent(), envelope: QualityEnvelope, gates: [alwaysFailGate], budget: 1, on_fail: { to: "build" } },
+      ],
+    });
+    const run = runBlueprint(env.db, env.dir, {
+      blueprint,
+      cwd: env.cwd,
+      scripts: { build: session([settledTurn(), settledTurn()]) },
+      maxVisits: 2,
+    });
+    expect((await run.done).status).toBe("paused");
+
+    const build = listPhases(env.db, run.run_id)[0]!;
+    const visits = listPhaseVisits(env.db, build.id);
+    expect(visits.map((v) => v.visit_number)).toEqual([1, 2]);
+    expect(visits.map((v) => v.status)).toEqual(["failed", "failed"]);
+    // distinct rows carry distinct ids
+    expect(visits[0]!.id).not.toBe(visits[1]!.id);
+    // visit 1 is forward flow; visit 2 is the on_fail re-entry from visit 1
+    expect(JSON.parse(visits[0]!.cause!)).toEqual({ kind: "flow" });
+    expect(JSON.parse(visits[1]!.cause!)).toEqual({ kind: "on_fail", from_phase: "build", from_visit: 1 });
+
+    // every attempt links to its own visit's row — partitioned by visit number
+    const envelopes = listEnvelopes(env.db, run.run_id);
+    const idByVisit = new Map(visits.map((v) => [v.visit_number, v.id]));
+    expect(envelopes).toHaveLength(4);
+    for (const e of envelopes) {
+      expect(e.visit_id).toBe(idByVisit.get(e.visit)!);
+    }
+  } finally {
+    closeEnv(env);
+  }
+});
+
+test("phase_visits: a visit whose script is missing (direct API, no submit-time validation) still closes the row to a terminal status", async () => {
+  const env = openEnv("runner-visit-crash");
+  try {
+    // the direct runBlueprint/driveState API passes scripts straight through
+    // with NO missing-script check (unlike the module/scriptDir submit path).
+    // A phase with no script hits the "no scripted session" crash return
+    // inside driveVisit — AFTER the phase_visits row is inserted. The row must
+    // still transition to a terminal status with a non-null ended_at, never
+    // orphaned in_progress.
+    const blueprint = defineBlueprint({
+      name: "noscript",
+      phases: [{ name: "build", agent: agent(), envelope: QualityEnvelope, gates: [], budget: 3 }],
+    });
+    const run = runBlueprint(env.db, env.dir, { blueprint, cwd: env.cwd, scripts: {} });
+    const result = await run.done;
+    expect(result.status).toBe("failed"); // the crash fails the run for a human
+
+    const build = listPhases(env.db, run.run_id)[0]!;
+    const visits = listPhaseVisits(env.db, build.id);
+    expect(visits).toHaveLength(1);
+    // the row is CLOSED: a terminal status (not the initial in_progress) and a
+    // non-null ended_at — the lifecycle invariant holds on every exit
+    expect(visits[0]!.status).not.toBe("in_progress");
+    expect(visits[0]!.status).toBe("crash");
+    expect(visits[0]!.ended_at).toBeTruthy();
   } finally {
     closeEnv(env);
   }

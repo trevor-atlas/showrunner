@@ -225,6 +225,28 @@ test("FINDING-1: --prompt rides the args into the snapshot (the composed-prompt 
   expect(sawSuccess).toBe(true);
 });
 
+test("templates sync adds missing template files without starting the daemon", () => {
+  // its OWN temp data dir (via --data-dir) proves sync operates directly on the
+  // data dir and never spawns a daemon; never touches a real ~/.showrunner
+  const syncDataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-sync-"));
+  try {
+    const readme = join(syncDataDir, "templates", "README.md");
+    expect(existsSync(readme)).toBe(false);
+
+    const out = cli(["templates", "sync", "--data-dir", syncDataDir]);
+    expect(out.status).toBe(0);
+
+    // a missing starter-kit file was added
+    expect(existsSync(readme)).toBe(true);
+    expect(out.stdout).toContain("added:");
+
+    // no daemon was spawned for this data dir
+    expect(existsSync(join(syncDataDir, "daemon.pid"))).toBe(false);
+  } finally {
+    rmSync(syncDataDir, { recursive: true, force: true });
+  }
+});
+
 test("stop terminates the daemon and removes the pidfile", async () => {
   const pidFile = join(dataDir, "daemon.pid");
   expect(existsSync(pidFile)).toBe(true);

@@ -3,6 +3,9 @@ import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../../../daemon/db.ts";
+import { resolveDataDir } from "../../../../core/index.ts";
+import { requireWebState } from "../../../../daemon/web-state.ts";
+import { buildPhaseRecordModel } from "../../../../view-models/index.ts";
 
 import {
   MAX_EVENTS_LIMIT,
@@ -19,16 +22,11 @@ import {
   getTimeline,
   isApiError,
 } from "../../lib/daemon.ts";
-import {
-  gatherPhaseInputs,
-  gatherPhaseOutputs,
-  gatherPhaseSnapshot,
-  gatherPhaseSpend,
-  isFirstBlueprintPhase,
-  type PhaseInputsData,
-  type PhaseOutputsData,
-  type PhaseSnapshotData,
-  type PhaseSpendData,
+import type {
+  PhaseInputsData,
+  PhaseOutputsData,
+  PhaseSnapshotData,
+  PhaseSpendData,
 } from "../../lib/phase-data.ts";
 import { subscribeRun } from "../../../../daemon/live.ts";
 import { createSseResponse, heartbeatOverrideMs } from "../../lib/live.ts";
@@ -256,9 +254,10 @@ export async function renderRunDetail(
 
   // R5 + #41: server-render the INITIAL selection's full card record (one
   // phase only) — envelopes/gates AND the four #35 card surfaces
-  // (snapshot/inputs/outputs/spend) through the shared lib/phase-data.ts gather
-  // module. Later selections fetch client-side through the phase proxies. The
-  // async surfaces ride one Promise.all; the fs gathers are synchronous.
+  // (snapshot/inputs/outputs/spend). The card surfaces come from the shared
+  // phase-record view-model (#48/#49: the single phase-record assembler), the
+  // same one the phase proxies use; envelopes/gates stay on their daemon reads.
+  // Later selections fetch client-side through the phase proxies.
   let initialEnvelopes: EnvelopeRow[] = [];
   let initialGates: GateResultWithOverride[] = [];
   let initialSnapshot: PhaseSnapshotData | null = null;
@@ -266,19 +265,19 @@ export async function renderRunDetail(
   let initialOutputs: PhaseOutputsData | null = null;
   let initialSpend: PhaseSpendData | null = null;
   if (selection !== null) {
-    const phaseRow = detail.phases.find((p) => p.name === selection);
-    const [env, gates, spend] = await Promise.all([
+    const [env, gates] = await Promise.all([
       getPhaseEnvelopes(runId, selection),
       getPhaseGates(runId, selection),
-      phaseRow !== undefined ? gatherPhaseSpend(runId, phaseRow.id) : Promise.resolve(null),
     ]);
     initialEnvelopes = env.envelopes;
     initialGates = gates.gates;
-    initialSpend = spend;
-    initialSnapshot = gatherPhaseSnapshot(runId, selection, detail.run.cwd, detail.phases[0]?.name);
-    const isFirst = isFirstBlueprintPhase(runId, selection, detail.phases[0]?.name);
-    initialInputs = gatherPhaseInputs(runId, selection, isFirst);
-    initialOutputs = gatherPhaseOutputs(runId, selection);
+    const record = buildPhaseRecordModel(requireWebState().db, resolveDataDir(), runId, selection);
+    if (record !== null) {
+      initialSnapshot = record.snapshot;
+      initialInputs = record.inputs;
+      initialOutputs = record.outputs;
+      initialSpend = record.spend;
+    }
   }
 
   // #41: the run-scoped RAW TRANSCRIPT tail (raw_output.jsonl) — SSR seed; the

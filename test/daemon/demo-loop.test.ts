@@ -401,7 +401,7 @@ test("R7 #3: a phase_start payload WITHOUT cause validates through the zod path 
   }
 });
 
-test("R7 #7: the timeline endpoint reads via the (run_id, rowid) cursor; SCHEMA_VERSION is unchanged at 2", async () => {
+test("R7 #7: the timeline endpoint reads via the (run_id, rowid) cursor; SCHEMA_VERSION is 3", async () => {
   const env = openEnv("demo-loop-cursor");
   try {
     const blueprint = await loadBlueprintModule(DEMO_LOOP_BP);
@@ -431,9 +431,7 @@ test("R7 #7: the timeline endpoint reads via the (run_id, rowid) cursor; SCHEMA_
     expect(reviewEnd).toHaveLength(2); // review v1 (failed) + v2 (success)
     expect(view.phases.find((p) => p.name === "review")!.segments.map((s) => s.ended_at)).toEqual(reviewEnd);
 
-    // SCHEMA_VERSION is unchanged — this work adds no schema migration (the
-    // per-visit script seam is test-side; the cause field was R2's, already in)
-    expect(SCHEMA_VERSION).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
   } finally {
     closeEnv(env);
   }

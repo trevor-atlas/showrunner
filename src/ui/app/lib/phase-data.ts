@@ -1,25 +1,20 @@
 /**
- * The shared server-only gather module for the phase drill-in surfaces.
+ * Shared context-entry resolution + the phase-data response shapes.
  *
- * Both the phase-card JSON proxies (phases/controller.tsx) and the run-detail
- * render path (runs/controller.tsx, ticket 11) consume THIS module — never each
- * other — so the aggregation for each surface lives in exactly one place and
- * the `phases → runs` render import never has to point back the other way (no
- * import cycle). Every derivation here reuses the canonical helper (the api
- * core's SQL-SUM spend, handoff.ts's fs readers, blueprint-snapshot.ts) rather
- * than re-summing or re-copying per use-case.
+ * The phase-record assembly now lives in one place — the phase-record
+ * view-model (src/view-models/phase-record.ts), the single owner of a phase
+ * read (#47–#49). This module keeps only what that assembler and the phase
+ * cards both reuse: `describeContextEntries` (the CONFIG card's {raw, kind,
+ * entry} resolution), the per-surface response interfaces (snapshot/inputs/
+ * outputs/spend), and the input-preview cap.
  *
- * Server-only, like app/lib/daemon.ts and app/lib/blueprint-snapshot.ts: it
- * reaches for node:fs, the daemon api core, and @showrunner/core, so the
- * browser never imports it — the remix ACTIONS do, in-process.
+ * Server-only for the fs-touching resolver (node:fs), so the browser never
+ * imports it; the type-only exports are safe anywhere.
  */
 import { existsSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
-import { resolveDataDir, runDirFor } from "../../../core/index.ts";
-import { readHandoffInputs, readOutputsDir } from "../../../daemon/handoff.ts";
-import { readBlueprintSnapshot, type SnapshotPhase } from "./blueprint-snapshot.ts";
-import { getSpend } from "./daemon.ts";
+import type { SnapshotPhase } from "./blueprint-snapshot.ts";
 
 // ── context-entry resolution (relocated from config-card.tsx) ────────────────
 
@@ -124,83 +119,3 @@ export interface PhaseSpendData {
  * rather than shipping megabytes over the proxy (settled).
  */
 export const INPUT_CONTENTS_CAP = 16 * 1024;
-
-// ── gather functions (one per proxy; reused by the show action) ──────────────
-
-/**
- * Is this phase first in BLUEPRINT order? The snapshot doc is the authoritative
- * declared order (RunDetail.phases is started_at order, which NULL-sorts pending
- * phases first). `detailFirstName` is the started_at-order fallback for
- * fixture/observation runs that never wrote a snapshot.
- */
-export function isFirstBlueprintPhase(
-  runId: string,
-  phaseName: string,
-  detailFirstName: string | undefined,
-): boolean {
-  const { doc } = readBlueprintSnapshot(runId);
-  if (doc !== null && doc.phases.length > 0) return doc.phases[0]!.name === phaseName;
-  return detailFirstName === phaseName;
-}
-
-/**
- * The phase's blueprint-snapshot config with its context entries pre-resolved.
- * `phase === null` is the card's "no blueprint snapshot" state. `isFirst` is
- * blueprint order (the snapshot's declared order), with `detailFirstName` as the
- * fixture-run fallback.
- */
-export function gatherPhaseSnapshot(
-  runId: string,
-  phaseName: string,
-  cwd: string,
-  detailFirstName: string | undefined,
-): PhaseSnapshotData {
-  const { doc } = readBlueprintSnapshot(runId);
-  const phase = doc?.phases.find((p) => p.name === phaseName) ?? null;
-  const moduleDir =
-    doc?.module !== null && doc?.module !== undefined && doc.module !== "" ? dirname(doc.module) : null;
-  const context = phase !== null ? describeContextEntries(phase.agent.context, cwd, moduleDir) : [];
-  const isFirst =
-    doc !== null && doc.phases.length > 0 ? doc.phases[0]!.name === phaseName : detailFirstName === phaseName;
-  return { phase, moduleDir, context, isFirst };
-}
-
-/**
- * The materialized inputs for this phase (handoff.ts readHandoffInputs), each
- * file's contents clipped at INPUT_CONTENTS_CAP. The first phase has no
- * predecessor, so `files` is empty and `isFirst` labels the "none" state.
- */
-export function gatherPhaseInputs(runId: string, phaseName: string, isFirst: boolean): PhaseInputsData {
-  const runDir = runDirFor(resolveDataDir(), runId);
-  const files = readHandoffInputs(runDir, phaseName).map(({ rel, contents }) => {
-    if (contents.length > INPUT_CONTENTS_CAP) {
-      return { rel, contents: contents.slice(0, INPUT_CONTENTS_CAP), truncated: true };
-    }
-    return { rel, contents, truncated: false };
-  });
-  return { files, isFirst };
-}
-
-/** The phase's outputs/ dir listing + FINDINGS.md (handoff.ts readOutputsDir). */
-export function gatherPhaseOutputs(runId: string, phaseName: string): PhaseOutputsData {
-  const runDir = runDirFor(resolveDataDir(), runId);
-  return readOutputsDir(runDir, phaseName);
-}
-
-/**
- * The phase's spend, looked up by phase id off the api core's spend breakdown.
- * The SQL SUM is exact — there is no event sweep and no truncated flag (issue
- * #29 moved the derivation into the core; the old UI cap is gone).
- */
-export async function gatherPhaseSpend(runId: string, phaseId: string): Promise<PhaseSpendData> {
-  const spend = await getSpend(runId);
-  const phase = spend.phases.find((p) => p.id === phaseId);
-  return {
-    tokensIn: phase?.tokens_in ?? 0,
-    tokensOut: phase?.tokens_out ?? 0,
-    cacheRead: phase?.cache_read ?? 0,
-    cacheWrite: phase?.cache_write ?? 0,
-    spendUsd: phase?.spend_usd ?? 0,
-    estimatedUsd: phase?.estimated_spend_usd ?? 0,
-  };
-}

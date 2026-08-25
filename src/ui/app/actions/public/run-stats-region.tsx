@@ -7,7 +7,7 @@ import { Card } from "../../ui/public/components/card.tsx";
 import { KpiCards } from "../../ui/public/kpi-cards.tsx";
 import { SpendBars } from "../../ui/public/spend-bars.tsx";
 import { StatusDonut } from "../../ui/public/status-donut.tsx";
-import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./sse.ts";
+import { startLiveSnapshot, type LiveApplyOutcome } from "./live-snapshot.ts";
 
 /**
  * The landing stats region, LIVE (issue #40). Server-rendered once from the
@@ -23,9 +23,13 @@ import { createCoalescedNotifier, subscribeSse, type SseSubscription } from "./s
  * so a shared-singleton subscription would be over-engineering; the region owns
  * its own subscription and tears it down on abort.
  *
- * The refetch is wrapped in createCoalescedNotifier (#33/#38 lesson): a wake-up
- * that lands mid-refetch schedules EXACTLY ONE trailing rerun rather than being
- * dropped by the in-flight guard — so the last ledger change is never lost.
+ * The SSE→refetch transport is the shared startLiveSnapshot adapter (#57): the
+ * region hands it the global change-stream href + an `apply` that refetches the
+ * snapshot proxy and swaps the stats snapshot; the adapter owns WHEN
+ * (coalescing + the in-flight guard so a wake-up mid-refetch schedules EXACTLY
+ * ONE trailing rerun — the last ledger change is never lost). This is a
+ * single-snapshot region: `apply` always returns "applied" (a transient
+ * failure keeps the last snapshot; the stream never stops).
  *
  * The browser NEVER talks to the daemon: it only refetches the rendered
  * snapshot proxy (the iron convention). getStats() is server-only and lives in
@@ -50,41 +54,32 @@ export const RunStatsRegion = clientEntry(
   function RunStatsRegion(handle: Handle<RunStatsRegionProps>) {
     // ── setup scope — runs once (also server-side during SSR) ──────────────
     let stats: RunStats = handle.props.stats;
-    let refetching = false;
-    let subscription: SseSubscription | null = null;
 
-    /** Refetch the /stats.json snapshot and re-render. Guarded so a slow
-     * round-trip never stacks (the coalescer schedules the trailing rerun); a
-     * transient failure keeps the last snapshot (the next ledger change
-     * refetches). */
-    const refetch = async (): Promise<void> => {
-      if (refetching) return;
-      refetching = true;
+    /** The adapter's refetch: pull the /stats.json snapshot and swap the stats.
+     * Single-snapshot region — a transient failure (non-ok or a fetch/parse
+     * throw) keeps the last snapshot and returns "applied" so the stream keeps
+     * listening (the next ledger change refetches); there is no terminal/gone
+     * branch for the global stats. */
+    const apply = async (): Promise<LiveApplyOutcome> => {
       try {
         const response = await fetch(handle.props.statsHref);
-        if (!response.ok) return;
-        stats = (await response.json()) as SerializableRunStats;
-        await handle.update();
+        if (response.ok) {
+          stats = (await response.json()) as SerializableRunStats;
+          await handle.update();
+        }
       } catch {
         // transient fetch/parse failure — keep the last snapshot; the next
         // ledger wake-up refetches
-      } finally {
-        refetching = false;
       }
+      return "applied";
     };
 
-    // The live subscription is browser-only (setup also runs during SSR); arm
-    // it once and tear it down on abort. Wake-ups drive refetch through the
-    // coalescer so a change landing mid-refetch schedules one trailing rerun.
+    // The live transport is browser-only (setup also runs during SSR); arm the
+    // adapter once and tear it down on abort. The adapter owns the SSE
+    // subscription, the coalescing, and the in-flight guard.
     if (typeof window !== "undefined") {
-      const notify = createCoalescedNotifier(refetch);
-      subscription = subscribeSse(routes.live.href(), { onchange: notify });
-      handle.signal.addEventListener("abort", () => {
-        if (subscription !== null) {
-          subscription.unsubscribe();
-          subscription = null;
-        }
-      });
+      const live = startLiveSnapshot({ href: routes.live.href(), apply });
+      handle.signal.addEventListener("abort", () => live.stop());
     }
 
     return () => (

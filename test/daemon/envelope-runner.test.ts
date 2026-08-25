@@ -222,6 +222,49 @@ test("a throwing gate is a per-gate violation row + envelope-row violation, neve
   }
 });
 
+test("the phase.envelope parse is the backstop: malformed is rejected with EMPTY gates (no shape gate required)", async () => {
+  const env = setup("seam-backstop");
+  try {
+    // gates is EMPTY, so nothing here can reject the envelope except the
+    // stage's own phase.envelope (schema) parse. The malformed envelope
+    // violates QualityEnvelope's `quality: z.number()` (it's a string).
+    const path = writeEnvelope(env, { summary: "s", artifacts: [], notes_for_next_agent: "n", quality: "not-a-number" });
+    const { stage, events } = makeStage(env, path, { gates: [] });
+    const outcome = await runEnvelopeStage(stage);
+
+    // rejection comes from the schema parse (references the offending field),
+    // NOT from any gate — there are none.
+    expect(outcome.kind).toBe("invalid");
+    if (outcome.kind === "invalid") expect(outcome.error).toContain("quality");
+
+    // no gate ever ran (there were none) and no gate rows exist — so if this
+    // test ever passes with a "violations" outcome, the rejection came from a
+    // gate, not the backstop. It cannot: gates is empty.
+    expect(listGateResults(env.db, env.runId)).toHaveLength(0);
+    expect(events.filter((e) => e.type === "gate_result")).toHaveLength(0);
+    const row = listEnvelopes(env.db, env.runId)[0]!;
+    expect(row.valid).toBe(0); // the backstop marked it invalid before gates
+  } finally {
+    teardown(env);
+  }
+});
+
+test("the phase.envelope parse is the backstop: well-formed passes with EMPTY gates", async () => {
+  const env = setup("seam-backstop-ok");
+  try {
+    // same empty-gates setup, but a well-formed envelope: it must pass the
+    // parse stage purely on the schema, proving malformed-vs-well-formed is
+    // decided by the backstop and not by any gate.
+    const path = writeEnvelope(env, { summary: "s", artifacts: [], notes_for_next_agent: "n", quality: 9 });
+    const { stage } = makeStage(env, path, { gates: [] });
+    const outcome = await runEnvelopeStage(stage);
+    expect(outcome.kind).toBe("accepted");
+    expect(listGateResults(env.db, env.runId)).toHaveLength(0);
+  } finally {
+    teardown(env);
+  }
+});
+
 test("overrideGateResult audits who + why + when and emits the human_action event", async () => {
   const env = setup("seam-override");
   try {
