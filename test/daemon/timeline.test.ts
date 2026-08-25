@@ -22,8 +22,10 @@ import type { EventType } from "../../src/core/index.ts";
 import { cursorEvents, getRun, insertEnvelope, insertEvent, insertPhase, insertRun, openDb } from "../../src/server/repository/db.ts";
 import type { PhaseRow, RunRow } from "../../src/server/repository/db.ts";
 import { RunPool } from "../../src/server/engine/pool.ts";
-import { ApiError, apiTimeline, handleApiRequest } from "../../src/server/services/api.ts";
-import type { ApiState } from "../../src/server/services/api.ts";
+import { ApiError } from "../../src/server/contract.ts";
+import { apiTimeline } from "../../src/server/services/runs.ts";
+import { handleApiRequest } from "../../src/server/transport/http.ts";
+import type { ApiState } from "../../src/server/transport/state.ts";
 import type { TimelineView } from "../../src/server/contract.ts";
 import { countEnvelopeAttempts, foldPhaseSegments } from "../../src/server/services/timeline.ts";
 

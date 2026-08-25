@@ -1,4 +1,14 @@
-import { ApiError, type ApiState } from "../services/api.ts";
+import type { Database } from "bun:sqlite";
+import { ApiError } from "../contract.ts";
+import type { RunPool } from "../engine/pool.ts";
+
+export interface ApiState {
+  db: Database;
+  dataDir: string;
+  /** pool — owned by the caller (hoisted out of the server) */
+  pool: RunPool;
+  startedAt: number;
+}
 
 /**
  * The merged web server's in-process state holder (Phase 2 / T4): the daemon

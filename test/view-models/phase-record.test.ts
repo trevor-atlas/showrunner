@@ -29,8 +29,8 @@ import {
   insertRun,
   openDb,
 } from "../../src/server/repository/db.ts";
-import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/server/services/api.ts";
-import type { ApiState } from "../../src/server/services/api.ts";
+import { apiPhaseEnvelopes, apiPhaseGates, apiSpend } from "../../src/server/services/runs.ts";
+import type { ApiState } from "../../src/server/transport/state.ts";
 import { inputsDirFor, outputsDirFor } from "../../src/server/repository/workspace/index.ts";
 import { snapshotPathFor } from "../../src/server/lib/blueprint-snapshot.ts";
 import { buildPhaseRecordModel } from "../../src/server/services/phase-record.ts";

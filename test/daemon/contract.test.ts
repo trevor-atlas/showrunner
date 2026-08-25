@@ -29,7 +29,8 @@ import type {
   TimelineView,
 } from "../../src/server/contract.ts";
 import { ApiError as ClientApiError } from "../../src/server/transport/client.ts";
-import { ApiError as ServerApiError, apiTimeline } from "../../src/server/services/api.ts";
+import { ApiError as ServerApiError } from "../../src/server/contract.ts";
+import { apiTimeline } from "../../src/server/services/runs.ts";
 import { cleanupDir, tmpDataDir } from "./helpers.ts";
 
 /**

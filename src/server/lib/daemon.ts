@@ -15,24 +15,26 @@
 
 import {
   MAX_EVENTS_LIMIT,
-  apiApprove,
   apiEvents,
-  apiFailRun,
   apiListRuns,
-  apiOverrideGate,
-  apiPause,
   apiPhaseEnvelopes,
   apiPhaseGates,
   apiPhaseOutputs,
   apiRaw,
-  apiRestartFresh,
-  apiResume,
   apiRunDetail,
   apiSpend,
   apiStats,
-  apiSteerRun,
   apiTimeline,
-} from "../services/api.ts";
+} from "../services/runs.ts";
+import {
+  apiApprove,
+  apiFailRun,
+  apiOverrideGate,
+  apiPause,
+  apiRestartFresh,
+  apiResume,
+  apiSteerRun,
+} from "../services/control.ts";
 import { ApiError } from "../contract.ts";
 import { resolveDataDir } from "../../core/index.ts";
 import { requireWebState } from "../transport/state.ts";
