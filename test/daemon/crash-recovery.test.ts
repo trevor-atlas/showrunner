@@ -9,7 +9,7 @@ import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../src/core/index.ts";
 
-import { cleanupDir, tmpDataDir } from "./helpers.ts";
+import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
 import {
   backfillMissedEvents,
   cleanupProcesses,
@@ -96,35 +96,20 @@ async function waitForStatus(baseUrl: string, runId: string, status: string, tim
   }
 }
 
-/** The daemon's base URL for a data dir, read from the pidfile's port line
- * (line 2 — the daemon writes pid, then the BOUND port, after listening).
- * Before the pidfile exists it returns a port that refuses connections, so
- * the health polls below keep retrying until the daemon has bound. */
-function baseUrlFor(dir: string): string {
-  try {
-    const port = readFileSync(join(dir, "daemon.pid"), "utf8").split("\n")[1]?.trim();
-    if (port !== undefined && port !== "" && Number.isInteger(Number(port))) {
-      return `http://127.0.0.1:${port}`;
-    }
-  } catch {
-    // pidfile not written yet
-  }
-  return "http://127.0.0.1:0";
-}
-
-/** Spawned daemons bind an EPHEMERAL port (SHOWRUNNER_PORT=0 in the child env)
- * and write the real port to the pidfile AFTER bind — poll until the daemon
- * answers /api/health, then hand back the resolved base URL. */
-async function waitForDaemonUp(dir: string, timeoutMs = 15_000): Promise<string> {
+/** Spawned daemons bind a FIXED port (SHOWRUNNER_PORT=<freePort> in the child
+ * env) — there is no discovery file anymore, so each test picks its port up
+ * front and the base URL is that known port. Poll until the daemon answers
+ * /api/health (a killed daemon's socket is released, so a reboot on the same
+ * fixed port rebinds cleanly). */
+async function waitForDaemonUp(baseUrl: string, timeoutMs = 15_000): Promise<void> {
   await waitFor(async () => {
     try {
-      await api(baseUrlFor(dir), "GET", "/health");
+      await api(baseUrl, "GET", "/health");
       return true;
     } catch {
       return false;
     }
   }, timeoutMs, "daemon up");
-  return baseUrlFor(dir);
 }
 
 function pidAlive(pid: number): boolean {
@@ -154,19 +139,21 @@ test(
   "kill-9 mid-run: restart surfaces interrupted, DB intact (integrity_check, WAL, no torn rows), resume continues to success",
   async () => {
     const dir = tmpDataDir("crash-kill9");
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
     const runCwd = mkdtempSync(join(tmpdir(), "showrunner-kill9-cwd-"));
     let daemonPid = 0;
     const boot = (): void => {
       const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
-        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: "0" },
+        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
       });
       child.unref();
       daemonPid = child.pid ?? 0;
     };
     try {
       boot();
-      let baseUrl = await waitForDaemonUp(dir);
+      await waitForDaemonUp(baseUrl);
 
       // a run slow enough to be mid-flight at kill time
       const sub = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 30 });
@@ -194,7 +181,7 @@ test(
       // restart against the SAME data dir: reaps the orphan (or notes it
       // already died on EPIPE), surfaces the run as interrupted
       boot();
-      baseUrl = await waitForDaemonUp(dir);
+      await waitForDaemonUp(baseUrl);
       await waitForStatus(baseUrl, runId, "interrupted");
       // the child is gone after the restart (reaped or died with its pipe)
       await waitFor(() => !pidAlive(childPid), 5_000, "child death");
@@ -429,20 +416,22 @@ test(
   "backfill e2e: kill the daemon mid-run, restart — the missed session tail appears and a second restart is a no-op",
   async () => {
     const dir = tmpDataDir("crash-backfill");
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
     const runCwd = mkdtempSync(join(tmpdir(), "showrunner-backfill-e2e-cwd-"));
     const sessionRoot = mkdtempSync(join(tmpdir(), "showrunner-backfill-e2e-sess-"));
     let daemonPid = 0;
     const boot = (): void => {
       const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
         stdio: "ignore",
-        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: "0", PI_CODING_AGENT_SESSION_DIR: sessionRoot },
+        env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port), PI_CODING_AGENT_SESSION_DIR: sessionRoot },
       });
       child.unref();
       daemonPid = child.pid ?? 0;
     };
     try {
       boot();
-      let baseUrl = await waitForDaemonUp(dir);
+      await waitForDaemonUp(baseUrl);
 
       const sub = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 20 });
       const runId = (sub.json as { run_id: string }).run_id;
@@ -460,7 +449,7 @@ test(
       // restart: the fake's session file is the durable record of what it did
       // after the daemon died; the restart's backfill restores the missed tail
       boot();
-      baseUrl = await waitForDaemonUp(dir);
+      await waitForDaemonUp(baseUrl);
       await waitForStatus(baseUrl, runId, "interrupted");
 
       // the fake writes `<ts>_<pi_session_id>.jsonl` under the sanitized-cwd
@@ -566,7 +555,7 @@ test("GET /status reports health, pool utilization, and run status counts", asyn
 
 // ── graceful shutdown: stop children, remove the pidfile ────────────────
 
-test("graceful shutdown stops recorded children and removes the pidfile", async () => {
+test("graceful shutdown stops recorded children and closes the listener", async () => {
   const dir = tmpDataDir("shutdown");
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-shutdown-cwd-"));
   let daemon: DaemonHandle | null = null;
@@ -583,11 +572,10 @@ test("graceful shutdown stops recorded children and removes the pidfile", async 
     const childPid = detail.sessions[0]!.pid;
     expect(pidAlive(childPid)).toBe(true);
 
-    // graceful shutdown: no run is persisted (events are already written), the
-    // child is stopped, and the pidfile is removed
+    // graceful shutdown: no run is persisted (events are already written) and
+    // the child is stopped
     await daemon.close();
     daemon = null;
-    expect(existsSync(join(dir, "daemon.pid"))).toBe(false);
     await waitFor(() => !pidAlive(childPid), 5_000, "child death");
 
     // the recorded child rows were cleaned by the shutdown
@@ -615,19 +603,21 @@ test("graceful shutdown stops recorded children and removes the pidfile", async 
 
 test("no auto-resume (v1): a restarted daemon surfaces interrupted but never drives the run itself", async () => {
   const dir = tmpDataDir("crash-noresume");
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-noresume-cwd-"));
   let daemonPid = 0;
   const boot = (): void => {
     const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
       stdio: "ignore",
-      env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: "0" },
+      env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
     });
     child.unref();
     daemonPid = child.pid ?? 0;
   };
   try {
     boot();
-    let baseUrl = await waitForDaemonUp(dir);
+    await waitForDaemonUp(baseUrl);
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 30 });
     const runId = (sub.json as { run_id: string }).run_id;
     await waitForAgentStream(baseUrl, runId);
@@ -641,7 +631,7 @@ test("no auto-resume (v1): a restarted daemon surfaces interrupted but never dri
       }
     }, 15_000, "daemon down");
     boot();
-    baseUrl = await waitForDaemonUp(dir);
+    await waitForDaemonUp(baseUrl);
     await waitForStatus(baseUrl, runId, "interrupted");
     // let time pass — the run must STAY interrupted (no auto-resume)
     await new Promise((r) => setTimeout(r, 600));
@@ -662,19 +652,21 @@ test("no auto-resume (v1): a restarted daemon surfaces interrupted but never dri
 
 test("kill-9 does not tear the events log: ids are contiguous and strictly ascending", async () => {
   const dir = tmpDataDir("crash-tear");
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const runCwd = mkdtempSync(join(tmpdir(), "showrunner-tear-cwd-"));
   let daemonPid = 0;
   const boot = (): void => {
     const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
       stdio: "ignore",
-      env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: "0" },
+      env: { ...process.env, SHOWRUNNER_POOL_SIZE: "1", SHOWRUNNER_PORT: String(port) },
     });
     child.unref();
     daemonPid = child.pid ?? 0;
   };
   try {
     boot();
-    let baseUrl = await waitForDaemonUp(dir);
+    await waitForDaemonUp(baseUrl);
     const sub = await api(baseUrl, "POST", "/runs", { blueprint: HAPPY_BP, cwd: runCwd, delayMs: 30 });
     const runId = (sub.json as { run_id: string }).run_id;
     await waitForAgentStream(baseUrl, runId);
@@ -692,7 +684,7 @@ test("kill-9 does not tear the events log: ids are contiguous and strictly ascen
       }
     }, 15_000, "daemon down");
     boot();
-    baseUrl = await waitForDaemonUp(dir);
+    await waitForDaemonUp(baseUrl);
     await waitForStatus(baseUrl, runId, "interrupted");
 
     // every pre-kill event is still readable and in order — the tail may have

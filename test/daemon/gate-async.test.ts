@@ -1,6 +1,6 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 import { test, expect } from "bun:test";
-import { existsSync, mkdtempSync, openSync, closeSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, openSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "node:http";
@@ -9,7 +9,7 @@ import type { ChildProcess } from "node:child_process";
 import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
-import { cleanupDir, tmpDataDir } from "./helpers.ts";
+import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
 import { daemonEntryPath } from "../../src/daemon/index.ts";
 
 /**
@@ -76,61 +76,39 @@ interface BootedDaemon {
   child: ChildProcess;
   dir: string;
   cwd: string;
-  /** the daemon's base URL — resolved from the pidfile's port line (line 2) */
+  /** the daemon's base URL — the FIXED port handed to the child (no discovery
+   * file: the test picks the port up front) */
   baseUrl: string;
 }
 
-/** The daemon's base URL for a data dir, read from the pidfile's port line
- * (line 2 — the daemon writes pid, then the BOUND port, after listening).
- * Before the pidfile exists it returns a port that refuses connections, so
- * the health polls below keep retrying until the daemon has bound. */
-function baseUrlFor(dir: string): string {
-  try {
-    const port = readFileSync(join(dir, "daemon.pid"), "utf8").split("\n")[1]?.trim();
-    if (port !== undefined && port !== "" && Number.isInteger(Number(port))) {
-      return `http://127.0.0.1:${port}`;
-    }
-  } catch {
-    // pidfile not written yet
-  }
-  return "http://127.0.0.1:0";
-}
-
-function bootDaemon(label: string): BootedDaemon {
+async function bootDaemon(label: string): Promise<BootedDaemon> {
   const dir = tmpDataDir(label);
   const cwd = mkdtempSync(join(tmpdir(), `showrunner-${label}-cwd-`));
   const logPath = join(dir, "daemon.log");
   const logFd = openSync(logPath, "a");
-  // SHOWRUNNER_PORT=0: the spawned daemon binds an EPHEMERAL port (parallel-safe)
-  // and writes the real port to the pidfile AFTER bind
+  // FIXED port: the daemon has no discovery file, so the test picks a free
+  // port up front and hands it to the child via SHOWRUNNER_PORT (parallel-safe:
+  // each boot gets its own port).
+  const port = await freePort();
   const child = spawn(process.execPath, [daemonEntryPath(), "--data-dir", dir], {
     stdio: ["ignore", logFd, logFd],
-    env: { ...process.env, SHOWRUNNER_PORT: "0" },
+    env: { ...process.env, SHOWRUNNER_PORT: String(port) },
   });
   closeSync(logFd);
   child.unref();
-  return {
-    child,
-    dir,
-    cwd,
-    // always fresh: re-reads the pidfile's port (written after bind), so a
-    // health poll right after spawn keeps retrying until the daemon listens
-    get baseUrl(): string {
-      return baseUrlFor(dir);
-    },
-  };
+  return { child, dir, cwd, baseUrl: `http://127.0.0.1:${port}` };
 }
 
-async function waitForHealth(dir: string, timeoutMs = 15_000): Promise<void> {
+async function waitForHealth(baseUrl: string, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      const h = await api(baseUrlFor(dir), "GET", "/health", undefined, 1500);
+      const h = await api(baseUrl, "GET", "/health", undefined, 1500);
       if (h.status === 200) return;
     } catch {
       // daemon not up yet (or mid-freeze)
     }
-    if (Date.now() > deadline) throw new Error(`daemon not healthy at ${baseUrlFor(dir)}`);
+    if (Date.now() > deadline) throw new Error(`daemon not healthy at ${baseUrl}`);
     await new Promise((r) => setTimeout(r, 50));
   }
 }
@@ -169,9 +147,9 @@ function teardown(h: BootedDaemon): void {
 }
 
 test("F1: HTTP resolves DURING a sleeping gate (2.5s) — the event loop never blocks on gate execution", async () => {
-  const h = bootDaemon("gate-async");
+  const h = await bootDaemon("gate-async");
   try {
-    await waitForHealth(h.dir);
+    await waitForHealth(h.baseUrl);
     const sub = await api(h.baseUrl, "POST", "/runs", { blueprint: SLEEP_GATE_BP, cwd: h.cwd });
     expect(sub.status).toBe(201);
     const runId = (sub.json as { run_id: string }).run_id;
@@ -204,9 +182,9 @@ test("F1: HTTP resolves DURING a sleeping gate (2.5s) — the event loop never b
 }, { timeout: 30_000 });
 
 test("a gate that exceeds its cap → violation with the error text; the daemon stays healthy after", async () => {
-  const h = bootDaemon("gate-timeout");
+  const h = await bootDaemon("gate-timeout");
   try {
-    await waitForHealth(h.dir);
+    await waitForHealth(h.baseUrl);
     const sub = await api(h.baseUrl, "POST", "/runs", { blueprint: TIMEOUT_GATE_BP, cwd: h.cwd });
     expect(sub.status).toBe(201);
     const runId = (sub.json as { run_id: string }).run_id;

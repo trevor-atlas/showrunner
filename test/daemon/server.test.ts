@@ -1,13 +1,13 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 import { test, expect } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
-import { cleanupDir, tmpDataDir } from "./helpers.ts";
+import { cleanupDir, freePort, tmpDataDir } from "./helpers.ts";
 import { startDaemon } from "../../src/daemon/index.ts";
 import type { DaemonHandle } from "../../src/daemon/index.ts";
 
@@ -210,30 +210,79 @@ test("POST /runs rejects a blueprint path without scripted sessions", async () =
   }
 });
 
-test("a second daemon on the same data dir refuses to start (pidfile guard)", async () => {
+test("a second daemon on the same FIXED port refuses to start (bind-based EADDRINUSE guard)", async () => {
   const dir = tmpDataDir("server-guard");
+  const port = await freePort();
   let daemon: DaemonHandle | null = null;
   try {
-    daemon = await startDaemon({ dataDir: dir, port: 0 });
-    await expect(startDaemon({ dataDir: dir, port: 0 })).rejects.toThrow(/daemon already running/);
+    // first daemon claims the fixed port; a second boot on the same port hits
+    // EADDRINUSE and is rejected with a clear "already running" error — no
+    // file is consulted, the live socket IS the guard
+    daemon = await startDaemon({ dataDir: dir, port });
+    await expect(startDaemon({ dataDir: dir, port })).rejects.toThrow(/daemon already running/);
   } finally {
     await daemon?.close();
     cleanupDir(dir);
   }
 });
 
-test("daemon.close removes the pidfile and stops the listener", async () => {
+test("two ephemeral (port: 0) daemons on the same data dir both start — no false guard", async () => {
+  const dir = tmpDataDir("server-ephemeral-pair");
+  let a: DaemonHandle | null = null;
+  let b: DaemonHandle | null = null;
+  try {
+    // ephemeral binds can never collide (the OS hands back a free port), so the
+    // double-boot guard must NOT fire — the test suite relies on this
+    a = await startDaemon({ dataDir: dir, port: 0 });
+    b = await startDaemon({ dataDir: dir, port: 0 });
+    expect(a.port).toBeGreaterThan(0);
+    expect(b.port).toBeGreaterThan(0);
+    expect(a.port).not.toBe(b.port);
+  } finally {
+    await a?.close();
+    await b?.close();
+    cleanupDir(dir);
+  }
+});
+
+test("POST /api/shutdown responds ok and raises SIGTERM on the daemon (the `stop` verb's graceful path)", async () => {
+  const dir = tmpDataDir("server-shutdown");
+  const daemon = await startDaemon({ dataDir: dir, port: 0 });
+  // the endpoint self-signals SIGTERM AFTER flushing the response; catch it so
+  // the graceful path is provable in-process without killing the test runner
+  // (startDaemon installs no signal handlers, so this is the only SIGTERM sink)
+  let signalled = false;
+  const onTerm = (): void => {
+    signalled = true;
+  };
+  // bun-types merges a `memoryPressure` signal overload that mis-resolves a
+  // stored SIGTERM listener const; cast past it (an inline arrow would compile
+  // but we need the reference back for removeListener)
+  const onSignal = process.on.bind(process) as (e: string, l: () => void) => void;
+  const offSignal = process.removeListener.bind(process) as (e: string, l: () => void) => void;
+  onSignal("SIGTERM", onTerm);
+  try {
+    const res = await api(daemon.baseUrl, "POST", "/api/shutdown");
+    expect(res.status).toBe(200);
+    expect((res.json as { ok: boolean }).ok).toBe(true);
+    const deadline = Date.now() + 2_000;
+    while (!signalled && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(signalled).toBe(true);
+  } finally {
+    offSignal("SIGTERM", onTerm);
+    await daemon.close();
+    cleanupDir(dir);
+  }
+});
+
+test("daemon.close stops the listener", async () => {
   const dir = tmpDataDir("server-close");
   const daemon = await startDaemon({ dataDir: dir, port: 0 });
   const baseUrl = daemon.baseUrl;
-  // the pidfile records pid + port on two lines (T3 reads the port from it)
-  const pidfile = readFileSync(join(dir, "daemon.pid"), "utf8");
-  const [pidLine, portLine] = pidfile.split("\n");
-  expect(Number(pidLine)).toBe(process.pid);
-  expect(Number(portLine)).toBe(daemon.port);
   expect(daemon.port).toBeGreaterThan(0);
   await daemon.close();
-  expect(existsSync(join(dir, "daemon.pid"))).toBe(false);
   // listener gone: requests fail
   await expect(
     api(baseUrl, "GET", "/api/health").then(

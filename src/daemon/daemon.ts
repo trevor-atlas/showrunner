@@ -1,6 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveDataDir, dbPathFor } from "../core/index.ts";
 
@@ -30,15 +29,6 @@ export interface DaemonHandle {
 /** pool size override (default: SHOWRUNNER_POOL_SIZE ?? 2) — test seam */
 const POOL_SLOTS = Number(process.env.SHOWRUNNER_POOL_SIZE ?? "2") || 2;
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** The port the daemon binds: explicit option > SHOWRUNNER_PORT > PORT (the
  * remix HMR dev chain sets PORT when it spawns the dev server) > 44100.
  * 0 = ephemeral: the OS picks a free port (read back from server.address()). */
@@ -54,18 +44,38 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
   // seeds missing files on first boot, never clobbers a user's own edits.
   materializeTemplates(dataDir);
 
-  // pidfile guard: never unlink a live daemon's socket
-  const pidFile = join(dataDir, "daemon.pid");
-  if (existsSync(pidFile)) {
-    // the pidfile holds two lines: pid, then port
-    const pid = Number(readFileSync(pidFile, "utf8").split("\n")[0]?.trim());
-    if (Number.isInteger(pid) && isProcessAlive(pid)) {
-      throw new Error(`daemon already running (pid ${pid}) for data dir ${dataDir}`);
+  const db = openDb(dbPathFor(dataDir));
+  const pool = new RunPool(opts.poolSlots ?? POOL_SLOTS);
+  const server = createWebServer({ db, dataDir, pool, startedAt: Date.now() });
+
+  // Double-boot guard, bind-based: a FIXED port already in use means another
+  // daemon owns this data dir. A dead process holds no socket, so EADDRINUSE
+  // is proof of a LIVE daemon — there is no stale file to reap. Ephemeral
+  // (port 0) can never collide: the OS always hands back a free port, so no
+  // guard is meaningful there. The bind is claimed BEFORE crash recovery so a
+  // losing second boot never touches the shared DB.
+  const port = resolvePort(opts);
+  let boundPort: number;
+  try {
+    boundPort = await new Promise<number>((resolve, reject) => {
+      const onError = (err: unknown): void => reject(err);
+      server.once("error", onError);
+      server.listen(port, "127.0.0.1", () => {
+        server.removeListener("error", onError);
+        const addr = server.address();
+        resolve(addr !== null && typeof addr === "object" ? (addr as AddressInfo).port : port);
+      });
+    });
+  } catch (err) {
+    // release the DB handle this losing boot opened before surfacing the error
+    db.close();
+    if (port !== 0 && (err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      throw new Error(`daemon already running for data dir ${dataDir} (port ${port} in use)`);
     }
+    throw err;
   }
 
-  const db = openDb(dbPathFor(dataDir));
-  // crash recovery, in reap-then-restore order:
+  // crash recovery, in reap-then-restore order (safe now that we own the port):
   //   orphan cleanup — sweep the processes table: dead-pid rows are
   //   removed, ALIVE pids are orphaned children of a SIGKILLed daemon and are
   //   SIGTERM'd (SIGKILL after 1s) and removed.
@@ -86,40 +96,7 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
     console.log(`showrunner daemon: backfilled ${backfill.lines_restored} missed line(s) → ${backfill.events_folded} event(s) for ${backfill.sessions.length} session(s)`);
   }
 
-  const pool = new RunPool(opts.poolSlots ?? POOL_SLOTS);
-  const server = createWebServer({ db, dataDir, pool, startedAt: Date.now() });
-
-  // Bind 127.0.0.1:<port>. A failed bind logs and the daemon keeps running
-  // WITHOUT a server (in-process consumers — the UI actions — still work);
-  // the pidfile is only written after a SUCCESSFUL bind.
-  const port = resolvePort(opts);
-  let boundPort: number | null = null;
-  let listening = false;
-  let bindError: unknown = null;
-  await new Promise<void>((resolve) => {
-    server.once("error", (err) => {
-      bindError = err;
-      resolve();
-    });
-    server.listen(port, "127.0.0.1", () => {
-      listening = true;
-      const addr = server.address();
-      boundPort = addr !== null && typeof addr === "object" ? (addr as AddressInfo).port : port;
-      resolve();
-    });
-  });
-
-  let keepAlive: ReturnType<typeof setInterval> | null = null;
-  if (!listening) {
-    console.error(
-      `showrunner daemon: failed to listen on http://127.0.0.1:${port} (${bindError instanceof Error ? bindError.message : String(bindError)}) — continuing without a web server`,
-    );
-    // with no server handle, nothing keeps the event loop alive — pin it so
-    // "the daemon keeps running" is literally true (in-process consumers)
-    keepAlive = setInterval(() => {}, 2_147_000_000);
-  } else {
-    // two lines: pid, then the bound port (T3 reads the port from here)
-    writeFileSync(pidFile, `${process.pid}\n${boundPort}\n`);
+  {
     // Production boot-time asset warm: eagerly import the dashboard router and
     // compile the entry asset graph so the FIRST GET / is a cache hit rather
     // than paying the compile cost on the request path. Remix's asset compile
@@ -148,21 +125,13 @@ export async function startDaemon(opts: { dataDir?: string; poolSlots?: number; 
 
   return {
     dataDir,
-    port: boundPort ?? port,
-    baseUrl: `http://127.0.0.1:${boundPort ?? port}`,
+    port: boundPort,
+    baseUrl: `http://127.0.0.1:${boundPort}`,
     close: async () => {
       // graceful shutdown (T07): stop recorded children (SIGTERM →
       // SIGKILL after 1s) — events are already durable, nothing is persisted
       stopRecordedChildren(db);
-      if (keepAlive !== null) clearInterval(keepAlive);
-      if (listening) {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-      }
-      try {
-        rmSync(pidFile);
-      } catch {
-        // already gone
-      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       db.close();
     },
   };
@@ -175,7 +144,8 @@ export function daemonEntryPath(): string {
 
 /**
  * Install SIGINT/SIGTERM handlers that shut the daemon down gracefully
- * (close the server, remove the pidfile, close the DB).
+ * (close the server, close the DB). The daemon's HTTP shutdown endpoint
+ * (POST /api/shutdown) rides this same path by signalling the process.
  * Registered both when daemon.ts is the entry and when the CLI runs
  * `showrunner daemon` in-process. Handlers live for the process lifetime -
  * a daemon, by definition, does not outlive its signal handlers.

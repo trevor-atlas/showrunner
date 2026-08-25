@@ -1,10 +1,28 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** A scratch data dir for one test; cleaned up on return. */
 export function tmpDataDir(label: string): string {
   return mkdtempSync(join(tmpdir(), `showrunner-${label}-`));
+}
+
+/** Grab a free TCP port (bind :0, read it back, release). Spawned daemons in
+ * the suite bind a FIXED port — the daemon has no discovery file anymore, so
+ * the test picks the port up front, hands it to the child via SHOWRUNNER_PORT,
+ * and builds the base URL from the same number. Parallel-safe: each test gets
+ * its own port. */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      srv.close(() => resolve(port));
+    });
+  });
 }
 
 export function cleanupDir(dir: string): void {

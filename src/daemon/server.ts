@@ -127,6 +127,18 @@ export function apiHealth(_state: ApiState): { ok: true } {
   return { ok: true };
 }
 
+/**
+ * POST /api/shutdown — graceful stop over HTTP (the CLI's `stop` verb). The
+ * daemon replaces the old file-based SIGTERM dance: the response flushes first,
+ * then we raise SIGTERM on ourselves so the installed signal handlers run the
+ * SAME graceful close (stop children, close server + DB) and exit(0). A dead
+ * process holds no socket, so there is no stale state to reap.
+ */
+export function apiShutdown(_state: ApiState): { ok: true } {
+  setTimeout(() => process.kill(process.pid, "SIGTERM"), 10);
+  return { ok: true };
+}
+
 export function apiStatus(state: ApiState): DaemonStatus {
   // status verb (T07): health + pool utilization + run status counts
   const runs = listRuns(state.db);
@@ -549,6 +561,7 @@ export async function handleApiRequest(state: ApiState, request: Request): Promi
 
   try {
     if (method === "GET" && path === "/health") return Response.json(apiHealth(state));
+    if (method === "POST" && path === "/shutdown") return Response.json(apiShutdown(state));
     if (method === "GET" && path === "/status") return Response.json(apiStatus(state));
     if (method === "GET" && path === "/stats") return Response.json(apiStats(state));
     if (method === "GET" && path === "/runs") return Response.json(apiListRuns(state));
