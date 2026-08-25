@@ -8,7 +8,7 @@ import { createShell } from "../../core/index.ts";
  * pieces it needs from here so the individual factories stay focused.
  */
 
-/** The workspace layout is a spec fact; the daemon hands the gate its
+/** The workspace layout is a spec fact; the server hands the gate its
  * phase's inputs/outputs dirs via the context. These helpers make the
  * starter gates read them through one place. */
 export function inputsDirFor(ctx: GateContext): string {

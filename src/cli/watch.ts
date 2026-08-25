@@ -1,10 +1,10 @@
 import type { EventRow } from "../core/index.ts";
-import type { DaemonClient } from "../daemon/client.ts";
+import type { ServerClient } from "../server/transport/client.ts";
 
 export interface WatchOptions {
   runId: string;
   /** the typed client (http; base URL from the configured port) */
-  client: DaemonClient;
+  client: ServerClient;
   intervalMs?: number;
   maxPolls?: number;
   onEvent: (e: EventRow) => void;

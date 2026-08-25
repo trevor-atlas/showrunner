@@ -47,7 +47,7 @@ export class BlueprintValidationError extends Error {
 }
 
 /**
- * Load-time validation (run in the daemon):
+ * Load-time validation (run in the server):
  *  - phase names non-empty and unique
  *  - `on_fail.to` must name a phase that exists
  *  - `envelope` must be assignable to EnvelopeBase

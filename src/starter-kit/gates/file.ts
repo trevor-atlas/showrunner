@@ -33,7 +33,7 @@ export function filesExist(opts: FilesExistOptions = {}): Gate {
         continue;
       }
       if (out === "") {
-        violations.push(`cannot verify artifact "${rel}" — the daemon did not provide ctx.outputs_dir`);
+        violations.push(`cannot verify artifact "${rel}" — the server did not provide ctx.outputs_dir`);
         continue;
       }
       const full = join(out, rel);

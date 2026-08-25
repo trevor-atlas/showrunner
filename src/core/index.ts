@@ -2,7 +2,7 @@
  * @showrunner/core — the Showrunner SDK.
  *
  * Framework-agnostic: no pi, no UI, no SQLite client. zod is the only runtime
- * dependency. The daemon and CLI import everything from here.
+ * dependency. The server and CLI import everything from here.
  */
 
 // Envelope

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 /**
  * Data directory resolution: defaults to ~/.showrunner, overridable
- * via SHOWRUNNER_DATA_DIR. Used by both the daemon and the CLI so they always
+ * via SHOWRUNNER_DATA_DIR. Used by both the server and the CLI so they always
  * agree on where the DB and per-run records live.
  */
 export const DEFAULT_DATA_DIR_NAME = ".showrunner";

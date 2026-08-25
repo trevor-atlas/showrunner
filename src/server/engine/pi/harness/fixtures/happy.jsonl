@@ -1,0 +1,26 @@
+{"type":"agent_start","sessionId":"fake_happy","messageCount":0,"model":"fake-pi"}
+{"type":"queue_update","sessionId":"fake_happy","queued":0}
+{"type":"turn_start","sessionId":"fake_happy"}
+{"type":"message_start","message":{"id":"m1","role":"user","content":[{"type":"text","text":"Build the observation pipeline."}]}}
+{"type":"message_end","message":{"id":"m1","role":"user","content":[{"type":"text","text":"Build the observation pipeline."}]}}
+{"type":"message_start","message":{"id":"m2","role":"assistant","content":[{"type":"text","text":"Let me look at the repo layout first."}]}}
+{"type":"message_update","message":{"id":"m2","role":"assistant","content":[{"type":"text","text":"Let me look at the repo layout first."}]},"usage":{"input":500,"output":42,"cacheRead":0,"cacheWrite":0,"totalTokens":542,"cost":{"total":0.00102}}}
+{"type":"tool_execution_start","toolCallId":"call_01","toolName":"bash","args":"ls -la src"}
+{"type":"tool_execution_update","toolCallId":"call_01","toolName":"bash","partialResult":{"content":[{"type":"text","text":"src/\nindex.ts\n"}]}}
+{"type":"tool_execution_end","toolCallId":"call_01","toolName":"bash","result":{"content":[{"type":"text","text":"src/\nindex.ts\n"}]},"isError":false}
+{"type":"message_end","message":{"id":"m2","role":"assistant","content":[{"type":"text","text":"Let me look at the repo layout first."}],"usage":{"input":500,"output":42,"cacheRead":0,"cacheWrite":0,"totalTokens":542,"cost":{"total":0.00102}}}}
+{"type":"message_start","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}]}}
+{"type":"message_update","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}]},"usage":{"input":900,"output":260,"cacheRead":100,"cacheWrite":0,"totalTokens":1260,"cost":{"total":0.00291}}}
+{"type":"tool_execution_start","toolCallId":"call_02","toolName":"edit","args":{"filePath":"packages/server/src/db.ts","oldString":"","newString":"CREATE TABLE runs (...)"}}
+{"type":"tool_execution_end","toolCallId":"call_02","toolName":"edit","result":{"content":[{"type":"text","text":"Wrote packages/server/src/db.ts"}]},"isError":false}
+{"type":"message_end","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Now I will write the schema."}],"usage":{"input":900,"output":260,"cacheRead":100,"cacheWrite":0,"totalTokens":1260,"cost":{"total":0.00291}}}}
+{"type":"tool_execution_start","toolCallId":"call_03","toolName":"bash","args":"npm test"}
+{"type":"tool_execution_update","toolCallId":"call_03","toolName":"bash","partialResult":{"content":[{"type":"text","text":"# pass 12\n"}]}}
+{"type":"tool_execution_update","toolCallId":"call_03","toolName":"bash","partialResult":{"content":[{"type":"text","text":"# pass 12\n# fail 0\n"}]}}
+{"type":"tool_execution_end","toolCallId":"call_03","toolName":"bash","result":{"content":[{"type":"text","text":"# pass 12\n# fail 0\n"}]},"isError":false}
+{"type":"message_start","message":{"id":"m4","role":"assistant","content":[{"type":"text","text":"All tests pass. Writing the envelope."}]}}
+{"type":"message_update","message":{"id":"m4","role":"assistant","content":[{"type":"text","text":"All tests pass. Writing the envelope."}]},"usage":{"input":1400,"output":380,"cacheRead":100,"cacheWrite":50,"totalTokens":1930,"cost":{"total":0.00463}}}
+{"type":"message_end","message":{"id":"m4","role":"assistant","content":[{"type":"text","text":"All tests pass. Writing the envelope."}],"usage":{"input":1400,"output":380,"cacheRead":100,"cacheWrite":50,"totalTokens":1930,"cost":{"total":0.00463}}}}
+{"type":"turn_end","message":{"id":"m4","role":"assistant","content":[{"type":"text","text":"All tests pass. Writing the envelope."}],"usage":{"input":1400,"output":380,"cacheRead":100,"cacheWrite":50,"totalTokens":1930,"cost":{"total":0.00463}}}}
+{"type":"agent_end","messages":[{"id":"m4","role":"assistant","usage":{"input":1400,"output":380,"cacheRead":100,"cacheWrite":50,"totalTokens":1930,"cost":{"total":0.00463}}}],"willRetry":false}
+{"type":"agent_settled","sessionId":"fake_happy","messageCount":4}

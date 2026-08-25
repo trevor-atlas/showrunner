@@ -26,10 +26,10 @@ import {
   insertPhase,
   insertRun,
   openDb,
-} from "../../src/daemon/db.ts";
-import { buildRunDetail, buildSpendBreakdown, buildTimeline } from "../../src/view-models/index.ts";
+} from "../../src/server/repository/db.ts";
+import { buildRunDetail, buildSpendBreakdown, buildTimeline } from "../../src/server/services/run-detail.ts";
 
-import { cleanupDir, tmpDataDir } from "../daemon/helpers.ts";
+import { cleanupDir, tmpDataDir } from "../server/helpers.ts";
 
 /** An ISO ts at `sec` seconds within the synthetic day (rowid order = ts order). */
 function ts(sec: number): string {

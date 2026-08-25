@@ -1,0 +1,185 @@
+/**
+ * The dashboard's server-side server access (`src/server/lib/model.ts`).
+ *
+ * Since the merged web server (Phase 2) the UI and the server share ONE
+ * process: the unix socket and the typed client round trip are gone.
+ * Every function here calls the corresponding api core function
+ * (src/server/transport/http.ts) IN-PROCESS against the server's state, held by
+ * src/server/transport/state.ts. A "server down" state is impossible — there is no
+ * socket to miss, so no unreachable-server error and no down banner exist.
+ *
+ * The browser NEVER imports this module and NEVER talks to the server: actions
+ * fetch server data here, server-side, and the browser only receives rendered
+ * HTML (no CORS, no server credentials in the browser).
+ */
+
+import {
+  MAX_EVENTS_LIMIT,
+  apiEvents,
+  apiListRuns,
+  apiPhaseEnvelopes,
+  apiPhaseGates,
+  apiPhaseOutputs,
+  apiRaw,
+  apiRunDetail,
+  apiSpend,
+  apiStats,
+  apiTimeline,
+} from "../services/runs.ts";
+import {
+  apiApprove,
+  apiFailRun,
+  apiOverrideGate,
+  apiPause,
+  apiRestartFresh,
+  apiResume,
+  apiSteerRun,
+} from "../services/control.ts";
+import { ApiError } from "../contract.ts";
+import { resolveDataDir } from "../../core/index.ts";
+import { requireServerState } from "../transport/state.ts";
+import { buildPhaseRecordModel, type PhaseRecordModel } from "../services/phase-record.ts";
+import type {
+  ControlResult,
+  EventsPage,
+  PauseView,
+  PhaseEnvelopes,
+  PhaseGates,
+  PhaseOutputs,
+  RawTail,
+  RunDetail,
+  RunListItem,
+  RunStats,
+  SpendBreakdown,
+  TimelineView,
+} from "../contract.ts";
+
+/** The events-page size and the sweep batch — the one exported constant the
+ * UI's events proxy imports (no re-declared 500 in the controller). */
+export { MAX_EVENTS_LIMIT };
+
+/** The run list rows — in-process against the server's state. */
+export async function listRuns(): Promise<{ runs: RunListItem[] }> {
+  return apiListRuns(requireServerState());
+}
+
+/** The run detail — phases, spend, envelope count, sessions, and the FULL
+ * event history (the initial SSR sweep rides the ?full=1 detail call — the
+ * controller reads detail.events/detail.next_cursor instead of sweeping). */
+export async function getRunDetail(runId: string): Promise<RunDetail> {
+  return apiRunDetail(requireServerState(), runId, new URLSearchParams({ full: "1" }));
+}
+
+/** GET /runs/:id/phases/:phase/envelopes — a phase's envelope history. */
+export async function getPhaseEnvelopes(runId: string, phase: string): Promise<PhaseEnvelopes> {
+  return apiPhaseEnvelopes(requireServerState(), runId, phase);
+}
+
+/** GET /runs/:id/phases/:phase/gates — gate results incl. overridden. */
+export async function getPhaseGates(runId: string, phase: string): Promise<PhaseGates> {
+  return apiPhaseGates(requireServerState(), runId, phase);
+}
+
+/** GET /runs/:id/phases/:phase/outputs — what the agent wrote in the
+ * phase's outputs dir: the file listing + FINDINGS.md content. */
+export async function getPhaseOutputs(runId: string, phase: string): Promise<PhaseOutputs> {
+  return apiPhaseOutputs(requireServerState(), runId, phase);
+}
+
+/** GET /runs/:id/spend — per-phase spend breakdown (+ estimated markers). */
+export async function getSpend(runId: string): Promise<SpendBreakdown> {
+  return apiSpend(requireServerState(), runId);
+}
+
+/** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
+export async function getTimeline(runId: string): Promise<TimelineView> {
+  return apiTimeline(requireServerState(), runId);
+}
+
+/** GET /api/stats — the all-time landing KPI/chart aggregate. */
+export async function getStats(): Promise<RunStats> {
+  return apiStats(requireServerState());
+}
+
+/** GET /runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */
+export async function getRaw(runId: string, opts: { lines?: number } = {}): Promise<RawTail> {
+  const query = new URLSearchParams();
+  if (opts.lines !== undefined) query.set("lines", String(Math.max(1, Math.floor(opts.lines))));
+  return apiRaw(requireServerState(), runId, query);
+}
+
+/** GET /runs/:id/events — the cursor page (drill-in sums spend). */
+export async function getRunEvents(runId: string, opts: { cursor?: number; limit?: number } = {}): Promise<EventsPage> {
+  const query = new URLSearchParams();
+  if (opts.cursor !== undefined) query.set("cursor", String(opts.cursor));
+  if (opts.limit !== undefined) query.set("limit", String(opts.limit));
+  return apiEvents(requireServerState(), runId, query);
+}
+
+/** GET /runs/:id/pause — the pause viewer (kind, phase, actions, queued steers). */
+export async function getPause(runId: string): Promise<PauseView> {
+  return apiPause(requireServerState(), runId);
+}
+
+// ── control verbs (T10b) ───────────────────────────────────────────────
+// Every verb calls the api core in-process; on success the server has
+// already written the human_action event and the new run state, so the
+// action can re-render/redirect from server state. A 409 / 4xx surfaces as a
+// server-side ApiError — the actions translate it onto the form.
+
+/** POST /runs/:id/steer — the pause menu's steer (run-keyed; queues on a paused run). */
+export async function controlSteer(runId: string, message: string): Promise<ControlResult> {
+  return apiSteerRun(requireServerState(), runId, { message });
+}
+
+/** POST /runs/:id/resume — continue an interrupted run. */
+export async function controlResume(runId: string): Promise<ControlResult> {
+  return apiResume(requireServerState(), runId, {});
+}
+
+/** POST /runs/:id/fail — fail the run and kill its children. */
+export async function controlFail(runId: string): Promise<ControlResult> {
+  return apiFailRun(requireServerState(), runId, {});
+}
+
+/** POST /runs/:id/approve — approve a require_approval pause. */
+export async function controlApprove(runId: string): Promise<ControlResult> {
+  return apiApprove(requireServerState(), runId, {});
+}
+
+/** POST /runs/:id/phases/:phase/override — override a failed gate (audited).
+ * The dashboard audits its overrides as "web" (the server defaults to "cli"
+ * only for CLI callers that send no by) — the who is the point. */
+export async function controlOverrideGate(
+  runId: string,
+  phase: string,
+  gate: string,
+  reason: string,
+  by: string = "web",
+): Promise<ControlResult> {
+  return apiOverrideGate(requireServerState(), runId, phase, { gate, reason, by });
+}
+
+/** POST /runs/:id/phases/:phase/restart-fresh — new pi session, same config. */
+export async function controlRestartFresh(runId: string, phase: string): Promise<ControlResult> {
+  return apiRestartFresh(requireServerState(), runId, phase, {});
+}
+
+/** The assembled phase record (snapshot/inputs/outputs/spend + envelopes/gates/
+ * visits) for one phase, or null for a ghost run/phase — in-process against the
+ * server's db + data dir. The read of the state holder lives HERE (behind lib/)
+ * so the UI controllers never reach the holder directly (T5). */
+export function getPhaseRecord(runId: string, phase: string): PhaseRecordModel | null {
+  return buildPhaseRecordModel(requireServerState().db, resolveDataDir(), runId, phase);
+}
+
+/**
+ * Is the thrown error an ApiError? The control actions translate
+ * 409/4xx into an inline form error (from ApiError.status/message) instead of
+ * pretending success. ONE class since the contract: the server core
+ * and the typed client re-export the same ApiError (contract.ts), and
+ * in-process calls throw the real one — `instanceof` is the whole check.
+ */
+export function isApiError(err: unknown): err is ApiError {
+  return err instanceof ApiError;
+}

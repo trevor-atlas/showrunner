@@ -30,7 +30,7 @@ flowchart TD
     Pause -- "override gate" --> Record
     Pause -- "restart phase fresh" --> Fresh["Spawn new session, same agent config"] --> End
     Pause -- "fail run" --> Failed["Run: failed"]
-    Crash(["daemon crash"]) -.-> Surf["Run surfaced as 'interrupted' in dashboard"]
+    Crash(["server crash"]) -.-> Surf["Run surfaced as 'interrupted' in dashboard"]
     Surf -.-> Resume["Human clicks continue<br/>→ resume from last completed phase"]
     Resume -.-> Spawn
 ```

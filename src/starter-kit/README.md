@@ -71,7 +71,7 @@ showrunner run src/starter-kit/blueprints/plan_build_test.ts --prompt "add offli
 
 Each blueprint's phases have scripted FakePi sessions next to the module
 (`src/blueprints/fake-pi/<phase-slug>.json`) — the TEST FIXTURE for the
-scripted path (`SHOWRUNNER_FAKE=1`), not the runtime default. The daemon runs
+scripted path (`SHOWRUNNER_FAKE=1`), not the runtime default. The server runs
 the real pi binary by default (auto-detected on PATH). Regenerate the fixture
 sessions after editing the fixture builders:
 
@@ -81,7 +81,7 @@ bun run gen:fixtures      # scripts/generate-fake-pi-sessions.ts
 
 **`--prompt` is wired**: the spec's skill files pass the user's goal as
 `showrunner run <blueprint> --prompt "<args>"`; the CLI forwards it through the
-POST /runs body and the daemon renders it as a `[User request]` section at the
+POST /runs body and the server renders it as a `[User request]` section at the
 top of the composed first prompt (the agent's actual goal). It works today.
 
 Real pi is the product default; real runs cost real tokens. The scripted

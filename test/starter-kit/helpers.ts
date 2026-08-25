@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BlueprintRun, RunResult } from "../../src/daemon/runner.ts";
-import { getControl } from "../../src/daemon/index.ts";
+import type { BlueprintRun, RunResult } from "../../src/server/engine/runner.ts";
+import { getControl } from "../../src/server/engine/pause-control.ts";
 
 /**
  * Scratch helpers for the starter-kit tests (fixtures-vs-smokes
@@ -11,7 +11,7 @@ import { getControl } from "../../src/daemon/index.ts";
  *
  * Note: the daemon is imported RELATIVELY, not as a package dep — bun 1.4
  * cannot resolve a `file:` dep's own `file:` deps, so the starter kit (like
- * the CLI) does not declare @showrunner/daemon (see cli/daemon-lifecycle.ts).
+ * the CLI) does not declare @showrunner/daemon (see cli/server-lifecycle.ts).
  */
 
 export function tmpDir(label: string): string {

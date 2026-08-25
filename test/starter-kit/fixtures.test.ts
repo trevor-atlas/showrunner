@@ -1,8 +1,9 @@
 process.env.SHOWRUNNER_FAKE = "1"; // hermetic: scripted FakePi sessions, never real pi (T05)
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { ScriptMap } from "../../src/daemon/runner.ts";
-import { cursorEvents, listPhases, openDb, resolveScriptedSessions, runBlueprint } from "../../src/daemon/index.ts";
+import type { ScriptMap } from "../../src/server/engine/runner.ts";
+import { resolveScriptedSessions, runBlueprint } from "../../src/server/engine/runner.ts";
+import { cursorEvents, listPhases, openDb } from "../../src/server/repository/db.ts";
 
 import promptBlueprint from "../../src/starter-kit/blueprints/prompt.ts";
 import scoutBlueprint from "../../src/starter-kit/blueprints/scout.ts";
@@ -15,7 +16,7 @@ import planBuildTestBlueprint from "../../src/starter-kit/blueprints/plan_build_
 import documentBlueprint from "../../src/starter-kit/blueprints/document.ts";
 import everythingBlueprint from "../../src/starter-kit/blueprints/everything.ts";
 
-import { buildTurn, documentTurn, planTurn, promptTurn, reconTurn, reviewTurn, session, shipTurn } from "../../src/daemon/pi/harness/session-builder.ts";
+import { buildTurn, documentTurn, planTurn, promptTurn, reconTurn, reviewTurn, session, shipTurn } from "../../src/server/engine/pi/harness/session-builder.ts";
 import { failingWorkspace, passingWorkspace, rmDir, runToTerminal, tmpDir } from "./helpers.ts";
 import type { Blueprint } from "../../src/core/index.ts";
 

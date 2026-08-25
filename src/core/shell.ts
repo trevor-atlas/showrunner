@@ -12,11 +12,11 @@ export interface CreateShellOptions {
 /**
  * The standard subprocess escape hatch — a `shell(cmd)` that
  * gates and hooks can use when the runtime does not provide `ctx.shell`.
- * Mirrors the daemon's hook shell exactly: `/bin/sh -c`, bounded by a
+ * Mirrors the server's hook shell exactly: `/bin/sh -c`, bounded by a
  * timeout, returns the full `{ code, stdout, stderr }` result.
  *
  * The execution is TRULY async (child_process.spawn, promisified) — a shell
- * command running inside a gate must never block the daemon's event loop
+ * command running inside a gate must never block the server's event loop
  * ("Backpressure": the tracer read loop, the live feed, and every HTTP
  * response keep flowing while a gate command runs). A command that exceeds
  * the timeout cap is SIGTERM'd (SIGKILL after 1s) and reports `code: -1`

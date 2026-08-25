@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDirFor } from "../../src/core/index.ts";
-import { fixturePath } from "../../src/daemon/pi/harness/fixtures.ts";
+import { fixturePath } from "../../src/server/engine/pi/harness/fixtures.ts";
 
 /**
  * End-to-end: the real CLI against a real (detached) daemon over HTTP (the
@@ -16,7 +16,7 @@ import { fixturePath } from "../../src/daemon/pi/harness/fixtures.ts";
  */
 
 const CLI = fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url));
-const DEMO_BLUEPRINT = join(dirname(fileURLToPath(import.meta.url)), "..", "daemon", "fixtures", "demo-blueprint.ts");
+const DEMO_BLUEPRINT = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures", "demo-blueprint.ts");
 const dataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-"));
 // F3: blueprint runs drive in this scratch cwd — context_handoff/ must never
 // land in the repo root (the test runner's working directory)
@@ -238,7 +238,7 @@ test("stop terminates the daemon over HTTP; a second stop reports no daemon runn
   // and the verb blocks until the health check fails.
   const out = cli(["stop"]);
   expect(out.status).toBe(0);
-  expect(out.stdout).toContain("daemon stopped");
+  expect(out.stdout).toContain("server stopped");
   // proof it actually went down: a second stop finds nothing to stop
   const again = cli(["stop"]);
   expect(again.status).toBe(1);
