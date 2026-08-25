@@ -553,7 +553,7 @@ test("GET /status reports health, pool utilization, and run status counts", asyn
   }
 });
 
-// ── graceful shutdown: stop children, remove the pidfile ────────────────
+// ── graceful shutdown: stop children, close the listener ────────────────
 
 test("graceful shutdown stops recorded children and closes the listener", async () => {
   const dir = tmpDataDir("shutdown");
