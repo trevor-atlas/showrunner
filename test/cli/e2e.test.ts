@@ -1,6 +1,6 @@
 import { test, expect, afterAll } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,8 +16,26 @@ import { fixturePath } from "../../src/server/engine/pi/harness/fixtures.ts";
  */
 
 const CLI = fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url));
-const DEMO_BLUEPRINT = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures", "demo-blueprint.ts");
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "fixtures");
+const DEMO_BLUEPRINT = join(FIXTURES, "demo-blueprint.ts");
 const dataDir = mkdtempSync(join(tmpdir(), "showrunner-e2e-"));
+
+/**
+ * Blueprints resolve by NAME from the data dir now (no path form). Install the
+ * demo blueprint + its scripted FakePi sessions into the scratch data dir under
+ * the name "demo" so `showrunner run demo` resolves it. The module's core
+ * import is rewritten to the data-dir-relative form the materialize symlink
+ * (<dataDir>/core → repo src/core) resolves.
+ */
+function installDemoBlueprint(): void {
+  const bpDir = join(dataDir, "templates", "blueprints");
+  const fakePiDir = join(bpDir, "fake-pi");
+  mkdirSync(fakePiDir, { recursive: true });
+  const src = readFileSync(DEMO_BLUEPRINT, "utf8").replaceAll("../../../src/core/index.ts", "../../core/index.ts");
+  writeFileSync(join(bpDir, "demo.ts"), src);
+  copyFileSync(join(FIXTURES, "fake-pi", "plan.json"), join(fakePiDir, "plan.json"));
+  copyFileSync(join(FIXTURES, "fake-pi", "build.json"), join(fakePiDir, "build.json"));
+}
 // F3: blueprint runs drive in this scratch cwd — context_handoff/ must never
 // land in the repo root (the test runner's working directory)
 const blueprintCwd = mkdtempSync(join(tmpdir(), "showrunner-e2e-cwd-"));
@@ -145,7 +163,8 @@ test("a crash run surfaces as failed with a truncated tool call and needs_review
 });
 
 test("a blueprint run shows the full loop in watch: correction, envelope, gates, phases", () => {
-  const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2"]);
+  installDemoBlueprint();
+  const submitted = cli(["run", "demo", "--cwd", blueprintCwd, "--delay", "2"]);
   expect(submitted.status).toBe(0);
   const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
   expect(runId).toBeDefined();
@@ -184,7 +203,8 @@ test("a blueprint run shows the full loop in watch: correction, envelope, gates,
 });
 
 test("FINDING-1: --prompt rides the args into the snapshot (the composed-prompt input)", async () => {
-  const submitted = cli(["run", DEMO_BLUEPRINT, "--cwd", blueprintCwd, "--delay", "2", "--prompt", "map the auth flow"]);
+  installDemoBlueprint();
+  const submitted = cli(["run", "demo", "--cwd", blueprintCwd, "--delay", "2", "--prompt", "map the auth flow"]);
   expect(submitted.status).toBe(0);
   const runId = submitted.stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
   expect(runId).toBeDefined();

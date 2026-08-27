@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path";
 import { resolveDataDir } from "../core/index.ts";
 import { FIXTURE_NAMES, isFixtureName } from "../server/engine/pi/harness/fixtures.ts";
 
@@ -8,7 +7,13 @@ import { installSignalHandlers, startServer } from "../server/lifecycle.ts";
 // the typed client is the single HTTP surface — base URL from the
 // configured port (SHOWRUNNER_PORT, default 44100)
 import { ServerClient, isServerDown } from "../server/transport/client.ts";
-import { syncTemplates } from "../server/services/templates.ts";
+import { materializeTemplates, syncTemplates } from "../server/services/templates.ts";
+import {
+  blueprintModulePath,
+  describeBlueprint,
+  listBlueprintNames,
+  listBlueprints,
+} from "../server/services/blueprints.ts";
 import type { RunDetail, SubmitRunBody } from "../server/transport/client.ts";
 import { serverBaseUrl, ensureServer, isServerUp, stopServer } from "./server-lifecycle.ts";
 import { buildDevSpawn } from "./dev.ts";
@@ -20,8 +25,9 @@ import { watchRun } from "./watch.ts";
  *
  *   showrunner server                  run the server in the foreground
  *   showrunner dev                     run the UI dev loop (HMR proxy chain, NODE_ENV=development)
+ *   showrunner run <name>              submit a blueprint run by NAME (resolved from the data dir)
  *   showrunner run <fixture>           submit a scripted fixture run (T01a observation path)
- *   showrunner run <blueprint.ts>      submit a blueprint run (T01b loop; FakePi sessions)
+ *   showrunner blueprints [<name>]     list blueprints, or show one blueprint's phase chain
  *   showrunner runs                    list runs with status + phase counts
  *   showrunner show <run_id>           run detail: phases with status/visits/corrections/spend
  *   showrunner watch <run_id> [--interval N]
@@ -79,8 +85,9 @@ function usage(): void {
       "usage:",
       "  showrunner server                        run the server in the foreground",
       "  showrunner dev [--port N]                run the UI dev loop (HMR proxy chain, NODE_ENV=development)",
+      "  showrunner run <name> [--cwd DIR] [--prompt \"<goal>\"] [--delay N] submit a blueprint run by NAME (resolved from <data-dir>/templates/blueprints/<name>.ts; --prompt becomes the run's first instruction)",
       "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
-      "  showrunner run <blueprint.ts> [--delay] [--cwd DIR] [--prompt \"<goal>\"] submit a blueprint run (driven by FakePi sessions; --prompt becomes the run's first instruction)",
+      "  showrunner blueprints [<name>]           list blueprints with their phase chain, or show one blueprint's per-phase detail",
       "  showrunner runs                          list runs with status + phase counts",
       "  showrunner show <run_id>                run detail: phases, visits, corrections, spend",
       "  showrunner watch <run_id> [--interval N] stream a run's folded events",
@@ -103,14 +110,15 @@ function usage(): void {
 async function cmdRun(flags: Flags): Promise<number> {
   const arg = flags.positionals[0];
   if (!arg) {
-    console.error("usage: showrunner run <fixture> | <blueprint.ts>");
+    console.error("usage: showrunner run <blueprint-name> | <fixture>");
     return 2;
   }
   const dataDir = flags.dataDir ?? resolveDataDir();
-  await ensureServer(dataDir);
-  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
 
-  const submit = async (body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
+  const submitTo = async (
+    client: ServerClient,
+    body: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> => {
     try {
       return (await client.submitRun(body as SubmitRunBody)) as unknown as Record<string, unknown>;
     } catch (err) {
@@ -121,7 +129,11 @@ async function cmdRun(flags: Flags): Promise<number> {
     }
   };
 
+  // fixtures stay a scripted-observation escape hatch (T01a); blueprints are
+  // resolved by NAME against the data dir — there is no bare-path form.
   if (isFixtureName(arg)) {
+    await ensureServer(dataDir);
+    const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
     const body: Record<string, unknown> = { fixture: arg };
     if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
     if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
@@ -129,7 +141,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     if (flags.rest.model !== undefined) body.model = flags.rest.model;
     if (flags.rest.phase !== undefined) body.phase = flags.rest.phase;
 
-    const res = await submit(body);
+    const res = await submitTo(client, body);
     if (res === null) return 1;
     console.log(`run submitted: ${res.run_id}`);
     console.log(`  fixture: ${res.fixture}  phase: ${res.phase_id}  session: ${res.agent_session_id}`);
@@ -137,27 +149,74 @@ async function cmdRun(flags: Flags): Promise<number> {
     return 0;
   }
 
-  if (arg.endsWith(".ts")) {
-    const body: Record<string, unknown> = { blueprint: resolve(arg) };
-    if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
-    if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
-    // FINDING-1 (`args?`): `--prompt "<goal>"` is the user
-    // instruction channel the skills use (`showrunner run <bp> --prompt "…"`).
-    // It rides the opaque `args` array — the server snapshots it verbatim into
-    // blueprint.json AND composes it as the [User request] section of the run's
-    // first prompt, so the instruction actually reaches the agent.
-    if (flags.rest.prompt !== undefined) body.args = ["--prompt", flags.rest.prompt];
-    const res = await submit(body);
-    if (res === null) return 1;
-    console.log(`run submitted: ${res.run_id}`);
-    console.log(`  blueprint: ${res.blueprint}`);
-    console.log(`watch it with: showrunner watch ${res.run_id}`);
-    console.log(`detail with:  showrunner show ${res.run_id}`);
+  // resolve the blueprint NAME against the data dir (the source of truth).
+  // materialize seeds a fresh data dir + lays down the import symlinks the
+  // daemon needs to import the module; an unknown name fails fast, before any
+  // daemon is spawned, listing what IS available.
+  materializeTemplates(dataDir);
+  const available = listBlueprintNames(dataDir);
+  if (!available.includes(arg)) {
+    console.error(`unknown blueprint: ${arg} (available: ${available.join(", ")})`);
+    return 2;
+  }
+
+  await ensureServer(dataDir);
+  const client = new ServerClient({ baseUrl: serverBaseUrl(dataDir) });
+  const body: Record<string, unknown> = { blueprint: blueprintModulePath(dataDir, arg) };
+  if (flags.rest.cwd !== undefined) body.cwd = flags.rest.cwd;
+  if (flags.rest.delay !== undefined) body.delayMs = Number(flags.rest.delay);
+  // FINDING-1 (`args?`): `--prompt "<goal>"` is the user instruction channel
+  // the skills use (`showrunner run <name> --prompt "…"`). It rides the opaque
+  // `args` array — the server snapshots it verbatim into blueprint.json AND
+  // composes it as the [User request] section of the run's first prompt.
+  if (flags.rest.prompt !== undefined) body.args = ["--prompt", flags.rest.prompt];
+  const res = await submitTo(client, body);
+  if (res === null) return 1;
+  console.log(`run submitted: ${res.run_id}`);
+  console.log(`  blueprint: ${res.blueprint}`);
+  console.log(`watch it with: showrunner watch ${res.run_id}`);
+  console.log(`detail with:  showrunner show ${res.run_id}`);
+  return 0;
+}
+
+/**
+ * `showrunner blueprints` — list the data-dir blueprints with their phase
+ * chain; `showrunner blueprints <name>` — one blueprint's per-phase detail
+ * (agent, budget, on_fail, approval). The data dir is the source of truth, so
+ * this reads it directly (no daemon); materialize seeds a fresh data dir first
+ * and lays down the import symlinks a blueprint module needs.
+ */
+async function cmdBlueprints(flags: Flags): Promise<number> {
+  const dataDir = flags.dataDir ?? resolveDataDir();
+  materializeTemplates(dataDir);
+  const name = flags.positionals[0];
+
+  if (name === undefined) {
+    const summaries = await listBlueprints(dataDir);
+    if (summaries.length === 0) {
+      console.log("no blueprints found in the data dir");
+      return 0;
+    }
+    console.log("blueprints:");
+    for (const s of summaries) {
+      console.log(`  ${s.name.padEnd(18)} ${s.phases.join(" \u2192 ")}`);
+    }
     return 0;
   }
 
-  console.error(`unknown fixture or blueprint: ${arg} (fixtures: ${FIXTURE_NAMES.join("|")}; blueprints: a path to a .ts module)`);
-  return 2;
+  const detail = await describeBlueprint(dataDir, name);
+  if (detail === null) {
+    console.error(`unknown blueprint: ${name} (available: ${listBlueprintNames(dataDir).join(", ")})`);
+    return 2;
+  }
+  console.log(`blueprint ${detail.name}`);
+  console.log("phases:");
+  for (const p of detail.phases) {
+    const approval = p.require_approval ? " require_approval" : "";
+    const onFail = p.on_fail ? ` on_fail\u2192${p.on_fail}` : "";
+    console.log(`  ${p.name.padEnd(16)} agent=${p.agent} budget=${p.budget}${onFail}${approval}`);
+  }
+  return 0;
 }
 
 async function cmdRuns(flags: Flags): Promise<number> {
@@ -591,6 +650,8 @@ async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case "run":
       return cmdRun(flags);
+    case "blueprints":
+      return cmdBlueprints(flags);
     case "runs":
       return cmdRuns(flags);
     case "show":

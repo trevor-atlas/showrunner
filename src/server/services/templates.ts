@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, symlinkSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,14 @@ import { fileURLToPath } from "node:url";
  * where the server is launched from.
  */
 const STARTER_KIT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "starter-kit");
+
+/**
+ * The repo root — two levels up from src/starter-kit — so a materialized data
+ * dir can point back at the self-contained core module and the shared
+ * node_modules. Computed from the module constant (not the sourceDir override)
+ * so it always names the real repo tree the data dir must borrow from.
+ */
+const REPO_ROOT = join(STARTER_KIT_DIR, "..", "..");
 
 /**
  * Copy src/starter-kit/** into <dataDir>/templates/, copy-if-absent: a file is
@@ -30,7 +38,41 @@ export function materializeTemplates(dataDir: string, sourceDir: string = STARTE
     copyFileSync(join(sourceDir, rel), dest);
     copied.push(rel);
   }
+  linkDataDirImports(dataDir);
   return { copied };
+}
+
+/**
+ * Make the data dir importable so a materialized blueprint copy at
+ * <dataDir>/templates/blueprints/<name>.ts can resolve its `../../core/index.ts`
+ * import and its bare deps (zod, ...). Two symlinks from the data-dir root back
+ * to the repo:
+ *   <dataDir>/core         → <repoRoot>/src/core   (core is self-contained)
+ *   <dataDir>/node_modules → <repoRoot>/node_modules (bare deps + core's zod)
+ * Sharing the SAME node_modules also keeps a single zod instance (the runner's
+ * instanceof/merge checks would fail across two copies). Idempotent: an
+ * already-correct link is left alone, a stale one is refreshed.
+ */
+function linkDataDirImports(dataDir: string): void {
+  linkInto(join(dataDir, "core"), join(REPO_ROOT, "src", "core"));
+  linkInto(join(dataDir, "node_modules"), join(REPO_ROOT, "node_modules"));
+}
+
+/** Create (or refresh) a symlink at `link` pointing at `target`. */
+function linkInto(link: string, target: string): void {
+  try {
+    if (lstatSync(link).isSymbolicLink()) {
+      if (readlinkSync(link) === target) return;
+    }
+    unlinkSync(link);
+  } catch {
+    // link does not exist — create it below
+  }
+  try {
+    symlinkSync(target, link);
+  } catch {
+    // a concurrent boot won the race; the link is present either way
+  }
 }
 
 /**
