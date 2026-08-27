@@ -8,6 +8,7 @@ import { installSignalHandlers, startServer } from "../server/lifecycle.ts";
 // configured port (SHOWRUNNER_PORT, default 44100)
 import { ServerClient, isServerDown } from "../server/transport/client.ts";
 import { materializeTemplates, syncTemplates } from "../server/services/templates.ts";
+import { installSkills } from "../server/services/skills.ts";
 import {
   blueprintModulePath,
   describeBlueprint,
@@ -88,6 +89,7 @@ function usage(): void {
       "  showrunner run <name> [--cwd DIR] [--prompt \"<goal>\"] [--delay N] submit a blueprint run by NAME (resolved from <data-dir>/templates/blueprints/<name>.ts; --prompt becomes the run's first instruction)",
       "  showrunner run <fixture>                 submit a scripted fixture run (fixture: " + FIXTURE_NAMES.join("|") + ")",
       "  showrunner blueprints [<name>]           list blueprints with their phase chain, or show one blueprint's per-phase detail",
+      "  showrunner skills install [--force]      install the Showrunner skill into the global skills dir (~/.agents/skills; --force overwrites)",
       "  showrunner runs                          list runs with status + phase counts",
       "  showrunner show <run_id>                run detail: phases, visits, corrections, spend",
       "  showrunner watch <run_id> [--interval N] stream a run's folded events",
@@ -215,6 +217,31 @@ async function cmdBlueprints(flags: Flags): Promise<number> {
     const approval = p.require_approval ? " require_approval" : "";
     const onFail = p.on_fail ? ` on_fail\u2192${p.on_fail}` : "";
     console.log(`  ${p.name.padEnd(16)} agent=${p.agent} budget=${p.budget}${onFail}${approval}`);
+  }
+  return 0;
+}
+
+/**
+ * `showrunner skills install [--force]` — install the Showrunner skill into the
+ * coding agent's GLOBAL skills dir (~/.agents/skills), not the data dir. The
+ * skill is agent-facing (it teaches the agent to drive runs), so it belongs
+ * where the agent reads skills at startup. Copy-if-absent; --force overwrites.
+ */
+async function cmdSkills(flags: Flags): Promise<number> {
+  const sub = flags.positionals[0];
+  if (sub !== "install") {
+    console.error("usage: showrunner skills install [--force]");
+    return 2;
+  }
+  const force = "force" in flags.rest;
+  const result = installSkills({ force });
+  const parts: string[] = [];
+  if (result.installed.length > 0) parts.push(`installed ${result.installed.join(", ")}`);
+  if (result.skipped.length > 0) parts.push(`skipped (present) ${result.skipped.join(", ")}`);
+  console.log(`skills → ${result.skillsDir}`);
+  console.log(`  ${parts.length > 0 ? parts.join("; ") : "nothing to install"}`);
+  if (result.skipped.length > 0 && !force) {
+    console.log("  (re-run with --force to overwrite existing skills)");
   }
   return 0;
 }
@@ -652,6 +679,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdRun(flags);
     case "blueprints":
       return cmdBlueprints(flags);
+    case "skills":
+      return cmdSkills(flags);
     case "runs":
       return cmdRuns(flags);
     case "show":

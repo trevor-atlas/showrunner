@@ -76,13 +76,23 @@ function linkInto(link: string, target: string): void {
 }
 
 /**
+ * Top-level starter-kit directories NOT materialized into the data dir.
+ * `skills/` is agent-facing content: it installs into the coding agent's global
+ * skills dir (~/.agents/skills, see services/skills.ts), not the Showrunner
+ * data dir, so the data-dir walk skips it.
+ */
+const NON_TEMPLATE_DIRS = new Set(["skills"]);
+
+/**
  * Shared tree walk over the starter-kit source (used by both materialize and
  * sync so the traversal is defined once). Yields each regular file's path
- * RELATIVE to sourceDir, recursing directories depth-first.
+ * RELATIVE to sourceDir, recursing directories depth-first. Top-level
+ * NON_TEMPLATE_DIRS are skipped (they are not data-dir content).
  */
 function* walkRelFiles(sourceDir: string, relDir = ""): Generator<string> {
   for (const entry of readdirSync(join(sourceDir, relDir), { withFileTypes: true })) {
     const rel = relDir === "" ? entry.name : join(relDir, entry.name);
+    if (relDir === "" && entry.isDirectory() && NON_TEMPLATE_DIRS.has(entry.name)) continue;
     if (entry.isDirectory()) {
       yield* walkRelFiles(sourceDir, rel);
       continue;

@@ -1,7 +1,8 @@
 /**
  * @showrunner/starter-kit — the out-of-the-box Showrunner content.
  * Six agents, a shared gates library, the poll tool, ten
- * blueprints, and ten skill files — all of it a replace-this surface.
+ * blueprints, and one operator skill (installed into ~/.agents/skills, not the
+ * data dir) — all of it a replace-this surface.
  */
 
 // Model roster — the replaceable "models that were good this week"

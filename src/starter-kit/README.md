@@ -1,8 +1,8 @@
 # @showrunner/starter-kit
 
 The out-of-the-box Showrunner content. Six agent modules,
-a shared gates library, the `poll` tool, ten blueprint modules, and ten skill
-files — **all of it a replace-this surface**.
+a shared gates library, the `poll` tool, ten blueprint modules, and one operator
+skill — **all of it a replace-this surface**.
 
 ## What's in the box
 
@@ -12,33 +12,32 @@ src/envelopes.ts            the six agents' output contracts
 src/agents/                 the six doers: planner, builder, scout, reviewer, documenter, ship
 src/gates/                  shared gates: testsPass, lintClean, matchesPlan, envelopeShape,
                             filesExist, reviewApproved (+ inputsDirFor / workspaceShell helpers)
-src/blueprints/             the ten blueprint modules the skills wrap
+src/blueprints/             the ten blueprint modules (listed via `showrunner blueprints`)
 src/blueprints/fake-pi/     scripted FakePi sessions for the CLI path (generated — see below)
-src/tools/poll.ts           the poll tool (a pi extension; install like the skills)
-skills/                     the ten skill files (install by copying into ~/.pi/agent/skills)
+src/tools/poll.ts           the poll tool (a pi extension)
+skills/                     the one operator skill (install into ~/.agents/skills via `showrunner skills install`)
 test/                       STARTER tests — replace them with yours
                             (they live at the repo root: test/starter-kit/)
 ```
 
-## The mapping: skill → blueprint → agents & gates
+## The blueprints: blueprint → agents & gates
 
-| Skill dir (`skills/`) | Blueprint (`src/blueprints/`) | Agents | Gates | Reach for it when |
-| --- | --- | --- | --- | --- |
-| `prompt` | `prompt.ts` | planner (edit to pick who) | — | one agent, one prompt; `NAME` picks who |
-| `scout` | `scout.ts` | scout | `envelopeShape` | read-only recon, nothing changes |
-| `plan` | `plan.ts` | planner | — | the spec before any code |
-| `build` | `build.ts` | builder | — | the plan already exists |
-| `plan-build` | `plan_build.ts` | planner → builder → ship | `matchesPlan`; ship `require_approval` | small, well-understood work |
-| `build-test` | `build_test.ts` | builder ⇄ builder | `testsPass`, `lintClean`; bounded fix loop | a suite to satisfy |
-| `build-review` | `build_review.ts` | builder ⇄ reviewer | `reviewApproved`; bounded revise loop | "is this what was asked for" matters more than "does it run" |
-| `plan-build-test` | `plan_build_test.ts` | plan → build → review → ship | `matchesPlan`, `testsPass`, `lintClean`, `reviewApproved`; ship `require_approval` | the standard chain |
-| `document` | `document.ts` | documenter | `filesExist` | write up what just shipped |
-| `everything` | `everything.ts` | plan → build → review → ship | all of the above; plan AND ship `require_approval`; heavier budgets | the work is real and its shape is not obvious |
+One skill (`showrunner`) drives all of these; it discovers them at runtime via
+`showrunner blueprints` and launches one by name. The table is the reference
+for what each blueprint wires.
 
-Skill **names** use hyphens (`plan-build` — the Agent Skills standard allows only
-lowercase a-z, 0-9, hyphens); blueprint **names/modules** use the underscores
-(`plan_build`). The skill names are what pi's model sees;
-the blueprint names are what the run loop records.
+| Blueprint (`src/blueprints/`) | Agents | Gates | Reach for it when |
+| --- | --- | --- | --- |
+| `prompt.ts` | planner (edit to pick who) | — | one agent, one prompt; `NAME` picks who |
+| `scout.ts` | scout | `envelopeShape` | read-only recon, nothing changes |
+| `plan.ts` | planner | — | the spec before any code |
+| `build.ts` | builder | — | the plan already exists |
+| `plan_build.ts` | planner → builder → ship | `matchesPlan`; ship `require_approval` | small, well-understood work |
+| `build_test.ts` | builder ⇄ builder | `testsPass`, `lintClean`; bounded fix loop | a suite to satisfy |
+| `build_review.ts` | builder ⇄ reviewer | `reviewApproved`; bounded revise loop | "is this what was asked for" matters more than "does it run" |
+| `plan_build_test.ts` | plan → build → review → ship | `matchesPlan`, `testsPass`, `lintClean`, `reviewApproved`; ship `require_approval` | the standard chain |
+| `document.ts` | documenter | `filesExist` | write up what just shipped |
+| `everything.ts` | plan → build → review → ship | all of the above; plan AND ship `require_approval`; heavier budgets | the work is real and its shape is not obvious |
 
 ## The command gates (`testsPass`, `lintClean`)
 
@@ -105,19 +104,21 @@ Its runtime imports (`@earendil-works/pi-coding-agent`, `typebox`) resolve insid
 pi's extension loader; they are devDependencies here only so the kit can
 typecheck the file.
 
-## Installing the skills
+## Installing the skill
 
-Copy or symlink the skill directories into a pi skill location (docs/skills.md):
+The operator skill installs into the coding agent's GLOBAL skills dir
+(`~/.agents/skills`) — NOT the Showrunner data dir. The runtime content
+(blueprints/agents/gates) materializes into the data dir; the skill is
+agent-facing, so it lives where the agent reads skills at startup:
 
 ```bash
-mkdir -p ~/.pi/agent/skills
-cp -R src/starter-kit/skills/* ~/.pi/agent/skills/
-# or:  ln -s $PWD/src/starter-kit/skills/* ~/.pi/agent/skills/
-# or:  add the directory via settings.json ("skills" array) / --skill
+showrunner skills install            # copy-if-absent into ~/.agents/skills
+showrunner skills install --force    # overwrite an existing copy
+# override the target with SHOWRUNNER_SKILLS_DIR (tests point it at a scratch dir)
 ```
 
-Pi loads only each skill's `description` at startup — make yours specific; the
-full SKILL.md loads on demand (progressive disclosure).
+The coding agent loads only the skill's `description` at startup — the full
+SKILL.md loads on demand (progressive disclosure).
 
 ## The replace-this doctrine
 
@@ -141,7 +142,7 @@ The kit is part of the one-package repo (no own `package.json`/`tsconfig`), so
 the root commands drive it:
 
 ```bash
-bun test test/starter-kit/     # the kit's tests: fixtures, gates, skills
+bun test test/starter-kit/     # the kit's tests: fixtures, gates, blueprints
 bun run typecheck              # one tsconfig for the whole repo
 bun run gen:fixtures           # regenerate src/starter-kit/blueprints/fake-pi/*
 ```

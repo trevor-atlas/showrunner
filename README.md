@@ -40,7 +40,8 @@ In another terminal:
 #    checkout — nothing the harness does touches the source tree. (Set
 #    SHOWRUNNER_FAKE=1 to replay the scripted demo sessions instead — no
 #    tokens.)
-showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow"
+showrunner blueprints                        # discover blueprints by name
+showrunner run scout --prompt "map the auth flow"
 
 # 4. watch it live
 showrunner runs                              # list runs
@@ -109,10 +110,12 @@ showrunner status            # is it up? pool utilization + run counts
 ### The starter kit
 
 Six agents, a shared gates library (`testsPass`, `lintClean`, `matchesPlan`,
-…), ten blueprint modules, ten skill files, and the `poll` tool live in
+…), ten blueprint modules, one operator skill, and the `poll` tool live in
 [`src/starter-kit`](src/starter-kit/README.md) — a replace-this
 surface by design: the tests it ships prove the machinery, not your
-project. `showrunner run` takes a blueprint **module path**. `--prompt "<goal>"` is the
+project. `showrunner run` takes a blueprint **name**, resolved from the data dir
+(`showrunner blueprints` lists them; `showrunner blueprints <name>` shows a
+blueprint's phases). `--prompt "<goal>"` is the
 instruction the agent works against — it is composed into the run's first
 prompt as the `[User request]` section (and snapshotted verbatim into the
 run's `blueprint.json`). Every run's files live under the data directory
@@ -120,8 +123,8 @@ run's `blueprint.json`). Every run's files live under the data directory
 your checkout, so no scratch `--cwd` is needed:
 
 ```bash
-showrunner run src/starter-kit/blueprints/scout.ts --prompt "map the auth flow"
-showrunner run src/starter-kit/blueprints/plan_build.ts --prompt "add offline sync"
+showrunner run scout --prompt "map the auth flow"
+showrunner run plan_build --prompt "add offline sync"
 ```
 
 Real-pi runs are the default (the server auto-detects the binary); scripted
