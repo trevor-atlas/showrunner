@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EnvelopeBase } from "./envelope.ts";
+import { EnvelopeBase, Envelope } from "./envelope.ts";
 import type { Agent } from "./agent.ts";
 import type { Gate } from "./gate.ts";
 import type { PhaseHookContext } from "./run.ts";
@@ -10,12 +10,12 @@ import type { PhaseHookContext } from "./run.ts";
  * string registries.
  */
 
-export interface BlueprintPhase {
+export interface BlueprintPhase<Env extends Envelope> {
   /** phase name - on_fail.to targets these; unique within a blueprint */
   name: string;
   agent: Agent; // imported module, not a string
   /** zod schema extended from EnvelopeBase */
-  envelope: z.ZodTypeAny;
+  envelope: Env;
   gates: Gate[];
   /** max corrections per visit (default ~3) */
   budget?: number;
