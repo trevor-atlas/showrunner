@@ -7,7 +7,9 @@ description: "Start and manage Showrunner runs from the CLI — discover the ava
 
 **Run the work through Showrunner — do not do it yourself.** Your job is operator, not implementer: pick a blueprint, launch it with the user's request, monitor it, surface any pause, and report what it produced. The blueprint's agents plan, build, test, review, and ship. Do not start planning or editing code yourself before or while a run works.
 
-Every command is `showrunner <cmd>`. Blueprints are referenced **by name** (resolved from the data dir — `~/.showrunner/templates/blueprints/`, override with `SHOWRUNNER_DATA_DIR`), never by file path.
+Every command is `showrunner <cmd>`. Blueprints are referenced **by name**, never by file path.
+
+Showrunner keeps all its files in one **data directory**: `~/.showrunner` by default (or wherever the `SHOWRUNNER_DATA_DIR` environment variable points, if set). A blueprint name resolves to a file inside it — `~/.showrunner/templates/blueprints/<name>.ts` — and every run's records live under `~/.showrunner/runs/<run_id>/`.
 
 **Prerequisite:** the `showrunner` binary must be on `PATH`. If `showrunner` is not found, it has not been linked — from the Showrunner repo run `bun link` once (it installs `showrunner` into `~/.bun/bin`). Do not fall back to `bun path/to/cli.ts`; fix the install so the commands below work verbatim.
 
@@ -20,16 +22,16 @@ showrunner blueprints              # every blueprint + its phase chain
 showrunner blueprints <name>       # one blueprint's phases: agent, budget, on_fail, approval
 ```
 
-`blueprints <name>` tells you what a run will do before you start it: the ordered phases, which agent runs each, the correction budget, any `on_fail` branch, and which phases pause for **your approval** (`require_approval`). Pick the blueprint whose phase chain matches the user's intent (e.g. read-only recon vs. plan→build→review→ship). If none fits, edit or add one (next section) — the list reflects whatever is in the data dir.
+`blueprints <name>` tells you what a run will do before you start it: the ordered phases, which agent runs each, the correction budget, any `on_fail` branch, and which phases pause for **your approval** (`require_approval`). Pick the blueprint whose phase chain matches the user's intent (e.g. read-only recon vs. plan→build→review→ship). If none fits, edit or add one (next section) — the list reflects whatever is in `~/.showrunner/templates/blueprints/`.
 
 ## Customize or add a blueprint
 
-Blueprints are TypeScript modules **you edit** — they live in the data dir at `~/.showrunner/templates/blueprints/<name>.ts` (root `~/.showrunner`, or `SHOWRUNNER_DATA_DIR`). Each file is a `defineBlueprint({ name, phases: [...] })` module whose phases wire the agents, output contracts, and gates that sit beside it — the whole replace-this surface is in the same tree: `agents/`, `gates/`, `envelopes.ts`, `models.ts`.
+Blueprints are TypeScript modules **you edit** — they live at `~/.showrunner/templates/blueprints/<name>.ts` (the data directory from above). Each file is a `defineBlueprint({ name, phases: [...] })` module whose phases wire the agents, output contracts, and gates that sit beside it — the whole editable surface is in the same `~/.showrunner/templates/` tree: `agents/`, `gates/`, `envelopes.ts`, `models.ts`.
 
 - **Edit** an existing blueprint's phases, gates, budgets, `on_fail`, or `require_approval` in its file.
 - **Add** one by dropping a new `<name>.ts` in `blueprints/`; it shows up in `showrunner blueprints` immediately (resolved by file name) and runs with `showrunner run <name>`.
 - `showrunner blueprints [<name>]` imports and validates each module, so a syntax or wiring error surfaces there — verify your change before a run.
-- `showrunner templates sync [--yes]` pulls starter-kit updates into the data dir without clobbering your edits (drift is reported; `--yes` overwrites).
+- `showrunner templates sync [--yes]` refreshes `~/.showrunner/templates/` from the starter kit without clobbering your edits (drift is reported; `--yes` overwrites).
 
 The full authoring guide — agents, gates, envelopes, the model roster — lives beside them at `~/.showrunner/templates/README.md`.
 
@@ -77,5 +79,5 @@ The CLI auto-starts the server for a run. Manage it explicitly when asked:
 ```bash
 showrunner server                  # run the server in the foreground
 showrunner stop                    # stop the server
-showrunner templates sync [--yes]  # pull starter-kit updates into the data dir (drift reported; --yes overwrites)
+showrunner templates sync [--yes]  # refresh ~/.showrunner/templates from the starter kit (drift reported; --yes overwrites)
 ```
