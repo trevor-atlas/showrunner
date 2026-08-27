@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Agent orchestration tool: runs blueprints, records every event into SQLite, corrects and pauses agents via typed envelopes and gates. One package, one runtime (bun), one cwd.",
+  "bin": {
+    "showrunner": "./src/cli/index.ts"
+  },
   "scripts": {
     "test": "bun test test/",
     "typecheck": "tsc --noEmit",

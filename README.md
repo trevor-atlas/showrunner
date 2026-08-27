@@ -25,6 +25,8 @@ your PATH.
 ```bash
 # 1. install (each package is a file: dep — no workspaces)
 bun install
+# put the `showrunner` binary on PATH (installs into ~/.bun/bin):
+bun link
 
 # 2. start the server (long-lived; owns SQLite + pi spawns + the local API)
 showrunner server            # or: bun src/cli/index.ts server

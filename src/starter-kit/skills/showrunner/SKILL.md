@@ -9,6 +9,8 @@ description: "Start and manage Showrunner runs from the CLI — discover the ava
 
 Every command is `showrunner <cmd>`. Blueprints are referenced **by name** (resolved from the data dir — `~/.showrunner/templates/blueprints/`, override with `SHOWRUNNER_DATA_DIR`), never by file path.
 
+**Prerequisite:** the `showrunner` binary must be on `PATH`. If `showrunner` is not found, it has not been linked — from the Showrunner repo run `bun link` once (it installs `showrunner` into `~/.bun/bin`). Do not fall back to `bun path/to/cli.ts`; fix the install so the commands below work verbatim.
+
 ## 1. Discover the blueprint
 
 Do not guess a blueprint name — list what is actually installed, then read its shape.
