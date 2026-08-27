@@ -20,7 +20,18 @@ showrunner blueprints              # every blueprint + its phase chain
 showrunner blueprints <name>       # one blueprint's phases: agent, budget, on_fail, approval
 ```
 
-`blueprints <name>` tells you what a run will do before you start it: the ordered phases, which agent runs each, the correction budget, any `on_fail` branch, and which phases pause for **your approval** (`require_approval`). Pick the blueprint whose phase chain matches the user's intent (e.g. read-only recon vs. plan→build→review→ship). If none fits, the user can edit or add one in the data dir — the list reflects whatever is there.
+`blueprints <name>` tells you what a run will do before you start it: the ordered phases, which agent runs each, the correction budget, any `on_fail` branch, and which phases pause for **your approval** (`require_approval`). Pick the blueprint whose phase chain matches the user's intent (e.g. read-only recon vs. plan→build→review→ship). If none fits, edit or add one (next section) — the list reflects whatever is in the data dir.
+
+## Customize or add a blueprint
+
+Blueprints are TypeScript modules **you edit** — they live in the data dir at `~/.showrunner/templates/blueprints/<name>.ts` (root `~/.showrunner`, or `SHOWRUNNER_DATA_DIR`). Each file is a `defineBlueprint({ name, phases: [...] })` module whose phases wire the agents, output contracts, and gates that sit beside it — the whole replace-this surface is in the same tree: `agents/`, `gates/`, `envelopes.ts`, `models.ts`.
+
+- **Edit** an existing blueprint's phases, gates, budgets, `on_fail`, or `require_approval` in its file.
+- **Add** one by dropping a new `<name>.ts` in `blueprints/`; it shows up in `showrunner blueprints` immediately (resolved by file name) and runs with `showrunner run <name>`.
+- `showrunner blueprints [<name>]` imports and validates each module, so a syntax or wiring error surfaces there — verify your change before a run.
+- `showrunner templates sync [--yes]` pulls starter-kit updates into the data dir without clobbering your edits (drift is reported; `--yes` overwrites).
+
+The full authoring guide — agents, gates, envelopes, the model roster — lives beside them at `~/.showrunner/templates/README.md`.
 
 ## 2. Launch
 
