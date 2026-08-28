@@ -3,6 +3,7 @@ import { css, type Handle } from "remix/ui";
 import type { TrajectoryView } from "../../../contract.ts";
 import { TrajectoryDetail } from "./trajectory-detail.tsx";
 import { TrajectoryFeed } from "./trajectory-feed.tsx";
+import { entriesInZoom, type TrajectoryZoomWindow } from "./trajectory-model.ts";
 import { TrajectorySwimlane } from "./trajectory-swimlane.tsx";
 
 /**
@@ -36,12 +37,25 @@ export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
     selectedSeq = null;
     void handle.update();
   };
+  // #87: the zoom/brush window, or null (full trajectory). Owned here — the
+  // SAME source of truth feeds the swimlane points AND the feed rows, and it
+  // lives in persistent client state, so an SSE-driven `view` refetch (#88)
+  // re-renders without resetting the reader's zoom.
+  let zoomWindow: TrajectoryZoomWindow | null = null;
+  const brush = (window: TrajectoryZoomWindow | null): void => {
+    zoomWindow = window;
+    void handle.update();
+  };
   return () => {
     const { view, loading, error } = handle.props;
     const selected =
       view !== null && selectedSeq !== null
         ? (view.entries.find((entry) => entry.seq === selectedSeq) ?? null)
         : null;
+    const feedView =
+      view !== null && zoomWindow !== null
+        ? { ...view, entries: entriesInZoom(view.entries, zoomWindow) }
+        : view;
     return (
       <section data-testid="trajectory-panel" mix={panelStyle}>
         {error !== null ? (
@@ -58,9 +72,9 @@ export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
           </p>
         ) : (
           <>
-            <TrajectorySwimlane view={view} />
+            <TrajectorySwimlane view={view} zoom={zoomWindow} onBrush={brush} />
             <div mix={bodyStyle}>
-              <TrajectoryFeed view={view} onSelect={select} selectedSeq={selectedSeq} />
+              <TrajectoryFeed view={feedView ?? view} onSelect={select} selectedSeq={selectedSeq} />
               {selected !== null ? <TrajectoryDetail entry={selected} onClose={close} /> : null}
             </div>
           </>

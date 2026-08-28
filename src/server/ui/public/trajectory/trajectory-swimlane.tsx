@@ -1,10 +1,11 @@
-import { css, type Handle } from "remix/ui";
+import { css, on, type Handle } from "remix/ui";
 
 import type { TrajectoryLane, TrajectoryView } from "../../../contract.ts";
 import {
   computeTrajectoryLayout,
   type TrajectoryLaneLayout,
   type TrajectoryPoint,
+  type TrajectoryZoomWindow,
 } from "./trajectory-model.ts";
 
 /**
@@ -24,7 +25,26 @@ import {
  */
 export interface TrajectorySwimlaneProps {
   view: TrajectoryView;
+  /** #87: the active zoom/brush window, or null (full trajectory). When set,
+   * the lanes restrict to in-window points and a visible brush overlay spans
+   * the selected range. */
+  zoom?: TrajectoryZoomWindow | null;
+  /** #87: the panel wires this so a drag across the track sets the window and a
+   * click/clear resets it (null). Absent → a read-only swimlane with no brush
+   * affordance (the pre-#87 behavior). */
+  onBrush?: (window: TrajectoryZoomWindow | null) => void;
 }
+
+/** A drag shorter than this fraction of the track is treated as a click — it
+ * clears the window rather than selecting a hairline range. */
+const BRUSH_MIN = 0.01;
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+const normalizeWindow = (a: number, b: number): TrajectoryZoomWindow => ({
+  start: Math.min(a, b),
+  end: Math.max(a, b),
+});
 
 /** Per-lane header label + point color (the feed uses the same tokens for its
  * USER / ASSISTANT / TOOL badges, so the two views read consistently). */
@@ -35,13 +55,74 @@ const LANE_META: Record<TrajectoryLane, { label: string; color: string }> = {
 };
 
 export function TrajectorySwimlane(handle: Handle<TrajectorySwimlaneProps>) {
+  // The in-progress drag window (null when idle) — client state, so the live
+  // overlay tracks the pointer before the brush is committed on pointerup.
+  let dragStart: number | null = null;
+  let dragWindow: TrajectoryZoomWindow | null = null;
+
+  const fractionAt = (event: PointerEvent): number => {
+    const el = event.currentTarget as HTMLElement | null;
+    const rect = el?.getBoundingClientRect();
+    if (rect === undefined || rect.width <= 0) return 0;
+    return clamp01((event.clientX - rect.left) / rect.width);
+  };
+
+  const onPointerDown = (event: PointerEvent): void => {
+    dragStart = fractionAt(event);
+    dragWindow = normalizeWindow(dragStart, dragStart);
+    void handle.update();
+  };
+  const onPointerMove = (event: PointerEvent): void => {
+    if (dragStart === null) return;
+    dragWindow = normalizeWindow(dragStart, fractionAt(event));
+    void handle.update();
+  };
+  const onPointerUp = (event: PointerEvent): void => {
+    if (dragStart === null) return;
+    const window = normalizeWindow(dragStart, fractionAt(event));
+    dragStart = null;
+    dragWindow = null;
+    handle.props.onBrush?.(window.end - window.start < BRUSH_MIN ? null : window);
+    void handle.update();
+  };
+
   return () => {
-    const layout = computeTrajectoryLayout(handle.props.view);
+    const { zoom = null, onBrush } = handle.props;
+    const layout = computeTrajectoryLayout(handle.props.view, { zoom });
+    const overlay = dragWindow ?? zoom;
     return (
       <div data-testid="trajectory-swimlane" data-total={layout.total} mix={swimlaneStyle}>
         {layout.lanes.map((lane) => (
           <Lane key={lane.lane} lane={lane} />
         ))}
+        {onBrush !== undefined ? (
+          <div
+            data-testid="trajectory-brush-layer"
+            mix={[
+              brushLayerStyle,
+              on("pointerdown", (event) => onPointerDown(event)),
+              on("pointermove", (event) => onPointerMove(event)),
+              on("pointerup", (event) => onPointerUp(event)),
+            ]}
+          >
+            {overlay !== null ? (
+              <div
+                data-testid="trajectory-brush"
+                mix={brushStyle}
+                style={{ left: `${overlay.start * 100}%`, width: `${(overlay.end - overlay.start) * 100}%` }}
+              />
+            ) : null}
+            {zoom !== null ? (
+              <button
+                type="button"
+                data-testid="trajectory-brush-clear"
+                mix={[clearStyle, on("click", () => onBrush(null))]}
+              >
+                clear zoom
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -83,12 +164,49 @@ function Point(handle: Handle<{ point: TrajectoryPoint; color: string }>) {
 }
 
 const swimlaneStyle = css({
+  position: "relative",
   display: "grid",
   gap: "0.25rem",
   border: "1px solid var(--border)",
   borderRadius: "8px",
   background: "var(--card)",
   padding: "0.5rem 0.75rem",
+});
+
+// Overlays the track column (each lane's track starts past the 5rem header +
+// 0.75rem gap; the swimlane pads 0.75rem). A drag here brushes the window.
+const brushLayerStyle = css({
+  position: "absolute",
+  top: "0.5rem",
+  bottom: "0.5rem",
+  left: "calc(0.75rem + 5rem + 0.75rem)",
+  right: "0.75rem",
+  cursor: "col-resize",
+  touchAction: "none",
+});
+
+const brushStyle = css({
+  position: "absolute",
+  top: 0,
+  bottom: 0,
+  background: "var(--accent-sky)",
+  opacity: 0.18,
+  border: "1px solid var(--accent-sky)",
+  borderRadius: "4px",
+  pointerEvents: "none",
+});
+
+const clearStyle = css({
+  position: "absolute",
+  top: "-1.5rem",
+  right: 0,
+  padding: "0.1rem 0.4rem",
+  border: "1px solid var(--border)",
+  borderRadius: "4px",
+  background: "var(--card)",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-xs)",
+  cursor: "pointer",
 });
 
 const laneStyle = css({

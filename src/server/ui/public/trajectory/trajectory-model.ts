@@ -46,19 +46,50 @@ export interface TrajectoryLayout {
   total: number;
 }
 
-/** Reserved for later windowing (#87 zoom/brush). */
-export interface TrajectoryLayoutOptions {
-  // room for { zoom } later — kept an object so call sites never change
+/** #87 zoom/brush: an ordinal range over the global seq reading-order, both
+ * bounds in [0,1]. An entry is in-window iff its ordinal fraction — its index
+ * in the FULL seq-ordered reading, normalized to [0,1] — falls within
+ * [start,end]. Bounds may arrive in either order; callers need not pre-sort. */
+export interface TrajectoryZoomWindow {
+  start: number;
+  end: number;
 }
 
-/** Place every entry as a point on its lane at its ordinal fraction. The
- * fraction is the entry's index in the seq-ordered reading divided by
- * (total - 1); a lone point (or none) sits at 0. Deterministic and DOM-free. */
+/** #87 windowing option. Without `zoom` the layout is identical to pre-#87. */
+export interface TrajectoryLayoutOptions {
+  zoom?: TrajectoryZoomWindow | null;
+}
+
+/** The in-window entries for a zoom window, in seq reading-order. The SINGLE
+ * filter shared by the layout (swimlane points) and the panel (feed rows), so
+ * both restrict to exactly the same set. A null window → the full seq-ordered
+ * set (identical to pre-#87). Inclusion is by an entry's ordinal fraction over
+ * the FULL set, so the window reads on the same axis the points are placed on. */
+export function entriesInZoom(
+  entries: readonly TrajectoryEntry[],
+  zoom: TrajectoryZoomWindow | null,
+): TrajectoryEntry[] {
+  const ordered = [...entries].sort((a, b) => a.seq - b.seq);
+  if (zoom === null) return ordered;
+  const start = Math.min(zoom.start, zoom.end);
+  const end = Math.max(zoom.start, zoom.end);
+  const denom = ordered.length > 1 ? ordered.length - 1 : 1;
+  return ordered.filter((_entry, index) => {
+    const fraction = index / denom;
+    return fraction >= start && fraction <= end;
+  });
+}
+
+/** Place every in-window entry as a point on its lane at its ordinal fraction.
+ * The fraction is the entry's index in the (windowed) seq-ordered reading
+ * divided by (count - 1); a lone point (or none) sits at 0. With a zoom window,
+ * only in-window entries become points and the per-lane counts + fractions
+ * reflect the windowed set. Deterministic and DOM-free. */
 export function computeTrajectoryLayout(
   view: TrajectoryView,
-  _opts: TrajectoryLayoutOptions = {},
+  opts: TrajectoryLayoutOptions = {},
 ): TrajectoryLayout {
-  const ordered = [...view.entries].sort((a, b) => a.seq - b.seq);
+  const ordered = entriesInZoom(view.entries, opts.zoom ?? null);
   const denom = ordered.length > 1 ? ordered.length - 1 : 1;
 
   const byLane = new Map<TrajectoryLane, TrajectoryPoint[]>(
