@@ -14,7 +14,8 @@ export { defineAgent } from "./agent.ts";
 export type { Agent } from "./agent.ts";
 
 // Gate
-export type { Gate, GateContext, GateResult } from "./gate.ts";
+export { defineGate } from "./gate.ts";
+export type { Gate, GateContext, GateResult, NamedGate } from "./gate.ts";
 
 // Shell escape hatch — the fallback `ctx.shell` for gates/hooks
 // when the runtime does not provide one.

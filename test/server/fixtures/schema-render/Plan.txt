@@ -1,0 +1,11 @@
+{
+  summary: string — what you did, for humans — 1-3 sentences
+  artifacts: string[] — the files you WROTE to your outputs/ directory (the [Workspace] outputs path your prompt names), one path per entry, relative to that directory — never files you merely read; each listed file must actually exist there
+  notes_for_next_agent: string — the handoff in prose — what the next agent must know to continue
+  blocked: boolean (optional) — true when you cannot proceed and need a human — pauses the run before gates
+  blocked_reason: string (optional) — why you are blocked — required when blocked is true
+  plan_path: string — path to the plan document you wrote, relative to the workspace root
+  scope: string (optional) — what the plan covers — a one-line scope statement
+  questions: string[] (optional) — questions you could not answer; they pause the run for a human
+  assumptions: string[] (optional) — explicit assumptions the plan bakes in
+}

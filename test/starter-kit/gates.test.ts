@@ -5,7 +5,9 @@ import { EnvelopeBase } from "../../src/core/index.ts";
 import type { Envelope, GateContext } from "../../src/core/index.ts";
 import type { ReviewEnvelope } from "../../src/starter-kit/envelopes.ts";
 
-import { envelopeShape, filesExist, lintClean, matchesPlan, reviewApproved, testsPass, workspaceShell } from "../../src/starter-kit/gates/index.ts";
+import { envelopeShape, filesExist, findingsReported, lintClean, matchesPlan, reviewApproved, testsPass, workspaceShell } from "../../src/starter-kit/gates/index.ts";
+import type { Gate } from "../../src/core/index.ts";
+import { gateName } from "../../src/server/engine/envelope-runner.ts";
 import { failingWorkspace, passingWorkspace, rmDir, tmpDir, writeWorkspace } from "./helpers.ts";
 
 /**
@@ -245,4 +247,40 @@ test("reviewApproved passes an approved review and reports the verdict when reje
   const missing = await reviewApproved()(baseEnvelope() as ReviewEnvelope, ctx("/tmp"));
   expect(missing.pass).toBe(false);
   expect(violationsOf(missing)[0]).toContain("approved");
+});
+
+// ── gate identity: declared names, legacy fallback preserved ─────────────────
+
+/**
+ * Gate-name stability: gate names are a persisted contract (gate_results.gate,
+ * phases.gate_names, GateResultData.gate, snapshot gates[]). Each starter gate
+ * must resolve to the EXACT string the old reflection produced, and now carry
+ * that name EXPLICITLY (via defineGate) so it survives fn-name minification.
+ */
+test("every starter gate resolves to its exact prior reflection name, declared explicitly", () => {
+  const cases: [string, Gate][] = [
+    ["testsPass", testsPass()],
+    ["lintClean", lintClean()],
+    ["envelopeShape", envelopeShape(EnvelopeBase)],
+    ["filesExist", filesExist()],
+    ["matchesPlan", matchesPlan()],
+    ["findingsReported", findingsReported()],
+    ["reviewApproved", reviewApproved() as Gate],
+  ];
+  cases.forEach(([expected, gate], i) => {
+    expect(gateName(gate, i)).toBe(expected);
+    expect((gate as { gateName?: string }).gateName).toBe(expected);
+  });
+});
+
+test("gateName falls back to the function name, then the index, for un-migrated gates", () => {
+  const named: Gate = async function customGate() {
+    return { pass: true };
+  };
+  const makeNameless = (): Gate => ([async () => ({ pass: true })] as Gate[])[0]!;
+  const anon = makeNameless();
+  expect(anon.name).toBe("");
+  expect(gateName(named, 0)).toBe("customGate");
+  expect((named as { gateName?: string }).gateName).toBeUndefined();
+  expect(gateName(anon, 3)).toBe("gate:3");
 });

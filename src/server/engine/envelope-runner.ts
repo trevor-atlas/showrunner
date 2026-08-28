@@ -234,8 +234,14 @@ async function runGates(
   return runs;
 }
 
-/** The gate name for the event / gate_results row: fn name, else index. */
+/**
+ * The gate name for the event / gate_results row: the name declared via
+ * defineGate, else the legacy reflection (fn name, else index). The legacy
+ * fallback keeps un-migrated gates byte-identical to their prior output.
+ */
 export function gateName(gate: Gate, index: number): string {
+  const declared = (gate as { gateName?: string }).gateName;
+  if (typeof declared === "string" && declared !== "") return declared;
   const n = (gate as { name?: string }).name;
   return typeof n === "string" && n !== "" ? n : `gate:${index}`;
 }

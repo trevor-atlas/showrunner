@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Gate } from "../../core/index.ts";
+import { defineGate } from "../../core/index.ts";
 import { findUp, nearestScripts, shq, tail, violation, workspaceShell } from "./shared.ts";
 
 // ── command-gate target resolution (FINDING-2) ───────────────────────────────
@@ -89,7 +90,7 @@ export interface CommandGateOptions {
  */
 export function testsPass(opts: CommandGateOptions = {}): Gate {
   const command = opts.command;
-  return async function testsPass(envelope, ctx) {
+  return defineGate("testsPass", async function testsPass(envelope, ctx) {
     let cmd: string;
     let source: string;
     if (command !== undefined && command !== "") {
@@ -109,7 +110,7 @@ export function testsPass(opts: CommandGateOptions = {}): Gate {
     const res = await workspaceShell(ctx, cmd);
     if (res.code === 0) return { pass: true };
     return violation(`tests failed (exit ${res.code})`, `${tail(res.stderr || res.stdout || "no output")} (${source})`);
-  };
+  });
 }
 
 /**
@@ -128,7 +129,7 @@ export function testsPass(opts: CommandGateOptions = {}): Gate {
 export function lintClean(opts: CommandGateOptions & { tsconfig?: string } = {}): Gate {
   const command = opts.command;
   const tsconfig = opts.tsconfig;
-  return async function lintClean(envelope, ctx) {
+  return defineGate("lintClean", async function lintClean(envelope, ctx) {
     let cmd: string;
     let source: string;
     if (command !== undefined && command !== "") {
@@ -151,5 +152,5 @@ export function lintClean(opts: CommandGateOptions & { tsconfig?: string } = {})
     const res = await workspaceShell(ctx, cmd);
     if (res.code === 0) return { pass: true };
     return violation(`lint/typecheck failed (exit ${res.code})`, `${tail(res.stderr || res.stdout || "no output")} (${source})`);
-  };
+  });
 }

@@ -1,4 +1,5 @@
 import type { Gate } from "../../core/index.ts";
+import { defineGate } from "../../core/index.ts";
 import type { ReviewEnvelope } from "../envelopes.ts";
 
 // ── verdict gates ────────────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ export interface ReviewApprovedOptions {
  */
 export function reviewApproved(opts: ReviewApprovedOptions = {}): Gate<ReviewEnvelope> {
   const field = opts.field ?? "approved";
-  return async function reviewApproved(envelope) {
+  return defineGate("reviewApproved", async function reviewApproved(envelope) {
     const value = envelope[field as keyof ReviewEnvelope];
     if (value === true) return { pass: true };
     const verdict = envelope.verdict;
@@ -26,5 +27,5 @@ export function reviewApproved(opts: ReviewApprovedOptions = {}): Gate<ReviewEnv
         `review did not approve (${field} !== true)` + (typeof verdict === "string" && verdict !== "" ? ` — ${verdict}` : ""),
       ],
     };
-  };
+  });
 }

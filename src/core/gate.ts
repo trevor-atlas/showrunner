@@ -36,3 +36,20 @@ export type GateResult = { pass: true } | { pass: false; violations: string[] };
  * violations feed the correction message verbatim.
  */
 export type Gate<E extends Envelope = Envelope> = (envelope: E, ctx: GateContext) => Promise<GateResult>;
+
+/**
+ * A gate that carries its identity EXPLICITLY. Gate names are a persisted
+ * contract (gate_results.gate, phases.gate_names, the gate_result event, and
+ * the snapshot's gates[]); deriving them from `Function.name` is fragile
+ * (minification, wrapping) so `defineGate` pins the name on the gate itself.
+ */
+export type NamedGate<E extends Envelope = Envelope> = Gate<E> & { gateName: string };
+
+/**
+ * Pin a stable, explicit name onto a gate — the identity the server persists
+ * instead of reflecting over `Function.name`. Mirrors defineBlueprint/
+ * defineAgent: a pass-through that reads as a definition at the call site.
+ */
+export function defineGate<E extends Envelope = Envelope>(name: string, run: Gate<E>): NamedGate<E> {
+  return Object.assign(run, { gateName: name });
+}

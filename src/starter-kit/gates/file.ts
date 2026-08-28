@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Gate } from "../../core/index.ts";
+import { defineGate } from "../../core/index.ts";
 import { outputsDirFor } from "./shared.ts";
 
 // ── file gates ───────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ export interface FilesExistOptions {
 export function filesExist(opts: FilesExistOptions = {}): Gate {
   const required = opts.paths ?? [];
   const requireAny = opts.requireAny ?? required.length === 0;
-  return async function filesExist(envelope, ctx) {
+  return defineGate("filesExist", async function filesExist(envelope, ctx) {
     const out = outputsDirFor(ctx);
     const violations: string[] = [];
     if (requireAny && envelope.artifacts.length === 0) {
@@ -41,5 +42,5 @@ export function filesExist(opts: FilesExistOptions = {}): Gate {
     }
     if (violations.length > 0) return { pass: false, violations };
     return { pass: true };
-  };
+  });
 }

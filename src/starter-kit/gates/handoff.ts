@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Gate } from "../../core/index.ts";
+import { defineGate } from "../../core/index.ts";
 import { inputsDirFor, violation } from "./shared.ts";
 
 // ── handoff/plan gates ───────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ export interface MatchesPlanOptions {
  * arrived, so a phase that assumed a plan exists cannot silently pass.
  */
 export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
-  return async function matchesPlan(envelope, ctx) {
+  return defineGate("matchesPlan", async function matchesPlan(envelope, ctx) {
     const inputs = inputsDirFor(ctx);
     if (inputs === "") {
       return violation("no inputs dir", "the server did not provide ctx.inputs_dir — cannot verify the phase was handed a plan");
@@ -58,7 +59,7 @@ export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
       );
     }
     return { pass: true };
-  };
+  });
 }
 
 /**
@@ -72,7 +73,7 @@ export function matchesPlan(opts: MatchesPlanOptions = {}): Gate {
  */
 export function findingsReported(opts: { file?: string } = {}): Gate {
   const fileName = opts.file ?? "FINDINGS.md";
-  return async function findingsReported(envelope, ctx) {
+  return defineGate("findingsReported", async function findingsReported(envelope, ctx) {
     if (!envelope.artifacts.includes(fileName)) {
       return violation(
         "findings file not listed",
@@ -96,5 +97,5 @@ export function findingsReported(opts: { file?: string } = {}): Gate {
       return violation("findings file empty", `${fileName} exists but is empty — report at least one finding`);
     }
     return { pass: true };
-  };
+  });
 }
