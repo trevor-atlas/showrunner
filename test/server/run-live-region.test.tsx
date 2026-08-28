@@ -360,3 +360,65 @@ describe("run-detail live region (#58) — transport delegated to startLiveSnaps
     expect(feedIds(r)).toEqual([1, 2]);
   });
 });
+
+describe("run-detail live region (#82) — Main | Trajectory tab bar", () => {
+  const mainBody = (r: RenderResult) => r.$("[data-testid='phase-detail']");
+  const placeholder = (r: RenderResult) => r.$("[data-testid='trajectory-placeholder']");
+  const tab = (r: RenderResult, name: "main" | "trajectory") => r.$(`[data-tab='${name}']`) as HTMLElement;
+
+  it("defaults to Main: shows the existing content, not the placeholder", () => {
+    const r = mount();
+    expect(mainBody(r)).not.toBeNull();
+    expect(placeholder(r)).toBeNull();
+    expect(tab(r, "main").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("switching tabs swaps the body: Trajectory shows the placeholder, Main restores existing content", async () => {
+    const r = mount();
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    expect(placeholder(r)).not.toBeNull();
+    expect(mainBody(r)).toBeNull();
+    expect(tab(r, "trajectory").getAttribute("aria-selected")).toBe("true");
+
+    await r.act(async () => {
+      tab(r, "main").click();
+    });
+    expect(mainBody(r)).not.toBeNull();
+    expect(placeholder(r)).toBeNull();
+  });
+
+  it("keeps the phase selection across a tab switch (selection lives in setup scope)", async () => {
+    const r = mount({ initialSelection: "alpha" });
+    expect(mainBody(r)?.getAttribute("data-selected")).toBe("alpha");
+
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    await r.act(async () => {
+      tab(r, "main").click();
+    });
+    expect(mainBody(r)?.getAttribute("data-selected")).toBe("alpha");
+  });
+
+  it("keeps activeTab across an SSE change wake-up (activeTab lives in setup scope)", async () => {
+    const r = mount();
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    expect(placeholder(r)).not.toBeNull();
+
+    // an apply() driven by a change wake-up must not reset the active tab
+    eventsReply = ok({ events: [ev({ id: 2 })], next_cursor: 2 });
+    const es = FakeEventSource.instances[0]!;
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(feedIds(r)).toEqual([]); // Main body (the feed) is not mounted on Trajectory
+    expect(placeholder(r)).not.toBeNull(); // still on Trajectory after the refetch
+    expect(tab(r, "trajectory").getAttribute("aria-selected")).toBe("true");
+  });
+});

@@ -1,4 +1,4 @@
-import { clientEntry, css, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
+import { clientEntry, css, on, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
 import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView } from "../../contract.ts";
@@ -177,6 +177,9 @@ export const RunLiveRegion = clientEntry(
     let raw: RawTail = handle.props.initialRaw;
     // R5: the selection survives polls because it lives here, not in props
     let selection: string | null = handle.props.initialSelection;
+    // #82: the run-page view tab (Main | Trajectory). Held here in setup scope
+    // so it survives SSE refetches — a change wake-up's apply() never touches it.
+    let activeTab: "main" | "trajectory" = "main";
     let autoScroll = true;
     let hoverPaused = false;
     let feedNode: HTMLElement | null = null;
@@ -443,9 +446,39 @@ export const RunLiveRegion = clientEntry(
         </>
       );
 
+      const selectTab = (tab: "main" | "trajectory") => {
+        activeTab = tab;
+        void handle.update();
+      };
+
       return (
         <div mix={regionStyle}>
           <Timeline model={model} runId={runId} selected={selection} onSelect={select} />
+          <div role="tablist" aria-label="run view" mix={tabBarStyle}>
+            <button
+              type="button"
+              role="tab"
+              data-tab="main"
+              aria-selected={activeTab === "main"}
+              mix={[tabStyle, on("click", () => selectTab("main"))]}
+            >
+              Main
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-tab="trajectory"
+              aria-selected={activeTab === "trajectory"}
+              mix={[tabStyle, on("click", () => selectTab("trajectory"))]}
+            >
+              Trajectory
+            </button>
+          </div>
+          {activeTab === "trajectory" ? (
+            <p data-testid="trajectory-placeholder" mix={placeholderStyle}>
+              trajectory view coming soon
+            </p>
+          ) : (
           <TimelinePanel
             runId={runId}
             timeline={liveTimeline}
@@ -466,6 +499,7 @@ export const RunLiveRegion = clientEntry(
             pauseReason={pauseReason}
             feedSlot={feedSlot}
           />
+          )}
         </div>
       );
     };
@@ -475,6 +509,40 @@ export const RunLiveRegion = clientEntry(
 const regionStyle = css({
   display: "grid",
   gap: "1.25rem",
+});
+
+const tabBarStyle = css({
+  display: "flex",
+  gap: "0.25rem",
+  borderBottom: "1px solid var(--border)",
+});
+
+const tabStyle = css({
+  appearance: "none",
+  font: "inherit",
+  fontSize: "var(--font-size-sm)",
+  fontWeight: 700,
+  padding: "0.4rem 0.9rem",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  background: "transparent",
+  color: "var(--muted-foreground)",
+  cursor: "pointer",
+  "&[aria-selected='true']": {
+    color: "var(--foreground)",
+    borderBottomColor: "var(--foreground)",
+  },
+  "&:hover": {
+    color: "var(--foreground)",
+  },
+});
+
+const placeholderStyle = css({
+  margin: 0,
+  padding: "2rem 0.5rem",
+  textAlign: "center",
+  color: "var(--muted-foreground)",
+  fontSize: "var(--font-size-sm)",
 });
 
 /** The statuses the live loop tracks from run_status events. Interrupted is
