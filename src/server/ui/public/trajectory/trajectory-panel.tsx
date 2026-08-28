@@ -2,6 +2,7 @@ import { css, type Handle } from "remix/ui";
 
 import type { TrajectoryView } from "../../../contract.ts";
 import { TrajectoryFeed } from "./trajectory-feed.tsx";
+import { TrajectorySwimlane } from "./trajectory-swimlane.tsx";
 
 /**
  * The Trajectory tab composer (#84). For THIS ticket it owns the flat LOG
@@ -39,7 +40,10 @@ export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
             select a phase to see its trajectory
           </p>
         ) : (
-          <TrajectoryFeed view={view} />
+          <>
+            <TrajectorySwimlane view={view} />
+            <TrajectoryFeed view={view} />
+          </>
         )}
       </section>
     );
