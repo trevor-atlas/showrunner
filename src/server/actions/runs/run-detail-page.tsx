@@ -2,7 +2,7 @@ import type { Handle } from "remix/ui";
 import { css } from "remix/ui";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
-import type { PauseView, RawTail, RunDetail, TimelineView } from "../../contract.ts";
+import type { PauseView, RawTail, RunDetail, TimelineView, TrajectoryView } from "../../contract.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,
@@ -25,6 +25,7 @@ import type {
   SerializablePhaseSpend,
   SerializableRawTail,
   SerializableTimelineView,
+  SerializableTrajectoryView,
 } from "../public/run-live-region.tsx";
 import { RunLiveRegion } from "../public/run-live-region.tsx";
 import { StatusPill, isRunStatus, type RunStatus } from "../../ui/public/status-pill.tsx";
@@ -75,6 +76,9 @@ export interface RunDetailPageProps {
   initialSpend: PhaseSpendData | null;
   /** the run-scoped RAW TRANSCRIPT tail — server-rendered (#41) */
   initialRaw: RawTail;
+  /** the initial selection's parsed trajectory — server-rendered (#84); null
+   * only when no phase is selectable */
+  initialTrajectory: TrajectoryView | null;
   /** the full event history at load (initial feed + initial cursor) */
   events: FeedEvent[];
   /** the last event rowid — the poll loop starts from here */
@@ -101,6 +105,7 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       initialOutputs,
       initialSpend,
       initialRaw,
+      initialTrajectory,
       events,
       cursor,
       pause,
@@ -126,6 +131,9 @@ export function RunDetailPage(handle: Handle<RunDetailPageProps>) {
       initialOutputs: initialOutputs as unknown as SerializablePhaseOutputs | null,
       initialSpend: initialSpend as unknown as SerializablePhaseSpend | null,
       initialRaw: initialRaw as unknown as SerializableRawTail,
+      // #84: the initial selection's parsed trajectory widened at the
+      // client-entry boundary (plain JSON, structural widening only)
+      initialTrajectory: initialTrajectory as unknown as SerializableTrajectoryView | null,
       rawHref: routes.runs.raw.href({ runId }),
       sessions: detail.sessions as unknown as SerializableAgentSession[],
       events,

@@ -3,6 +3,7 @@ import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
 import type { EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
+import type { TrajectoryView } from "../../contract.ts";
 
 import {
   MAX_EVENTS_LIMIT,
@@ -18,6 +19,7 @@ import {
   getRunDetail,
   getRunEvents,
   getTimeline,
+  getTrajectory,
   isApiError,
 } from "../../lib/model.ts";
 import type {
@@ -262,6 +264,7 @@ export async function renderRunDetail(
   let initialInputs: PhaseInputsData | null = null;
   let initialOutputs: PhaseOutputsData | null = null;
   let initialSpend: PhaseSpendData | null = null;
+  let initialTrajectory: TrajectoryView | null = null;
   if (selection !== null) {
     const [env, gates] = await Promise.all([
       getPhaseEnvelopes(runId, selection),
@@ -276,6 +279,10 @@ export async function renderRunDetail(
       initialOutputs = record.outputs;
       initialSpend = record.spend;
     }
+    // #84: the initial selection's parsed TRAJECTORY — SSR seed so the
+    // Trajectory tab paints without a round-trip on first open. Later
+    // selections fetch through the trajectory proxy (cached per phase).
+    initialTrajectory = await getTrajectory(runId, selection);
   }
 
   // #41: the run-scoped RAW TRANSCRIPT tail (raw_output.jsonl) — SSR seed; the
@@ -304,6 +311,7 @@ export async function renderRunDetail(
       initialInputs={initialInputs}
       initialOutputs={initialOutputs}
       initialSpend={initialSpend}
+      initialTrajectory={initialTrajectory}
       initialRaw={initialRaw}
       events={history.events}
       cursor={history.cursor}
