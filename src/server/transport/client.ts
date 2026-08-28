@@ -44,6 +44,7 @@ import type {
   TimelinePhase,
   TimelineSegment,
   TimelineView,
+  TrajectoryView,
 } from "../contract.ts";
 
 export { ApiError };
@@ -70,6 +71,7 @@ export type {
   TimelinePhase,
   TimelineSegment,
   TimelineView,
+  TrajectoryView,
 };
 
 /** Distinguish "the server is down" (connection errors) from API errors. */
@@ -208,6 +210,12 @@ export class ServerClient {
    * run's phase_start/phase_end events, in blueprint order. */
   getTimeline(runId: string): Promise<TimelineView> {
     return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/timeline`);
+  }
+
+  /** GET /api/runs/:id/phases/:phase/trajectory (#83) — the per-phase
+   * conversational trajectory parsed from raw_output.jsonl. */
+  getTrajectory(runId: string, phase: string): Promise<TrajectoryView> {
+    return this.typed("GET", `/api/runs/${encodeURIComponent(runId)}/phases/${encodeURIComponent(phase)}/trajectory`);
   }
 
   /** GET /api/runs/:id/raw?lines=N — the raw_output.jsonl tail (drill-in feed). */
