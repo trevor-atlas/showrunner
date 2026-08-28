@@ -367,6 +367,21 @@ export const RunLiveRegion = clientEntry(
       return null;
     };
 
+    /** #88: best-effort refetch of the SELECTED phase's trajectory, folded into
+     * the parallel `apply` round-trip. Mirrors fetchRawTail — never throws, so
+     * a failure keeps the last good view (returns null) and never turns the
+     * events/timeline refetch into a retry. Only called while the Trajectory
+     * tab is open on a non-terminal run (a terminal run freezes it). */
+    const fetchTrajectory = async (name: string): Promise<TrajectoryView | null> => {
+      try {
+        const res = await fetch(routes.runs.phases.trajectory.href({ runId: handle.props.runId, phase: name }));
+        if (res.ok) return (await res.json()) as TrajectoryView;
+      } catch {
+        // keep the last good view
+      }
+      return null;
+    };
+
     /** The adapter's refetch (#58): one round-trip that fetches events.json +
      * timeline.json + the RAW tail in PARALLEL, merges the cursor, and updates
      * the render state — then returns the outcome the adapter acts on:
@@ -382,13 +397,20 @@ export const RunLiveRegion = clientEntry(
       const eventsUrl = new URL(handle.props.eventsHref, window.location.href);
       eventsUrl.searchParams.set("cursor", String(cursor));
       const timelineUrl = new URL(handle.props.timelineHref, window.location.href);
+      // #88: while the Trajectory tab is open on a non-terminal run, the
+      // selected phase's trajectory rides the SAME round-trip. Best-effort and
+      // isolated — like the RAW tail, it never throws, so only events/timeline
+      // decide the outcome; a terminal run or the Main tab skips it entirely.
+      const trajTarget =
+        activeTab === "trajectory" && selection !== null && !isTerminalStatus(status) ? selection : null;
       // R6: the events page, the timeline, and the RAW tail ride the SAME
-      // round-trip — all three in flight. The RAW fetch is best-effort and
-      // never throws, so only events/timeline decide the outcome.
-      const [eventsResponse, timelineResponse, rawTail] = await Promise.all([
+      // round-trip — all in flight. The RAW + trajectory fetches are
+      // best-effort and never throw, so only events/timeline decide the outcome.
+      const [eventsResponse, timelineResponse, rawTail, trajView] = await Promise.all([
         fetch(eventsUrl),
         fetch(timelineUrl),
         fetchRawTail(),
+        trajTarget !== null ? fetchTrajectory(trajTarget) : Promise.resolve(null),
       ]);
       // a 404 on either proxy = the run is gone → stop the live subscription
       if (eventsResponse.status === 404 || timelineResponse.status === 404) {
@@ -443,6 +465,9 @@ export const RunLiveRegion = clientEntry(
       }
       // fold in the best-effort RAW tail before the single re-render
       if (rawTail !== null) raw = rawTail;
+      // #88: replace the selected phase's trajectory wholesale (like timeline);
+      // a failed fetch (null) keeps the last good view.
+      if (trajTarget !== null && trajView !== null) trajectory.set(trajTarget, { view: trajView, error: false });
       await handle.update();
       if (autoScroll && !hoverPaused && feedNode) {
         feedNode.scrollTop = feedNode.scrollHeight;

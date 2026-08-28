@@ -28,7 +28,7 @@ afterAll(teardownDom);
 
 import { render, type RenderResult } from "remix/ui/test";
 
-import type { RawTail, TimelineView } from "../../src/server/contract.ts";
+import type { RawTail, TimelineView, TrajectoryView } from "../../src/server/contract.ts";
 import type { FeedEvent } from "../../src/server/ui/public/event-feed.tsx";
 import { routes } from "../../src/server/routes.ts";
 import {
@@ -36,6 +36,7 @@ import {
   type RunLiveRegionProps,
   type SerializableRawTail,
   type SerializableTimelineView,
+  type SerializableTrajectoryView,
 } from "../../src/server/actions/public/run-live-region.tsx";
 
 const RUN_ID = "aaaaaa00-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -82,6 +83,10 @@ const failure = (): Reply => ({ ok: false, status: 500, body: null });
 let eventsReply: Reply;
 let timelineReply: Reply;
 let rawReply: Reply;
+// #88: the trajectory proxy reply — "throw" makes the spy fetch REJECT for the
+// trajectory URL, exercising the best-effort isolation (a failed trajectory
+// fetch must never fail the events/timeline round-trip).
+let trajectoryReply: Reply | "throw";
 let fetchCalls: string[] = [];
 let savedFetch: typeof globalThis.fetch;
 let savedEventSource: unknown;
@@ -97,19 +102,25 @@ beforeEach(() => {
   eventsReply = ok({ events: [], next_cursor: 0 });
   timelineReply = ok(timeline({ status: "running" }));
   rawReply = ok(raw({ raw: "seed line", line_count: 1 }));
+  trajectoryReply = ok(trajectoryView([1]));
   savedEventSource = (globalThis as Record<string, unknown>).EventSource;
   (globalThis as Record<string, unknown>).EventSource = FakeEventSource;
   savedFetch = globalThis.fetch;
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
     fetchCalls.push(url);
+    if (url.includes("trajectory.json") && trajectoryReply === "throw") {
+      throw new Error("trajectory fetch boom");
+    }
     const reply = url.includes("events.json")
       ? eventsReply
       : url.includes("timeline.json")
         ? timelineReply
         : url.includes("raw.json")
           ? rawReply
-          : ok(null);
+          : url.includes("trajectory.json")
+            ? (trajectoryReply as Reply)
+            : ok(null);
     return {
       ok: reply.ok,
       status: reply.status,
@@ -139,6 +150,23 @@ function timeline(over: Partial<TimelineView> = {}): SerializableTimelineView {
     phases: [],
     ...over,
   } as unknown as SerializableTimelineView;
+}
+
+function trajectoryView(seqs: number[]): SerializableTrajectoryView {
+  return {
+    run_id: RUN_ID,
+    phase: "alpha",
+    phase_id: "alpha",
+    entries: seqs.map((seq) => ({
+      seq,
+      lane: "model",
+      turn: 1,
+      step: seq,
+      role: "assistant",
+      text: `row ${seq}`,
+    })),
+    truncated: false,
+  } as unknown as SerializableTrajectoryView;
 }
 
 function raw(over: Partial<RawTail> = {}): SerializableRawTail {
@@ -421,5 +449,98 @@ describe("run-detail live region (#82) — Main | Trajectory tab bar", () => {
     expect(feedIds(r)).toEqual([]); // Main body (the feed) is not mounted on Trajectory
     expect(panel(r)).not.toBeNull(); // still on Trajectory after the refetch
     expect(tab(r, "trajectory").getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+describe("run-detail live region (#88) — live-updating trajectory folded into apply()", () => {
+  const tab = (r: RenderResult, name: "main" | "trajectory") => r.$(`[data-tab='${name}']`) as HTMLElement;
+  /** the seqs of the trajectory rows the panel renders, in order. */
+  const trajSeqs = (r: RenderResult): number[] =>
+    [...r.$$("[data-testid='trajectory-row']")].map((n) => Number(n.getAttribute("data-seq")));
+  const trajFetches = (): string[] => fetchCalls.filter((u) => u.includes("trajectory.json"));
+
+  it("streams new trajectory entries into the panel on a wake-up (tab open, non-terminal)", async () => {
+    const r = mount({ initialSelection: "alpha", initialTrajectory: trajectoryView([1]) });
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    expect(trajSeqs(r)).toEqual([1]); // the SSR-seeded view
+
+    // a change wake-up refetches the FULL view for the selected phase
+    trajectoryReply = ok(trajectoryView([1, 2, 3]));
+    const es = FakeEventSource.instances[0]!;
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(trajFetches().some((u) => u.includes("/phases/alpha/trajectory.json"))).toBe(true);
+    expect(trajSeqs(r)).toEqual([1, 2, 3]); // replaced wholesale, new rows rendered
+  });
+
+  it("is best-effort: a rejecting trajectory fetch keeps the last view AND still applies events", async () => {
+    const r = mount({ initialSelection: "alpha", initialTrajectory: trajectoryView([1]) });
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    expect(trajSeqs(r)).toEqual([1]);
+
+    // the trajectory fetch REJECTS while events/timeline succeed on the same wake
+    trajectoryReply = "throw";
+    eventsReply = ok({ events: [ev({ id: 2 })], next_cursor: 2 });
+    const es = FakeEventSource.instances[0]!;
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(es.closed).toBe(false); // the round-trip was NOT failed by the trajectory throw
+    expect(trajSeqs(r)).toEqual([1]); // the last good view survived the failure
+
+    // the events update still landed — visible when we return to Main
+    await r.act(async () => {
+      tab(r, "main").click();
+    });
+    expect(feedIds(r)).toEqual([1, 2]);
+  });
+
+  it("skips the trajectory refetch when the Trajectory tab is not active", async () => {
+    const r = mount({ initialSelection: "alpha", initialTrajectory: trajectoryView([1]) });
+    // stay on Main
+    eventsReply = ok({ events: [ev({ id: 2 })], next_cursor: 2 });
+    const es = FakeEventSource.instances[0]!;
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(feedIds(r)).toEqual([1, 2]); // events still applied
+    expect(trajFetches()).toEqual([]); // but no trajectory refetch on the Main tab
+  });
+
+  it("freezes the trajectory on a terminal run: no further refetch after the run completes", async () => {
+    const r = mount({ initialSelection: "alpha", initialTrajectory: trajectoryView([1]) });
+    await r.act(async () => {
+      tab(r, "trajectory").click();
+    });
+    const es = FakeEventSource.instances[0]!;
+
+    // wake #1 carries the terminal transition — the stream tears down (T10b)
+    eventsReply = ok({ events: [runStatus(2, "success")], next_cursor: 2 });
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(es.closed).toBe(true);
+
+    // a later wake-up drives NO further trajectory refetch — the run is frozen
+    const before = trajFetches().length;
+    await r.act(async () => {
+      es.emit("change");
+      await tick();
+      await tick();
+    });
+    expect(trajFetches().length).toBe(before);
   });
 });
