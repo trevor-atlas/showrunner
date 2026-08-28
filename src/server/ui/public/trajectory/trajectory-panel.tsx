@@ -1,6 +1,7 @@
 import { css, type Handle } from "remix/ui";
 
 import type { TrajectoryView } from "../../../contract.ts";
+import { TrajectoryDetail } from "./trajectory-detail.tsx";
 import { TrajectoryFeed } from "./trajectory-feed.tsx";
 import { TrajectorySwimlane } from "./trajectory-swimlane.tsx";
 
@@ -23,8 +24,24 @@ export interface TrajectoryPanelProps {
 }
 
 export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
+  // #86: the seq of the feed entry the reader drilled into, or null (feed-only
+  // view). Owned here so the feed row click and the sidebar mount share one
+  // source of truth; closing clears it.
+  let selectedSeq: number | null = null;
+  const select = (seq: number): void => {
+    selectedSeq = seq;
+    void handle.update();
+  };
+  const close = (): void => {
+    selectedSeq = null;
+    void handle.update();
+  };
   return () => {
     const { view, loading, error } = handle.props;
+    const selected =
+      view !== null && selectedSeq !== null
+        ? (view.entries.find((entry) => entry.seq === selectedSeq) ?? null)
+        : null;
     return (
       <section data-testid="trajectory-panel" mix={panelStyle}>
         {error !== null ? (
@@ -42,7 +59,10 @@ export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
         ) : (
           <>
             <TrajectorySwimlane view={view} />
-            <TrajectoryFeed view={view} />
+            <div mix={bodyStyle}>
+              <TrajectoryFeed view={view} onSelect={select} selectedSeq={selectedSeq} />
+              {selected !== null ? <TrajectoryDetail entry={selected} onClose={close} /> : null}
+            </div>
           </>
         )}
       </section>
@@ -53,6 +73,13 @@ export function TrajectoryPanel(handle: Handle<TrajectoryPanelProps>) {
 const panelStyle = css({
   display: "grid",
   gap: "0.5rem",
+});
+
+const bodyStyle = css({
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "0.5rem",
+  "& > [data-testid='trajectory-feed']": { flex: 1, minWidth: 0 },
 });
 
 const stateStyle = css({

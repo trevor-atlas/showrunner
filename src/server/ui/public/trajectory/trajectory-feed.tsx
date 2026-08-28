@@ -1,4 +1,4 @@
-import { css, type Handle } from "remix/ui";
+import { css, on, type Handle } from "remix/ui";
 
 import type { TrajectoryEntry, TrajectoryView } from "../../../contract.ts";
 
@@ -16,11 +16,17 @@ import type { TrajectoryEntry, TrajectoryView } from "../../../contract.ts";
  */
 export interface TrajectoryFeedProps {
   view: TrajectoryView;
+  /** #86: the drill-in owner passes this so a row click opens the detail
+   * sidebar; absent for the flat/read-only feed. */
+  onSelect?: (seq: number) => void;
+  /** the seq of the currently drilled-in entry, or null — the selected row is
+   * visually marked (`data-selected`, `aria-current`). */
+  selectedSeq?: number | null;
 }
 
 export function TrajectoryFeed(handle: Handle<TrajectoryFeedProps>) {
   return () => {
-    const { view } = handle.props;
+    const { view, onSelect, selectedSeq } = handle.props;
     return (
       <section data-testid="trajectory-feed" mix={feedStyle}>
         {view.entries.length === 0 ? (
@@ -28,7 +34,14 @@ export function TrajectoryFeed(handle: Handle<TrajectoryFeedProps>) {
             no trajectory yet — this phase has no parsed activity
           </p>
         ) : (
-          view.entries.map((entry) => <TrajectoryRow key={entry.seq} entry={entry} />)
+          view.entries.map((entry) => (
+            <TrajectoryRow
+              key={entry.seq}
+              entry={entry}
+              onSelect={onSelect}
+              selected={selectedSeq === entry.seq}
+            />
+          ))
         )}
       </section>
     );
@@ -36,12 +49,39 @@ export function TrajectoryFeed(handle: Handle<TrajectoryFeedProps>) {
 }
 
 /** One trajectory row — the lane discriminates the shape, so a tool's fields
- * never appear on a message row and vice versa (the #83 union). */
-function TrajectoryRow(handle: Handle<{ entry: TrajectoryEntry }>) {
+ * never appear on a message row and vice versa (the #83 union). A row is
+ * clickable when an `onSelect` is supplied (#86 drill-in); the selected row
+ * carries `data-selected="true"` + `aria-current`. */
+function TrajectoryRow(
+  handle: Handle<{ entry: TrajectoryEntry; onSelect?: (seq: number) => void; selected: boolean }>,
+) {
   return () => {
-    const { entry } = handle.props;
+    const { entry, onSelect, selected } = handle.props;
+    const clickable = onSelect !== undefined;
     return (
-      <div data-testid="trajectory-row" data-seq={entry.seq} data-lane={entry.lane} mix={rowStyle}>
+      <div
+        data-testid="trajectory-row"
+        data-seq={entry.seq}
+        data-lane={entry.lane}
+        data-selected={selected ? "true" : "false"}
+        aria-current={selected ? "true" : undefined}
+        role={clickable ? "button" : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        mix={[
+          rowStyle,
+          selected ? selectedRowStyle : null,
+          clickable ? clickableRowStyle : null,
+          clickable ? on("click", () => onSelect(entry.seq)) : null,
+          clickable
+            ? on("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(entry.seq);
+                }
+              })
+            : null,
+        ]}
+      >
         <span mix={labelStyle} data-role={laneLabel(entry)}>
           {laneLabel(entry)}
         </span>
@@ -121,6 +161,15 @@ const rowStyle = css({
   "&[data-lane='input']": { color: "var(--foreground)" },
   "&[data-lane='model']": { color: "var(--foreground)" },
   "&[data-lane='tools']": { color: "var(--muted-foreground)" },
+});
+
+const clickableRowStyle = css({
+  cursor: "pointer",
+  "&:hover": { background: "var(--secondary)" },
+});
+
+const selectedRowStyle = css({
+  background: "var(--secondary)",
 });
 
 const labelStyle = css({
