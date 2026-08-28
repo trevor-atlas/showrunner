@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { EnvelopeBase } from "../../src/core/index.ts";
 import type { Envelope, GateContext } from "../../src/core/index.ts";
+import type { ReviewEnvelope } from "../../src/starter-kit/envelopes.ts";
 
 import { envelopeShape, filesExist, lintClean, matchesPlan, reviewApproved, testsPass, workspaceShell } from "../../src/starter-kit/gates/index.ts";
 import { failingWorkspace, passingWorkspace, rmDir, tmpDir, writeWorkspace } from "./helpers.ts";
@@ -234,14 +235,14 @@ test("filesExist requires at least one artifact by default, and exact paths when
 });
 
 test("reviewApproved passes an approved review and reports the verdict when rejected", async () => {
-  const approved = await reviewApproved()(baseEnvelope({ approved: true }), ctx("/tmp"));
+  const approved = await reviewApproved()(baseEnvelope({ approved: true }) as ReviewEnvelope, ctx("/tmp"));
   expect(approved).toEqual({ pass: true });
 
-  const rejected = await reviewApproved()(baseEnvelope({ approved: false, verdict: "scope creep" }), ctx("/tmp"));
+  const rejected = await reviewApproved()(baseEnvelope({ approved: false, verdict: "scope creep" }) as ReviewEnvelope, ctx("/tmp"));
   expect(rejected.pass).toBe(false);
   expect(violationsOf(rejected)[0]).toContain("scope creep");
 
-  const missing = await reviewApproved()(baseEnvelope(), ctx("/tmp"));
+  const missing = await reviewApproved()(baseEnvelope() as ReviewEnvelope, ctx("/tmp"));
   expect(missing.pass).toBe(false);
   expect(violationsOf(missing)[0]).toContain("approved");
 });

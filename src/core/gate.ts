@@ -35,4 +35,4 @@ export type GateResult = { pass: true } | { pass: false; violations: string[] };
  * process after parse succeeds and after the `blocked` short-circuit. Gate
  * violations feed the correction message verbatim.
  */
-export type Gate = <Env extends Envelope>(envelope: Env, ctx: GateContext) => Promise<GateResult>;
+export type Gate<E extends Envelope = Envelope> = (envelope: E, ctx: GateContext) => Promise<GateResult>;
