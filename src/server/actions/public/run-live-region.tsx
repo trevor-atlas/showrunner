@@ -550,7 +550,7 @@ export const RunLiveRegion = clientEntry(
               type="button"
               role="tab"
               data-tab="main"
-              aria-selected={activeTab === "main"}
+              aria-selected={activeTab === "main" ? "true" : "false"}
               mix={[tabStyle, on("click", () => selectTab("main"))]}
             >
               Main
@@ -559,7 +559,7 @@ export const RunLiveRegion = clientEntry(
               type="button"
               role="tab"
               data-tab="trajectory"
-              aria-selected={activeTab === "trajectory"}
+              aria-selected={activeTab === "trajectory" ? "true" : "false"}
               mix={[tabStyle, on("click", () => selectTab("trajectory"))]}
             >
               Trajectory

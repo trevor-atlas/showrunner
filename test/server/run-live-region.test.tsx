@@ -400,6 +400,11 @@ describe("run-detail live region (#82) — Main | Trajectory tab bar", () => {
     expect(mainBody(r)).not.toBeNull();
     expect(panel(r)).toBeNull();
     expect(tab(r, "main").getAttribute("aria-selected")).toBe("true");
+    // the UNSELECTED tab must render aria-selected="false" (an explicit string).
+    // A boolean attr value serializes to a bare/absent attribute server-side, so
+    // the `[aria-selected='true']` highlight rule never matches and the active
+    // tab shows no highlight — guard against regressing to the boolean form.
+    expect(tab(r, "trajectory").getAttribute("aria-selected")).toBe("false");
   });
 
   it("switching tabs swaps the body: Trajectory shows the panel, Main restores existing content", async () => {
