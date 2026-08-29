@@ -19,6 +19,7 @@ import {
   apiStats,
   apiStatus,
   apiTimeline,
+  apiTrajectory,
 } from "../services/runs.ts";
 import {
   apiApprove,
@@ -172,6 +173,13 @@ export async function handleApiRequest(state: ApiState, request: Request): Promi
     if (phaseOutputsMatch && method === "GET") {
       return Response.json(
         apiPhaseOutputs(state, phaseOutputsMatch[1]!, decodeURIComponent(phaseOutputsMatch[2]!)),
+      );
+    }
+
+    const trajectoryMatch = path.match(/^\/runs\/([^/]+)\/phases\/([^/]+)\/trajectory$/);
+    if (trajectoryMatch && method === "GET") {
+      return Response.json(
+        apiTrajectory(state, trajectoryMatch[1]!, decodeURIComponent(trajectoryMatch[2]!)),
       );
     }
 

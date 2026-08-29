@@ -15,6 +15,7 @@ import {
 } from "../../src/core/index.ts";
 import type {
   Blueprint,
+  Envelope,
   PhaseStartCause,
   PhaseStartCauseFlow,
   PhaseStartCauseHuman,
@@ -136,7 +137,7 @@ test("a phase envelope with no base conflict but redefined optional type is reje
     summary: z.string(),
     artifacts: z.array(z.number()), // artifacts must be string[]
     notes_for_next_agent: z.string(),
-  });
+  }) as unknown as z.ZodType<Envelope>;
   expect(() => defineBlueprint(b)).toThrow(BlueprintValidationError);
 });
 
@@ -154,14 +155,14 @@ test("a phase envelope that redefines a base field with an incompatible type is 
     notes_for_next_agent: z.string(),
   });
   const b = validBlueprint();
-  b.phases[0]!.envelope = broken;
+  b.phases[0]!.envelope = broken as unknown as z.ZodType<Envelope>;
   expect(() => defineBlueprint(b)).toThrow(BlueprintValidationError);
   expect(() => defineBlueprint(b)).toThrow(/envelope must extend EnvelopeBase/);
 });
 
 test("a non-object phase envelope is rejected", () => {
   const b = validBlueprint();
-  b.phases[0]!.envelope = z.string();
+  b.phases[0]!.envelope = z.string() as unknown as z.ZodType<Envelope>;
   expect(() => defineBlueprint(b)).toThrow(BlueprintValidationError);
 });
 

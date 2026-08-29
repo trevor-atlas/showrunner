@@ -82,7 +82,7 @@ export function reviewPhase(opts: { budget?: number } = {}): BlueprintPhase {
     name: "review",
     agent: reviewer,
     envelope: ReviewEnvelope,
-    gates: [reviewApproved()],
+    gates: [reviewApproved() as Gate],
     budget: opts.budget ?? BUDGET,
     on_fail: { to: "build" },
   };

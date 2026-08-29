@@ -73,6 +73,10 @@ export const routes = route({
       inputs: get("/runs/:runId/phases/:phase/inputs.json"),
       outputs: get("/runs/:runId/phases/:phase/outputs.json"),
       spend: get("/runs/:runId/phases/:phase/spend.json"),
+      // issue #83: the per-phase trajectory proxy — the browser fetches the
+      // conversational trajectory (parsed from raw_output.jsonl) through this
+      // remix route, never the server directly
+      trajectory: get("/runs/:runId/phases/:phase/trajectory.json"),
       override: post("/runs/:runId/phases/:phase/override"),
       restart: post("/runs/:runId/phases/:phase/restart-fresh"),
     },

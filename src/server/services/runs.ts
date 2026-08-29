@@ -4,9 +4,11 @@ import {
   cursorEvents,
   getPhaseByName,
   getRun,
+  listAgentSessions,
   listEnvelopes,
   listGateResults,
   listRuns,
+  sweepRunEvents,
 } from "../repository/db.ts";
 import {
   ApiError,
@@ -21,9 +23,12 @@ import {
   type RunStats,
   type SpendBreakdown,
   type TimelineView,
+  type TrajectoryView,
 } from "../contract.ts";
 import { readOutputsDir } from "../repository/workspace/index.ts";
-import { tailRawFile } from "../repository/rawfile.ts";
+import { readRawFileCapped, tailRawFile } from "../repository/rawfile.ts";
+import { buildTrajectory, type ToolTiming, type TrajectorySession } from "../lib/trajectory.ts";
+import type { ToolCall } from "../../core/index.ts";
 import { buildRunList } from "./run-list.ts";
 import { buildRunStats } from "./run-stats.ts";
 import {
@@ -203,4 +208,39 @@ export function apiRaw(state: ApiState, runId: string, query: URLSearchParams): 
   const n = intParam(linesParam, 200, 5000);
   const tail = tailRawFile(join(state.dataDir, "runs", runId, "raw_output.jsonl"), n);
   return { ...tail, run_id: runId };
+}
+
+/** The cap on the capped full-file read the trajectory parser consumes — the
+ * whole conversation in order, bounded so a runaway raw file cannot exhaust
+ * memory (truncated is reported on the view when it bites). */
+const MAX_TRAJECTORY_RAW_LINES = 50_000;
+
+/**
+ * GET /runs/:id/phases/:phase/trajectory (issue #83) — the per-phase
+ * conversational trajectory, parsed from the run's raw_output.jsonl. Same 404
+ * semantics as the other phase-scoped reads (ghost run/phase). The parse is
+ * pure (lib/trajectory.ts); this adapter assembles its three inputs: the
+ * capped raw text, the phase's agent_sessions rows (all visits), and the
+ * tool_call timings keyed by tool_call_id.
+ */
+export function apiTrajectory(state: ApiState, runId: string, phaseName: string): TrajectoryView {
+  const phase = requirePhaseOrThrow(state, runId, phaseName);
+  const sessions: TrajectorySession[] = listAgentSessions(state.db, runId)
+    .filter((s) => s.phase_id === phase.id)
+    .map((s) => ({
+      run_id: runId,
+      phase: phase.name,
+      phase_id: phase.id,
+      pi_session_id: s.pi_session_id,
+      visit: s.visit,
+    }));
+  const timings: Record<string, ToolTiming> = {};
+  for (const ev of sweepRunEvents(state.db, runId)) {
+    if (ev.type !== "tool_call") continue;
+    const data = ev.data as ToolCall;
+    timings[data.tool_call_id] = { ts: ev.ts, duration_ms: data.duration_ms };
+  }
+  const raw = readRawFileCapped(join(state.dataDir, "runs", runId, "raw_output.jsonl"), MAX_TRAJECTORY_RAW_LINES);
+  const view = buildTrajectory(raw.text, sessions, timings);
+  return { ...view, run_id: runId, phase: phase.name, phase_id: phase.id, truncated: raw.truncated };
 }

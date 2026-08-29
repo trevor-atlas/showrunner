@@ -25,6 +25,7 @@ import {
   apiSpend,
   apiStats,
   apiTimeline,
+  apiTrajectory,
 } from "../services/runs.ts";
 import {
   apiApprove,
@@ -52,6 +53,7 @@ import type {
   RunStats,
   SpendBreakdown,
   TimelineView,
+  TrajectoryView,
 } from "../contract.ts";
 
 /** The events-page size and the sweep batch — the one exported constant the
@@ -94,6 +96,12 @@ export async function getSpend(runId: string): Promise<SpendBreakdown> {
 /** GET /runs/:id/timeline (R3) — per-visit segments in blueprint order. */
 export async function getTimeline(runId: string): Promise<TimelineView> {
   return apiTimeline(requireServerState(), runId);
+}
+
+/** GET /runs/:id/phases/:phase/trajectory (#83) — the per-phase conversational
+ * trajectory parsed from the run's raw_output.jsonl (input/model/tools lanes). */
+export async function getTrajectory(runId: string, phase: string): Promise<TrajectoryView> {
+  return apiTrajectory(requireServerState(), runId, phase);
 }
 
 /** GET /api/stats — the all-time landing KPI/chart aggregate. */

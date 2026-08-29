@@ -178,6 +178,61 @@ export interface RawTail {
   truncated: boolean;
 }
 
+// ── the trajectory view (GET /runs/:id/phases/:phase/trajectory) ─────────────
+// The DB only folds tool_call/spend/agent_end, so the rich conversational
+// stream (user/assistant messages, turns, tools) is parsed from the run's raw
+// raw_output.jsonl per phase (issue #83). The parse is server-side, in one
+// tested place (services/runs.ts → lib/trajectory.ts). The wire shapes below
+// are the contract apiTrajectory honors.
+
+/** The three display lanes a trajectory entry lands in: the user's input
+ * turns, the model's assistant turns, and the tool calls. */
+export type TrajectoryLane = "input" | "model" | "tools";
+
+/** A user/assistant message row (folded from `message_end`, canonical over
+ * `message_start`/`message_update`). `lane` is "input" for role "user",
+ * "model" for role "assistant". */
+export interface TrajectoryMessageEntry {
+  seq: number;
+  lane: "input" | "model";
+  /** turn index within the phase (from `turn_start`); step index within the turn */
+  turn: number;
+  step: number;
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** A tool call row (folded from `tool_execution_start` + `tool_execution_end`).
+ * `ts`/`duration_ms` are correlated from the DB `tool_call` event by
+ * `tool_call_id` when present; null otherwise. */
+export interface TrajectoryToolEntry {
+  seq: number;
+  lane: "tools";
+  turn: number;
+  step: number;
+  tool: string;
+  tool_call_id: string | null;
+  args: unknown;
+  result: string;
+  ok: boolean;
+  ts: string | null;
+  duration_ms: number | null;
+}
+
+/** One trajectory row — the lane discriminates the shape (message vs tool),
+ * so a tool's fields never appear on a message row and vice versa. */
+export type TrajectoryEntry = TrajectoryMessageEntry | TrajectoryToolEntry;
+
+export interface TrajectoryView {
+  run_id: string;
+  phase: string;
+  phase_id: string;
+  /** the phase's rows in raw-stream order, `seq` monotonic across all visits */
+  entries: TrajectoryEntry[];
+  /** true when the capped full-file read dropped later lines */
+  truncated: boolean;
+}
+
 export interface PauseView {
   run_id: string;
   paused: boolean;

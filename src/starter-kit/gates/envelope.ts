@@ -1,4 +1,5 @@
 import type { Gate } from "../../core/index.ts";
+import { defineGate } from "../../core/index.ts";
 
 // ── envelope gates ───────────────────────────────────────────────────────────
 
@@ -23,12 +24,12 @@ export function envelopeShape<S extends { safeParse(input: unknown): ShapeParseR
   opts: EnvelopeShapeOptions = {},
 ): Gate {
   const maxIssues = opts.maxIssues ?? 5;
-  return async function envelopeShape(envelope) {
+  return defineGate("envelopeShape", async function envelopeShape(envelope) {
     const res = schema.safeParse(envelope);
     if (res.success) return { pass: true };
     const issues = res.error?.issues.map((i) => `${i.path.join(".")}: ${i.message}`) ?? [];
     const shown = issues.slice(0, maxIssues);
     if (issues.length > maxIssues) shown.push(`... and ${issues.length - maxIssues} more`);
     return { pass: false, violations: shown.length > 0 ? shown : ["envelope does not match the required shape"] };
-  };
+  });
 }

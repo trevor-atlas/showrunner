@@ -10,7 +10,7 @@ const hmrEventPort = process.env.HMR_PORT
   : hmrProxyPort + 1
 const appPort = process.env.APP_PORT ? Number.parseInt(process.env.APP_PORT, 10) : hmrEventPort + 1
 
-const hmrRunner = run('server.ts', {
+const hmrRunner = run('main.ts', {
   env: {
     ...process.env,
     PORT: String(appPort),

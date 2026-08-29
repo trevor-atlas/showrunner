@@ -2,7 +2,13 @@ import { createController } from "remix/router";
 import { redirect } from "remix/response/redirect";
 import { parseSafe } from "remix/data-schema";
 
-import { controlOverrideGate, controlRestartFresh, getPhaseRecord, isApiError } from "../../../lib/model.ts";
+import {
+  controlOverrideGate,
+  controlRestartFresh,
+  getPhaseRecord,
+  getTrajectory,
+  isApiError,
+} from "../../../lib/model.ts";
 import type { PhaseRecordModel } from "../../../services/phase-record.ts";
 import { routes } from "../../../routes.ts";
 import { apiControlError, overrideFormSchema, validationError } from "../control-forms.ts";
@@ -83,6 +89,23 @@ export default createController(routes.runs.phases, {
       const record = loadPhaseRecord(context.params.runId, context.params.phase);
       if (record === null) return notFoundJson(context.params.runId, context.params.phase);
       return Response.json(record.spend);
+    },
+
+    /**
+     * The trajectory.json proxy (#83) — the per-phase conversational
+     * trajectory (input/model/tools lanes) parsed from raw_output.jsonl,
+     * returned as JSON. Ghost run/phase → 404 JSON (the server throws
+     * ApiError(404); the browser never talks to the server directly).
+     */
+    async trajectory(context) {
+      try {
+        return Response.json(await getTrajectory(context.params.runId, context.params.phase));
+      } catch (err) {
+        if (isApiError(err) && err.status === 404) {
+          return notFoundJson(context.params.runId, context.params.phase);
+        }
+        throw err;
+      }
     },
 
     /** override — POST .../phases/:phase/override → the server verb. */

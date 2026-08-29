@@ -1,7 +1,7 @@
-import { clientEntry, css, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
+import { clientEntry, css, on, type Handle, type SerializableObject, type SerializableProps } from "remix/ui";
 
 import type { AgentSessionRow, EnvelopeRow, GateResultWithOverride } from "../../repository/db.ts";
-import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView } from "../../contract.ts";
+import type { PhaseEnvelopes, PhaseGates, RawTail, TimelineView, TrajectoryView } from "../../contract.ts";
 import type {
   PhaseInputsData,
   PhaseOutputsData,
@@ -16,6 +16,7 @@ import { computeTimelineLayout } from "../../ui/public/timeline-model.ts";
 import { Timeline } from "../../ui/public/timeline.tsx";
 import { TimelinePanel } from "../../ui/public/timeline-panel.tsx";
 import { RawTranscript } from "../../ui/public/raw-transcript.tsx";
+import { TrajectoryPanel } from "../../ui/public/trajectory/trajectory-panel.tsx";
 
 /**
  * The client-entry boundary widens the server wire types (client.ts/db.ts)
@@ -36,6 +37,9 @@ export type SerializablePhaseInputs = PhaseInputsData & SerializableObject;
 export type SerializablePhaseOutputs = PhaseOutputsData & SerializableObject;
 export type SerializablePhaseSpend = PhaseSpendData & SerializableObject;
 export type SerializableRawTail = RawTail & SerializableObject;
+/** #84: the initial selection's parsed trajectory, widened at the client-entry
+ * boundary (plain JSON — structural widening only). */
+export type SerializableTrajectoryView = TrajectoryView & SerializableObject;
 
 /**
  * The run-detail LIVE region (R4/R5): the hydrated clientEntry
@@ -110,6 +114,14 @@ interface PhasePanelData {
   spendError: boolean;
 }
 
+/** #84: one phase's lazily-fetched trajectory (per-phase cache). `view` null
+ * with `error` false = still loading; `error` true = the fetch failed (the
+ * panel shows its error state; re-selecting the phase retries). */
+interface TrajectoryCacheEntry {
+  view: TrajectoryView | null;
+  error: boolean;
+}
+
 export interface RunLiveRegionProps extends SerializableProps {
   runId: string;
   /** the R3 timeline view (per-visit segments, blueprint order) — the chart
@@ -154,6 +166,11 @@ export interface RunLiveRegionProps extends SerializableProps {
    * otherwise) — the panel header surfaces it; the live poll captures the
    * same value from the run_status → paused event */
   pauseReason: string | null;
+  /** #84: the initial selection's parsed trajectory, server-rendered so the
+   * Trajectory tab paints with no round-trip on first open; null when no
+   * phase is selectable. Later selections fetch through the trajectory proxy
+   * and are cached per phase (the same lazy-fetch pattern as the phase cards). */
+  initialTrajectory: SerializableTrajectoryView | null;
 }
 
 export const RunLiveRegion = clientEntry(
@@ -177,6 +194,9 @@ export const RunLiveRegion = clientEntry(
     let raw: RawTail = handle.props.initialRaw;
     // R5: the selection survives polls because it lives here, not in props
     let selection: string | null = handle.props.initialSelection;
+    // #82: the run-page view tab (Main | Trajectory). Held here in setup scope
+    // so it survives SSE refetches — a change wake-up's apply() never touches it.
+    let activeTab: "main" | "trajectory" = "main";
     let autoScroll = true;
     let hoverPaused = false;
     let feedNode: HTMLElement | null = null;
@@ -206,6 +226,42 @@ export const RunLiveRegion = clientEntry(
       });
     }
 
+    // #84: the per-phase TRAJECTORY cache — same lazy-fetch shape as phaseData,
+    // seeded with the SSR-rendered initial selection so the Trajectory tab
+    // paints without a round-trip. `view` null + no error = still loading.
+    const trajectory = new Map<string, TrajectoryCacheEntry>();
+    const trajInflight = new Set<string>();
+    if (handle.props.initialSelection !== null && handle.props.initialTrajectory !== null) {
+      trajectory.set(handle.props.initialSelection, { view: handle.props.initialTrajectory, error: false });
+    }
+
+    /** #84 lazy fetch: a selected phase's trajectory through the trajectory
+     * proxy (the browser never talks to the server). Inflight dedup + an error
+     * flag mirror loadPhaseData; re-selecting a cached phase never refetches. */
+    const loadTrajectory = async (name: string): Promise<void> => {
+      if (trajInflight.has(name)) return;
+      trajInflight.add(name);
+      try {
+        const res = await fetch(routes.runs.phases.trajectory.href({ runId: handle.props.runId, phase: name }));
+        trajectory.set(
+          name,
+          res.ok ? { view: (await res.json()) as TrajectoryView, error: false } : { view: null, error: true },
+        );
+      } catch {
+        trajectory.set(name, { view: null, error: true });
+      } finally {
+        trajInflight.delete(name);
+        if (selection === name) void handle.update();
+      }
+    };
+
+    /** #84: load the selected phase's trajectory when the Trajectory tab needs
+     * it — missing from the cache (never fetched, or a prior fetch failed). */
+    const ensureTrajectory = (name: string): void => {
+      const cached = trajectory.get(name);
+      if (cached === undefined || cached.error) void loadTrajectory(name);
+    };
+
     /** R5 select: update the selection, mirror it in the URL (?phase= — the
      * deep link), and lazily fetch the phase's envelopes/gates when missing. */
     const select = (name: string | null): void => {
@@ -234,6 +290,9 @@ export const RunLiveRegion = clientEntry(
         ) {
           void loadPhaseData(name);
         }
+        // #84: on the Trajectory tab, a phase-select also loads that phase's
+        // trajectory (the Main tab loads it lazily on tab-switch instead)
+        if (activeTab === "trajectory") ensureTrajectory(name);
       }
       void handle.update();
     };
@@ -308,6 +367,21 @@ export const RunLiveRegion = clientEntry(
       return null;
     };
 
+    /** #88: best-effort refetch of the SELECTED phase's trajectory, folded into
+     * the parallel `apply` round-trip. Mirrors fetchRawTail — never throws, so
+     * a failure keeps the last good view (returns null) and never turns the
+     * events/timeline refetch into a retry. Only called while the Trajectory
+     * tab is open on a non-terminal run (a terminal run freezes it). */
+    const fetchTrajectory = async (name: string): Promise<TrajectoryView | null> => {
+      try {
+        const res = await fetch(routes.runs.phases.trajectory.href({ runId: handle.props.runId, phase: name }));
+        if (res.ok) return (await res.json()) as TrajectoryView;
+      } catch {
+        // keep the last good view
+      }
+      return null;
+    };
+
     /** The adapter's refetch (#58): one round-trip that fetches events.json +
      * timeline.json + the RAW tail in PARALLEL, merges the cursor, and updates
      * the render state — then returns the outcome the adapter acts on:
@@ -323,13 +397,20 @@ export const RunLiveRegion = clientEntry(
       const eventsUrl = new URL(handle.props.eventsHref, window.location.href);
       eventsUrl.searchParams.set("cursor", String(cursor));
       const timelineUrl = new URL(handle.props.timelineHref, window.location.href);
+      // #88: while the Trajectory tab is open on a non-terminal run, the
+      // selected phase's trajectory rides the SAME round-trip. Best-effort and
+      // isolated — like the RAW tail, it never throws, so only events/timeline
+      // decide the outcome; a terminal run or the Main tab skips it entirely.
+      const trajTarget =
+        activeTab === "trajectory" && selection !== null && !isTerminalStatus(status) ? selection : null;
       // R6: the events page, the timeline, and the RAW tail ride the SAME
-      // round-trip — all three in flight. The RAW fetch is best-effort and
-      // never throws, so only events/timeline decide the outcome.
-      const [eventsResponse, timelineResponse, rawTail] = await Promise.all([
+      // round-trip — all in flight. The RAW + trajectory fetches are
+      // best-effort and never throw, so only events/timeline decide the outcome.
+      const [eventsResponse, timelineResponse, rawTail, trajView] = await Promise.all([
         fetch(eventsUrl),
         fetch(timelineUrl),
         fetchRawTail(),
+        trajTarget !== null ? fetchTrajectory(trajTarget) : Promise.resolve(null),
       ]);
       // a 404 on either proxy = the run is gone → stop the live subscription
       if (eventsResponse.status === 404 || timelineResponse.status === 404) {
@@ -384,6 +465,9 @@ export const RunLiveRegion = clientEntry(
       }
       // fold in the best-effort RAW tail before the single re-render
       if (rawTail !== null) raw = rawTail;
+      // #88: replace the selected phase's trajectory wholesale (like timeline);
+      // a failed fetch (null) keeps the last good view.
+      if (trajTarget !== null && trajView !== null) trajectory.set(trajTarget, { view: trajView, error: false });
       await handle.update();
       if (autoScroll && !hoverPaused && feedNode) {
         feedNode.scrollTop = feedNode.scrollHeight;
@@ -443,9 +527,47 @@ export const RunLiveRegion = clientEntry(
         </>
       );
 
+      const selectTab = (tab: "main" | "trajectory") => {
+        activeTab = tab;
+        // #84: opening the Trajectory tab loads the selected phase's trajectory
+        // if it is not already cached (the SSR-seeded initial phase already is)
+        if (tab === "trajectory" && selection !== null) ensureTrajectory(selection);
+        void handle.update();
+      };
+
+      // #84: the resolved trajectory state for the selected phase — a view,
+      // loading (selection set, nothing resolved yet), or an error message
+      const trajEntry = selection !== null ? trajectory.get(selection) : undefined;
+      const trajView = trajEntry?.view ?? null;
+      const trajError = trajEntry?.error === true ? "couldn't load trajectory" : null;
+      const trajLoading = selection !== null && trajView === null && trajError === null;
+
       return (
         <div mix={regionStyle}>
           <Timeline model={model} runId={runId} selected={selection} onSelect={select} />
+          <div role="tablist" aria-label="run view" mix={tabBarStyle}>
+            <button
+              type="button"
+              role="tab"
+              data-tab="main"
+              aria-selected={activeTab === "main" ? "true" : "false"}
+              mix={[tabStyle, on("click", () => selectTab("main"))]}
+            >
+              Main
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-tab="trajectory"
+              aria-selected={activeTab === "trajectory" ? "true" : "false"}
+              mix={[tabStyle, on("click", () => selectTab("trajectory"))]}
+            >
+              Trajectory
+            </button>
+          </div>
+          {activeTab === "trajectory" ? (
+            <TrajectoryPanel view={trajView} loading={trajLoading} error={trajError} />
+          ) : (
           <TimelinePanel
             runId={runId}
             timeline={liveTimeline}
@@ -466,6 +588,7 @@ export const RunLiveRegion = clientEntry(
             pauseReason={pauseReason}
             feedSlot={feedSlot}
           />
+          )}
         </div>
       );
     };
@@ -475,6 +598,32 @@ export const RunLiveRegion = clientEntry(
 const regionStyle = css({
   display: "grid",
   gap: "1.25rem",
+});
+
+const tabBarStyle = css({
+  display: "flex",
+  gap: "0.25rem",
+  borderBottom: "1px solid var(--border)",
+});
+
+const tabStyle = css({
+  appearance: "none",
+  font: "inherit",
+  fontSize: "var(--font-size-sm)",
+  fontWeight: 700,
+  padding: "0.4rem 0.9rem",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  background: "transparent",
+  color: "var(--muted-foreground)",
+  cursor: "pointer",
+  "&[aria-selected='true']": {
+    color: "var(--foreground)",
+    borderBottomColor: "var(--foreground)",
+  },
+  "&:hover": {
+    color: "var(--foreground)",
+  },
 });
 
 /** The statuses the live loop tracks from run_status events. Interrupted is

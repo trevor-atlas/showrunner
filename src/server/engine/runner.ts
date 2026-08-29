@@ -1245,30 +1245,30 @@ export function renderSchema(schema: z.ZodTypeAny): string {
   }
 }
 
+/**
+ * The zod type discriminator, WITHOUT poking `_def`. `constructor.name` is
+ * copy-agnostic the way `_def.typeName` was — every zod class names itself
+ * (ZodString, ZodObject, …) so it survives the server and a blueprint module
+ * resolving different zod copies, where `instanceof` would fail. The inner
+ * schemas are read through zod's PUBLIC accessors (unwrap/removeDefault/
+ * element/shape/options/value/valueSchema), so no internals leak in.
+ */
+function zodKind(s: z.ZodTypeAny): string {
+  return s.constructor.name;
+}
+
 function renderType(s: z.ZodTypeAny): string {
-  // zod schema introspection by typeName, not instanceof — the server and the
-  // blueprint module resolve different zod copies, so instanceof fails across
-  // them while _def.typeName is stable and copy-agnostic
-  const typeName = (s as unknown as { _def?: { typeName?: string } })._def?.typeName ?? "unknown";
-  switch (typeName) {
-    case "ZodOptional": {
-      const inner = (s as unknown as { unwrap(): z.ZodTypeAny }).unwrap();
-      return `${renderType(inner)} (optional)`;
-    }
-    case "ZodNullable": {
-      const inner = (s as unknown as { unwrap(): z.ZodTypeAny }).unwrap();
-      return `${renderType(inner)} | null`;
-    }
-    case "ZodDefault": {
-      const inner = (s as unknown as { _def: { innerType: z.ZodTypeAny } })._def.innerType;
-      return `${renderType(inner)} (default)`;
-    }
-    case "ZodArray": {
-      const element = (s as unknown as { element: z.ZodTypeAny }).element;
-      return `${renderType(element)}[]`;
-    }
+  switch (zodKind(s)) {
+    case "ZodOptional":
+      return `${renderType((s as z.ZodOptional<z.ZodTypeAny>).unwrap())} (optional)`;
+    case "ZodNullable":
+      return `${renderType((s as z.ZodNullable<z.ZodTypeAny>).unwrap())} | null`;
+    case "ZodDefault":
+      return `${renderType((s as z.ZodDefault<z.ZodTypeAny>).removeDefault())} (default)`;
+    case "ZodArray":
+      return `${renderType((s as z.ZodArray<z.ZodTypeAny>).element)}[]`;
     case "ZodObject": {
-      const shape = (s as unknown as { shape: Record<string, z.ZodTypeAny> }).shape;
+      const shape = (s as z.ZodObject<z.ZodRawShape>).shape;
       // each field's .describe() text rides into the contract — the agent must
       // see WHAT each field means ("files you WROTE to outputs/", not just
       // `string[]`), or it fills artifacts with files it merely read
@@ -1285,13 +1285,13 @@ function renderType(s: z.ZodTypeAny): string {
     case "ZodBoolean":
       return "boolean";
     case "ZodEnum": {
-      const options = (s as unknown as { options: readonly string[] }).options;
+      const options = (s as z.ZodEnum<[string, ...string[]]>).options;
       return options.map((o) => JSON.stringify(o)).join(" | ");
     }
     case "ZodLiteral":
-      return JSON.stringify((s as unknown as { value: unknown }).value);
+      return JSON.stringify((s as z.ZodLiteral<unknown>).value);
     case "ZodRecord": {
-      const valueSchema = (s as unknown as { valueSchema: z.ZodTypeAny }).valueSchema;
+      const valueSchema = (s as z.ZodRecord<z.ZodString, z.ZodTypeAny>).valueSchema;
       return `record<string, ${renderType(valueSchema)}>`;
     }
     default:
@@ -1300,20 +1300,18 @@ function renderType(s: z.ZodTypeAny): string {
 }
 
 function describeOf(s: z.ZodTypeAny): string | null {
-  const outer = (s as { description?: string | null }).description;
+  const outer = s.description;
   if (typeof outer === "string" && outer !== "") return outer;
-  // optional/nullable wrap the described schema — fall through to the inner
-  const unwrap = (s as { unwrap?: () => z.ZodTypeAny }).unwrap;
-  if (typeof unwrap === "function") {
-    const inner = describeOf(unwrap.call(s));
-    if (inner !== null) return inner;
+  // optional/nullable/default wrap the described schema — fall through to it
+  switch (zodKind(s)) {
+    case "ZodOptional":
+    case "ZodNullable":
+      return describeOf((s as z.ZodOptional<z.ZodTypeAny>).unwrap());
+    case "ZodDefault":
+      return describeOf((s as z.ZodDefault<z.ZodTypeAny>).removeDefault());
+    default:
+      return null;
   }
-  const defaultOf = (s as { _def?: { innerType?: z.ZodTypeAny } })._def?.innerType;
-  if (defaultOf !== undefined) {
-    const inner = describeOf(defaultOf);
-    if (inner !== null) return inner;
-  }
-  return null;
 }
 
 function messageOf(err: unknown): string {
